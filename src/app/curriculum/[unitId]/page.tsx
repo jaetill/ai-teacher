@@ -5,6 +5,25 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 
+// Group lessons into weeks by distributing evenly across the unit duration.
+// e.g. 20 lessons across 7 weeks → ~3 per week
+function groupLessonsByWeek(
+  lessons: Lesson[],
+  durationWeeks: number
+): { week: number; lessons: Lesson[] }[] {
+  if (lessons.length === 0 || durationWeeks === 0) return [];
+  const perWeek = Math.ceil(lessons.length / durationWeeks);
+  const weeks: { week: number; lessons: Lesson[] }[] = [];
+  for (let w = 0; w < durationWeeks; w++) {
+    const start = w * perWeek;
+    const weekLessons = lessons.slice(start, start + perWeek);
+    if (weekLessons.length > 0) {
+      weeks.push({ week: w + 1, lessons: weekLessons });
+    }
+  }
+  return weeks;
+}
+
 function LessonCard({ lesson }: { lesson: Lesson }) {
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(lesson.teacherNotes ?? "");
@@ -595,10 +614,21 @@ export default function UnitDetailPage() {
                 )}
               </div>
             </div>
-            <div className="space-y-3">
-              {unit.lessons.map((lesson) => (
-                <LessonCard key={lesson.id} lesson={lesson} />
-              ))}
+            <div className="space-y-5">
+              {groupLessonsByWeek(unit.lessons, unit.durationWeeks).map(
+                (week) => (
+                  <div key={week.week}>
+                    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
+                      Week {week.week}
+                    </div>
+                    <div className="space-y-2">
+                      {week.lessons.map((lesson) => (
+                        <LessonCard key={lesson.id} lesson={lesson} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           </div>
         )}
