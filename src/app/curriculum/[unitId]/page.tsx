@@ -109,6 +109,37 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </div>
             </div>
           )}
+          {lesson.materials && lesson.materials.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Materials
+              </div>
+              <div className="space-y-1">
+                {lesson.materials.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    {m.driveWebUrl ? (
+                      <a
+                        href={m.driveWebUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline truncate"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {m.title}
+                      </a>
+                    ) : (
+                      <span className="text-zinc-600 dark:text-zinc-400 truncate">
+                        {m.title}
+                      </span>
+                    )}
+                    <span className="text-zinc-400 dark:text-zinc-500 shrink-0">
+                      {m.role}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -130,6 +161,13 @@ type LessonStandard = {
   coverageType: string;
 };
 
+type MaterialLink = {
+  title: string;
+  materialType: string;
+  driveWebUrl: string | null;
+  role: string;
+};
+
 type Lesson = {
   id: string;
   title: string;
@@ -140,6 +178,7 @@ type Lesson = {
   teacherNotes: string | null;
   source: string;
   standards: LessonStandard[];
+  materials: MaterialLink[];
 };
 
 type UnitDetail = {
@@ -158,6 +197,7 @@ type UnitDetail = {
   source: string;
   lessons: Lesson[];
   standards: Standard[];
+  materials: MaterialLink[];
   driveCurriculumUrl: string | null;
   driveQuarterUrl: string | null;
 };
@@ -173,6 +213,8 @@ export default function UnitDetailPage() {
   const [generatedPlan, setGeneratedPlan] = useState("");
   const [generating, setGenerating] = useState(false);
   const [inferring, setInferring] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const fetchUnit = useCallback(async () => {
     try {
@@ -273,6 +315,29 @@ export default function UnitDetailPage() {
       setInferring(false);
     }
   }
+
+  async function linkMaterials() {
+    if (!unit) return;
+    setLinking(true);
+    setLinkError(null);
+    try {
+      const res = await fetch(`/api/units/${unit.id}/link-materials`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchUnit();
+      } else {
+        setLinkError(data.error || "Failed to link materials");
+      }
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  const hasLessonMaterials = unit?.lessons.some(
+    (l) => l.materials && l.materials.length > 0
+  );
 
   const hasLessonStandards = unit?.lessons.some(
     (l) => l.standards && l.standards.length > 0
@@ -449,21 +514,72 @@ export default function UnitDetailPage() {
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                 Lessons ({unit.lessons.length})
               </h2>
-              {!hasLessonStandards && unit.standards.length > 0 && (
-                <button
-                  onClick={inferStandards}
-                  disabled={inferring}
-                  className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
-                >
-                  {inferring
-                    ? "Mapping standards..."
-                    : "Map standards to lessons"}
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {!hasLessonMaterials && (
+                  <button
+                    onClick={linkMaterials}
+                    disabled={linking}
+                    className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
+                  >
+                    {linking
+                      ? "Linking materials..."
+                      : "Link materials to lessons"}
+                  </button>
+                )}
+                {!hasLessonStandards && unit.standards.length > 0 && (
+                  <button
+                    onClick={inferStandards}
+                    disabled={inferring}
+                    className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
+                  >
+                    {inferring
+                      ? "Mapping standards..."
+                      : "Map standards to lessons"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="space-y-3">
               {unit.lessons.map((lesson) => (
                 <LessonCard key={lesson.id} lesson={lesson} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {linkError && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+            {linkError}
+          </div>
+        )}
+
+        {/* ── Unit-level materials ─── */}
+        {unit.materials && unit.materials.length > 0 && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
+            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              Unit Materials
+            </h2>
+            <div className="space-y-1.5">
+              {unit.materials.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  {m.driveWebUrl ? (
+                    <a
+                      href={m.driveWebUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline truncate"
+                    >
+                      {m.title}
+                    </a>
+                  ) : (
+                    <span className="text-zinc-600 dark:text-zinc-400 truncate">
+                      {m.title}
+                    </span>
+                  )}
+                  <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">
+                    {m.role}
+                  </span>
+                </div>
               ))}
             </div>
           </div>

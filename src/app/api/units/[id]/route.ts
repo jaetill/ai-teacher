@@ -10,8 +10,10 @@ import {
   standards,
   courses,
   driveFolders,
+  materials,
+  materialAttachments,
 } from "@/db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { eq, asc, inArray, and } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -104,13 +106,75 @@ export async function GET(
     .where(eq(driveFolders.folderKey, quarterFolderKey))
     .limit(1);
 
+  // ── Material attachments per lesson ───
+  const lessonAttachments = lessonIds.length
+    ? await db
+        .select({
+          attachableId: materialAttachments.attachableId,
+          role: materialAttachments.role,
+          materialId: materials.id,
+          title: materials.title,
+          materialType: materials.materialType,
+          driveWebUrl: materials.driveWebUrl,
+        })
+        .from(materialAttachments)
+        .innerJoin(materials, eq(materialAttachments.materialId, materials.id))
+        .where(
+          and(
+            eq(materialAttachments.attachableType, "lesson"),
+            inArray(materialAttachments.attachableId, lessonIds)
+          )
+        )
+    : [];
+
+  // Unit-level materials
+  const unitMaterials = await db
+    .select({
+      role: materialAttachments.role,
+      materialId: materials.id,
+      title: materials.title,
+      materialType: materials.materialType,
+      driveWebUrl: materials.driveWebUrl,
+    })
+    .from(materialAttachments)
+    .innerJoin(materials, eq(materialAttachments.materialId, materials.id))
+    .where(
+      and(
+        eq(materialAttachments.attachableType, "unit"),
+        eq(materialAttachments.attachableId, id)
+      )
+    );
+
+  // Group by lesson
+  const matsByLesson = new Map<
+    string,
+    Array<{ title: string; materialType: string; driveWebUrl: string | null; role: string }>
+  >();
+  for (const row of lessonAttachments) {
+    if (!matsByLesson.has(row.attachableId)) {
+      matsByLesson.set(row.attachableId, []);
+    }
+    matsByLesson.get(row.attachableId)!.push({
+      title: row.title,
+      materialType: row.materialType,
+      driveWebUrl: row.driveWebUrl,
+      role: row.role,
+    });
+  }
+
+  const lessonsWithAll = lessonsWithStandards.map((l) => ({
+    ...l,
+    materials: matsByLesson.get(l.id) ?? [],
+  }));
+
   return Response.json({
     unit: {
       ...unit,
       grade: course?.grade,
       courseTitle: course?.title,
-      lessons: lessonsWithStandards,
+      lessons: lessonsWithAll,
       standards: linkedStandards,
+      materials: unitMaterials,
       driveCurriculumUrl: curriculumFolder
         ? `https://drive.google.com/drive/folders/${curriculumFolder.driveId}`
         : null,
