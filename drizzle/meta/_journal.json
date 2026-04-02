@@ -15,6 +15,13 @@
       "when": 1775144715802,
       "tag": "0001_yummy_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775156372473,
+      "tag": "0002_lyrical_mandroid",
+      "breakpoints": true
     }
   ]
 }

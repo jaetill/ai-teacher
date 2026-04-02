@@ -58,6 +58,7 @@ function splitOutput(raw: string): { display: string; json: string | null } {
 
 export default function CurriculumPage() {
   const [courses, setCourses] = useState<Course[]>([]);
+  const [schoolYear, setSchoolYear] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -69,6 +70,7 @@ export default function CurriculumPage() {
       const res = await fetch("/api/courses");
       const data = await res.json();
       setCourses(data.courses ?? []);
+      setSchoolYear(data.schoolYear ?? null);
     } catch (err) {
       console.error("Failed to load courses", err);
     } finally {
@@ -174,6 +176,11 @@ export default function CurriculumPage() {
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               Curriculum Compiler
+              {schoolYear && (
+                <span className="ml-2 text-sm font-normal text-zinc-400">
+                  {schoolYear}
+                </span>
+              )}
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               Your courses and units — click a unit to see lessons

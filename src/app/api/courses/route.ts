@@ -2,10 +2,17 @@
 // Returns all courses with their units, ordered by grade and sort order.
 
 import { db } from "@/db";
-import { courses, units } from "@/db/schema";
-import { asc } from "drizzle-orm";
+import { courses, units, schoolYears } from "@/db/schema";
+import { asc, eq } from "drizzle-orm";
 
 export async function GET() {
+  // Get current school year
+  const [currentYear] = await db
+    .select()
+    .from(schoolYears)
+    .where(eq(schoolYears.isCurrent, true))
+    .limit(1);
+
   const allCourses = await db
     .select()
     .from(courses)
@@ -30,5 +37,8 @@ export async function GET() {
     units: allUnits.filter((u) => u.courseId === course.id),
   }));
 
-  return Response.json({ courses: result });
+  return Response.json({
+    schoolYear: currentYear?.name ?? null,
+    courses: result,
+  });
 }
