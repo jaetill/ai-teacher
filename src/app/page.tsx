@@ -16,8 +16,8 @@ const modules = [
   {
     href: "/differentiation",
     name: "Differentiation Engine",
-    description: "Leveled assignment versions for ELL, SPED, and above/below grade",
-    available: false,
+    description: "Adapt any assignment or reading for a specific student need",
+    available: true,
   },
   {
     href: "/performance",
