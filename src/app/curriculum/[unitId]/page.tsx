@@ -1,44 +1,100 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import {
-  findUnit,
-  updateUnit,
-  type CurriculumUnit,
-  type YearPlan,
-} from "@/lib/curriculum-store";
+
+// ── Types ───
+
+type Standard = {
+  id: string;
+  description: string;
+  strandCode: string;
+  strandName: string;
+  emphasis: string;
+};
+
+type Lesson = {
+  id: string;
+  title: string;
+  sortOrder: number;
+  durationMinutes: number | null;
+  objectives: string[] | null;
+  lessonPlan: Record<string, unknown>;
+  teacherNotes: string | null;
+  source: string;
+};
+
+type UnitDetail = {
+  id: string;
+  title: string;
+  grade: number;
+  courseTitle: string;
+  durationWeeks: number;
+  summary: string;
+  essentialQuestions: string | null;
+  anchorTexts: string | null;
+  contentWarnings: string | null;
+  teacherNotes: string | null;
+  aiGenerationContext: { lessonPlanMarkdown?: string } | null;
+  source: string;
+  lessons: Lesson[];
+  standards: Standard[];
+};
+
+// ── Component ───
 
 export default function UnitDetailPage() {
   const { unitId } = useParams<{ unitId: string }>();
-  const [unit, setUnit] = useState<CurriculumUnit | null>(null);
-  const [plan, setPlan] = useState<YearPlan | null>(null);
+  const [unit, setUnit] = useState<UnitDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
-  const [lessonPlan, setLessonPlan] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState("");
   const [generating, setGenerating] = useState(false);
-  const notesRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    const result = findUnit(unitId);
-    if (result) {
-      setUnit(result.unit);
-      setPlan(result.plan);
-      setNotes(result.unit.notes ?? "");
-      setLessonPlan(result.unit.lessonPlan ?? "");
+  const fetchUnit = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/units/${unitId}`);
+      if (!res.ok) {
+        setUnit(null);
+        return;
+      }
+      const data = await res.json();
+      setUnit(data.unit);
+      setNotes(data.unit.teacherNotes ?? "");
+      if (data.unit.aiGenerationContext?.lessonPlanMarkdown) {
+        setGeneratedPlan(data.unit.aiGenerationContext.lessonPlanMarkdown);
+      }
+    } catch (err) {
+      console.error("Failed to load unit", err);
+    } finally {
+      setLoading(false);
     }
   }, [unitId]);
 
-  function saveNotes() {
+  useEffect(() => {
+    fetchUnit();
+  }, [fetchUnit]);
+
+  async function saveNotes() {
     if (!unit) return;
-    updateUnit(unit.id, { notes });
+    setSavingNotes(true);
+    try {
+      await fetch(`/api/units/${unit.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+    } finally {
+      setSavingNotes(false);
+    }
   }
 
   async function generateLessonPlan() {
-    if (!unit || !plan) return;
+    if (!unit) return;
     setGenerating(true);
-    setLessonPlan("");
+    setGeneratedPlan("");
 
     let accumulated = "";
 
@@ -47,13 +103,12 @@ export default function UnitDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          grade: plan.grade,
+          grade: unit.grade,
           theme: unit.title,
-          weeks: unit.weeks,
-          standards: unit.standards,
+          weeks: unit.durationWeeks,
+          standards: unit.standards.map((s) => s.id).join(", "),
           context:
-            unit.summary +
-            (unit.notes ? `\n\nTeacher notes: ${unit.notes}` : ""),
+            unit.summary + (notes ? `\n\nTeacher notes: ${notes}` : ""),
         }),
       });
 
@@ -66,63 +121,68 @@ export default function UnitDetailPage() {
         const { done, value } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        setLessonPlan(accumulated);
+        setGeneratedPlan(accumulated);
       }
 
-      updateUnit(unit.id, { lessonPlan: accumulated });
+      // Save to DB
+      await fetch("/api/curriculum/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unitId: unit.id, lessonPlan: accumulated }),
+      });
     } catch (err) {
-      setLessonPlan("Something went wrong. Please try again.");
+      setGeneratedPlan("Something went wrong. Please try again.");
       console.error(err);
     } finally {
       setGenerating(false);
     }
   }
 
-  if (!unit || !plan) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
-        <p className="text-sm text-zinc-400">
-          Unit not found.{" "}
-          <Link href="/curriculum" className="underline">
-            Back to Year Planner
-          </Link>
-        </p>
+        <span className="text-sm text-zinc-400 animate-pulse">
+          Loading unit...
+        </span>
+      </div>
+    );
+  }
+
+  if (!unit) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
+        <p className="text-sm text-zinc-400">Unit not found.</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      {/* Header */}
-      <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 bg-white dark:bg-zinc-900">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              href="/curriculum"
-              className="text-sm text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors shrink-0"
-            >
-              ← Year Plan
-            </Link>
-            <span className="text-zinc-300 dark:text-zinc-700">/</span>
-            <span className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
-              {unit.title}
-            </span>
-          </div>
-          <span className="text-xs text-zinc-400 shrink-0 ml-4">
-            Grade {plan.grade} · {unit.weeks} weeks
-          </span>
-        </div>
-      </header>
-
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-        {/* ── Unit summary ──────────────────────────────────────────────────── */}
+        {/* ── Unit summary ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-            {unit.title}
-          </h1>
+          <div>
+            <div className="text-xs text-zinc-400 mb-1">
+              Grade {unit.grade} · {unit.durationWeeks} weeks ·{" "}
+              {unit.source === "human" ? "from curriculum docs" : "AI generated"}
+            </div>
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+              {unit.title}
+            </h1>
+          </div>
           <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
             {unit.summary}
           </p>
+          {unit.essentialQuestions && (
+            <div>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Essential questions:
+              </span>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                {unit.essentialQuestions}
+              </p>
+            </div>
+          )}
           {unit.anchorTexts && (
             <p className="text-sm">
               <span className="font-medium text-zinc-700 dark:text-zinc-300">
@@ -133,60 +193,120 @@ export default function UnitDetailPage() {
               </span>
             </p>
           )}
-          <p className="text-sm">
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              Standards:{" "}
-            </span>
-            <span className="text-zinc-500 dark:text-zinc-400">
-              {unit.standards}
-            </span>
-          </p>
-          {unit.flags && unit.flags !== "None" && (
+          {unit.contentWarnings && (
             <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-              ⚠ {unit.flags}
+              Warning: {unit.contentWarnings}
             </div>
           )}
         </div>
 
-        {/* ── Teacher notes ─────────────────────────────────────────────────── */}
+        {/* ── Standards ─── */}
+        {unit.standards.length > 0 && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
+            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              Standards ({unit.standards.length})
+            </h2>
+            <div className="space-y-2">
+              {unit.standards.map((s) => (
+                <div key={s.id} className="flex gap-3 text-sm">
+                  <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400 shrink-0 pt-0.5">
+                    {s.id}
+                  </span>
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {s.description}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Teacher notes ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
               Teacher Notes
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Saved here and fed back into future planning — student reactions, pacing issues, what to change
+              Saved and fed back into future planning
             </p>
           </div>
           <textarea
-            ref={notesRef}
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             onBlur={saveNotes}
-            placeholder="e.g. Students struggled with the ambiguous ending. Several found the content unsettling — consider a trigger warning or alternative text next year."
+            placeholder="e.g. Students struggled with the ambiguous ending. Consider a trigger warning next year."
             className="w-full resize-none rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
           />
           <button
             onClick={saveNotes}
+            disabled={savingNotes}
             className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
           >
-            Save notes
+            {savingNotes ? "Saving..." : "Save notes"}
           </button>
         </div>
 
-        {/* ── Lesson plan ───────────────────────────────────────────────────── */}
+        {/* ── Lessons from DB ─── */}
+        {unit.lessons.length > 0 && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              Lessons ({unit.lessons.length})
+            </h2>
+            <div className="space-y-3">
+              {unit.lessons.map((lesson) => (
+                <div
+                  key={lesson.id}
+                  className="rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs text-zinc-400 mb-0.5">
+                        Day {lesson.sortOrder}
+                        {lesson.durationMinutes &&
+                          ` · ${lesson.durationMinutes} min`}
+                      </div>
+                      <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                        {lesson.title}
+                      </div>
+                    </div>
+                    {lesson.source === "human" && (
+                      <span className="text-xs text-emerald-500 shrink-0">
+                        from docs
+                      </span>
+                    )}
+                  </div>
+                  {lesson.objectives && lesson.objectives.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {lesson.objectives.map((obj, i) => (
+                        <li
+                          key={i}
+                          className="text-xs text-zinc-500 dark:text-zinc-400 pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-zinc-400"
+                        >
+                          {obj}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── AI lesson sequence ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                Lesson Sequence
+                AI Lesson Sequence
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Week-by-week lesson breakdown for this unit
+                Generate a detailed week-by-week breakdown
               </p>
             </div>
-            {lessonPlan && !generating && (
+            {generatedPlan && !generating && (
               <button
                 onClick={generateLessonPlan}
                 className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
@@ -196,7 +316,7 @@ export default function UnitDetailPage() {
             )}
           </div>
 
-          {!lessonPlan && !generating && (
+          {!generatedPlan && !generating && (
             <button
               onClick={generateLessonPlan}
               className="w-full h-11 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
@@ -205,16 +325,16 @@ export default function UnitDetailPage() {
             </button>
           )}
 
-          {generating && !lessonPlan && (
+          {generating && !generatedPlan && (
             <div className="flex items-center gap-2 text-sm text-zinc-400">
               <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse" />
               Building lesson sequence...
             </div>
           )}
 
-          {lessonPlan && (
+          {generatedPlan && (
             <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
-              <ReactMarkdown>{lessonPlan}</ReactMarkdown>
+              <ReactMarkdown>{generatedPlan}</ReactMarkdown>
               {generating && (
                 <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
               )}

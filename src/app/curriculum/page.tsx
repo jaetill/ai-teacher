@@ -1,14 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import {
-  saveYearPlan,
-  loadYearPlan,
-  type YearPlan,
-  type CurriculumUnit,
-} from "@/lib/curriculum-store";
+
+// ── Types ───
+
+type UnitSummary = {
+  id: string;
+  title: string;
+  sortOrder: number;
+  durationWeeks: number;
+  summary: string;
+  contentWarnings: string | null;
+  source: string;
+};
+
+type Course = {
+  id: string;
+  title: string;
+  grade: number;
+  units: UnitSummary[];
+};
 
 interface FormState {
   grade: string;
@@ -28,7 +41,7 @@ const emptyForm: FormState = {
   notes: "",
 };
 
-// ── Parse units from streamed response ───────────────────────────────────────
+// ── Parse units from streamed response ───
 
 const SENTINEL = "\n---UNITS---\n";
 
@@ -41,64 +54,40 @@ function splitOutput(raw: string): { display: string; json: string | null } {
   };
 }
 
-function parseUnits(json: string): CurriculumUnit[] {
-  const parsed = JSON.parse(json) as Array<{
-    title: string;
-    weeks: number;
-    standards: string;
-    summary: string;
-    anchorTexts: string;
-    flags: string;
-  }>;
-  return parsed.map((u, i) => ({
-    id: crypto.randomUUID(),
-    index: i,
-    title: u.title,
-    weeks: Number(u.weeks),
-    standards: u.standards ?? "",
-    summary: u.summary ?? "",
-    anchorTexts: u.anchorTexts ?? "",
-    flags: u.flags ?? "",
-    notes: "",
-  }));
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ───
 
 export default function CurriculumPage() {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [displayOutput, setDisplayOutput] = useState("");
-  const [units, setUnits] = useState<CurriculumUnit[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [hasGenerated, setHasGenerated] = useState(false);
-  const [savedPlan, setSavedPlan] = useState<YearPlan | null>(null);
+
+  const fetchCourses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/courses");
+      const data = await res.json();
+      setCourses(data.courses ?? []);
+    } catch (err) {
+      console.error("Failed to load courses", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (form.grade) {
-      setSavedPlan(loadYearPlan(parseInt(form.grade)));
-    } else {
-      setSavedPlan(null);
-    }
-  }, [form.grade]);
+    fetchCourses();
+  }, [fetchCourses]);
 
   function update(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function loadSaved() {
-    if (!savedPlan) return;
-    const { display } = splitOutput(savedPlan.rawPlan);
-    setDisplayOutput(display);
-    setUnits(savedPlan.units);
-    setHasGenerated(true);
   }
 
   async function generate() {
     if (!form.grade || !form.schoolYear || !form.standards) return;
     setGenerating(true);
     setDisplayOutput("");
-    setUnits([]);
-    setHasGenerated(true);
 
     let accumulated = "";
 
@@ -127,18 +116,34 @@ export default function CurriculumPage() {
         setDisplayOutput(splitOutput(accumulated).display);
       }
 
-      // Parse and save after stream completes
+      // Parse and save to database
       const { json } = splitOutput(accumulated);
       if (json) {
-        const parsedUnits = parseUnits(json);
-        setUnits(parsedUnits);
-        saveYearPlan({
-          grade: parseInt(form.grade),
-          schoolYear: form.schoolYear,
-          rawPlan: accumulated,
-          units: parsedUnits,
-          createdAt: new Date().toISOString(),
+        const parsedUnits = JSON.parse(json) as Array<{
+          title: string;
+          weeks: number;
+          standards: string;
+          summary: string;
+          anchorTexts: string;
+          flags: string;
+        }>;
+
+        await fetch("/api/year-plan/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grade: parseInt(form.grade),
+            schoolYear: form.schoolYear,
+            units: parsedUnits,
+            rawPlan: accumulated,
+          }),
         });
+
+        // Reload courses from DB
+        await fetchCourses();
+        setShowForm(false);
+        setDisplayOutput("");
+        setForm(emptyForm);
       }
     } catch (err) {
       setDisplayOutput("Something went wrong. Please try again.");
@@ -148,45 +153,130 @@ export default function CurriculumPage() {
     }
   }
 
-  function reset() {
-    setForm(emptyForm);
-    setDisplayOutput("");
-    setUnits([]);
-    setHasGenerated(false);
-    setSavedPlan(null);
-  }
-
   const canGenerate =
     form.grade && form.schoolYear && form.standards && !generating;
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
+        <span className="text-sm text-zinc-400 animate-pulse">
+          Loading curriculum...
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      {/* Header */}
-      <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 bg-white dark:bg-zinc-900">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* ── Header ─── */}
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               Curriculum Compiler
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Plan your year, then expand each unit into a full lesson sequence
+              Your courses and units — click a unit to see lessons
             </p>
           </div>
-          {hasGenerated && (
+          {!showForm && (
             <button
-              onClick={reset}
-              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              onClick={() => setShowForm(true)}
+              className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
             >
-              New plan
+              + Generate Year Plan
             </button>
           )}
         </div>
-      </header>
 
-      <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-        {/* ── Form ──────────────────────────────────────────────────────────── */}
-        {!hasGenerated && (
+        {/* ── Existing courses ─── */}
+        {courses.length > 0 && !showForm && (
+          <div className="space-y-8">
+            {courses.map((course) => (
+              <div key={course.id}>
+                <h2 className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3">
+                  Grade {course.grade}
+                </h2>
+                {course.units.length > 0 ? (
+                  <div className="grid gap-3">
+                    {course.units.map((unit, i) => (
+                      <Link
+                        key={unit.id}
+                        href={`/curriculum/${unit.id}`}
+                        className="block bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 px-5 py-4 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="text-xs text-zinc-400 mb-1">
+                              Unit {i + 1} · {unit.durationWeeks} weeks
+                              {unit.source === "human" && (
+                                <span className="ml-2 text-emerald-500">
+                                  from curriculum docs
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                              {unit.title}
+                            </div>
+                            <div className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
+                              {unit.summary}
+                            </div>
+                            {unit.contentWarnings && (
+                              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                                Warning: {unit.contentWarnings}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-zinc-400 text-sm shrink-0">
+                            →
+                          </span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-400">
+                    No units yet — generate a year plan to get started.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Empty state ─── */}
+        {courses.length === 0 && !showForm && (
+          <div className="text-center py-16">
+            <p className="text-zinc-500 dark:text-zinc-400 mb-4">
+              No curriculum yet. Generate a year plan to get started.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+            >
+              Generate Year Plan
+            </button>
+          </div>
+        )}
+
+        {/* ── Generation form ─── */}
+        {showForm && (
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                Generate a new year plan
+              </h2>
+              <button
+                onClick={() => {
+                  setShowForm(false);
+                  setDisplayOutput("");
+                }}
+                className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -216,21 +306,6 @@ export default function CurriculumPage() {
               </div>
             </div>
 
-            {/* Saved plan banner */}
-            {savedPlan && (
-              <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-4 py-3 text-sm">
-                <span className="text-zinc-500 dark:text-zinc-400">
-                  Saved plan for Grade {savedPlan.grade} ({savedPlan.schoolYear})
-                </span>
-                <button
-                  onClick={loadSaved}
-                  className="font-medium text-zinc-900 dark:text-zinc-100 hover:underline"
-                >
-                  Load it
-                </button>
-              </div>
-            )}
-
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 Standards
@@ -252,9 +327,6 @@ export default function CurriculumPage() {
                 Existing Curriculum{" "}
                 <span className="font-normal text-zinc-400">(optional)</span>
               </label>
-              <p className="text-xs text-zinc-400">
-                Paste your current curriculum — Claude will review it and suggest improvements
-              </p>
               <textarea
                 rows={4}
                 value={form.existingCurriculum}
@@ -269,14 +341,11 @@ export default function CurriculumPage() {
                 Notes from this year{" "}
                 <span className="font-normal text-zinc-400">(optional)</span>
               </label>
-              <p className="text-xs text-zinc-400">
-                What worked, what didn&apos;t, student reactions — feeds into next year&apos;s recommendations
-              </p>
               <textarea
                 rows={3}
                 value={form.notes}
                 onChange={(e) => update("notes", e.target.value)}
-                placeholder="e.g. Refugee caused significant emotional distress for several students. Poetry unit ran 2 weeks over. Students struggled with argumentative writing."
+                placeholder="e.g. Poetry unit ran 2 weeks over. Students struggled with argumentative writing."
                 className="w-full resize-none rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
               />
             </div>
@@ -286,67 +355,19 @@ export default function CurriculumPage() {
               disabled={!canGenerate}
               className="w-full h-11 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-40 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
             >
-              Generate Year Plan
+              {generating ? "Generating..." : "Generate Year Plan"}
             </button>
           </div>
         )}
 
-        {/* ── Output ────────────────────────────────────────────────────────── */}
-        {hasGenerated && (
-          <>
-            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
-              {generating && !displayOutput && (
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                  <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse" />
-                  Planning your year...
-                </div>
-              )}
-              <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
-                <ReactMarkdown>{displayOutput}</ReactMarkdown>
-                {generating && displayOutput && (
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
-                )}
-              </div>
+        {/* ── Streaming output ─── */}
+        {generating && displayOutput && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
+            <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
+              <ReactMarkdown>{displayOutput}</ReactMarkdown>
+              <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
             </div>
-
-            {/* Unit cards */}
-            {units.length > 0 && (
-              <div className="space-y-3">
-                <h2 className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                  Click a unit to expand into a full lesson sequence
-                </h2>
-                <div className="grid gap-3">
-                  {units.map((unit, i) => (
-                    <Link
-                      key={unit.id}
-                      href={`/curriculum/${unit.id}`}
-                      className="block bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 px-5 py-4 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="text-xs text-zinc-400 mb-1">
-                            Unit {i + 1} · {unit.weeks} weeks
-                          </div>
-                          <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                            {unit.title}
-                          </div>
-                          <div className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
-                            {unit.summary}
-                          </div>
-                          {unit.flags && unit.flags !== "None" && (
-                            <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                              ⚠ {unit.flags}
-                            </div>
-                          )}
-                        </div>
-                        <span className="text-zinc-400 text-sm shrink-0">→</span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
     </div>
