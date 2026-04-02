@@ -28,8 +28,8 @@ const modules = [
   {
     href: "/communications",
     name: "Communication Engine",
-    description: "Draft parent and admin communications from student data",
-    available: false,
+    description: "Draft parent and admin emails from a quick situation description",
+    available: true,
   },
 ];
 
