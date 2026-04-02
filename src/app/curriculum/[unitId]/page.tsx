@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 
 function LessonCard({ lesson }: { lesson: Lesson }) {
@@ -113,6 +114,7 @@ type UnitDetail = {
   title: string;
   grade: number;
   courseTitle: string;
+  sortOrder: number;
   durationWeeks: number;
   summary: string;
   essentialQuestions: string | null;
@@ -242,11 +244,29 @@ export default function UnitDetailPage() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* ── Breadcrumb ─── */}
+        <nav className="flex items-center gap-1.5 text-xs text-zinc-400">
+          <Link
+            href="/curriculum"
+            className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+          >
+            Curriculum
+          </Link>
+          <span>/</span>
+          <span>Grade {unit.grade}</span>
+          <span>/</span>
+          <span>Q{Math.ceil(unit.sortOrder / 2)}</span>
+          <span>/</span>
+          <span className="text-zinc-600 dark:text-zinc-300 truncate">
+            {unit.title}
+          </span>
+        </nav>
+
         {/* ── Unit summary ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
           <div>
             <div className="text-xs text-zinc-400 mb-1">
-              Grade {unit.grade} · {unit.durationWeeks} weeks ·{" "}
+              {unit.durationWeeks} weeks ·{" "}
               {unit.source === "human" ? "from curriculum docs" : "AI generated"}
             </div>
             <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
