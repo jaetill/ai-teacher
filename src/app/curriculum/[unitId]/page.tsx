@@ -220,6 +220,47 @@ function LessonStandardsSection({
   );
 }
 
+function WeekGroup({ week }: { week: { week: number; lessons: Lesson[] } }) {
+  const [open, setOpen] = useState(false);
+  const noteCount = week.lessons.filter((l) => l.teacherNotes).length;
+
+  return (
+    <div className="rounded-lg border border-zinc-100 dark:border-zinc-800">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}
+          >
+            →
+          </span>
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Week {week.week}
+          </span>
+          <span className="text-xs text-zinc-400">
+            {week.lessons.length} lessons
+          </span>
+          {noteCount > 0 && (
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title={`${noteCount} with notes`} />
+          )}
+        </div>
+        <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate max-w-[50%] text-right">
+          {week.lessons.map((l) => l.title).join(" · ")}
+        </div>
+      </button>
+      {open && (
+        <div className="px-4 pb-3 space-y-2">
+          {week.lessons.map((lesson) => (
+            <LessonCard key={lesson.id} lesson={lesson} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UnitStandardsSection({ standards }: { standards: Standard[] }) {
   const [open, setOpen] = useState(false);
   return (
@@ -614,19 +655,10 @@ export default function UnitDetailPage() {
                 )}
               </div>
             </div>
-            <div className="space-y-5">
+            <div className="space-y-2">
               {groupLessonsByWeek(unit.lessons, unit.durationWeeks).map(
                 (week) => (
-                  <div key={week.week}>
-                    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-                      Week {week.week}
-                    </div>
-                    <div className="space-y-2">
-                      {week.lessons.map((lesson) => (
-                        <LessonCard key={lesson.id} lesson={lesson} />
-                      ))}
-                    </div>
-                  </div>
+                  <WeekGroup key={week.week} week={week} />
                 )
               )}
             </div>
