@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "skills": {
+    "gws-admin-reports": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "c168a3e6fc414801042af2e1c32ac467d2f1595f3b1f201d9096b7a60703cdce"
+    },
+    "gws-calendar": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "8b5b3e44a68bf616b2698a7f733758616f922614d66c81e41216780a97b1ad31"
+    },
+    "gws-calendar-agenda": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "c3ecbc924439e1a0aa965ba07f75592248e12fde19558ad59aa280a8488046c2"
+    },
+    "gws-calendar-insert": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "12f904fd970d3f67f7c7bb754c00184501bf2f61cc5dd3bbbaf7da0b6dacef8f"
+    },
+    "gws-chat": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "38ceeecde0f2f8df50336c5786122cd8133db7ea7c74a0f58b4ddf719d5dae27"
+    },
+    "gws-chat-send": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "9f4e68d77fab7bb477211e53455acd8c24091352f9ae3b6cb60521dff7794962"
+    },
+    "gws-classroom": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "6873938c27b2387ec5ae590c025506df9137afc37dafc1ca7e602a74a8b47692"
+    },
+    "gws-docs": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "3d307f7d0c8aac69ef0f852a665df4312d981e9e56dbbc559327df91f8012b38"
+    },
+    "gws-docs-write": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "a5d9b287951c0758759cb8ce03c5d1b7234da607d774ebc878aa3afadc4b72d9"
+    },
+    "gws-drive": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "90f36f7b0910e785062eabb811be0d95dc125c3bb97a089a3c9e60083171211e"
+    },
+    "gws-drive-upload": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "585fbd2c22f8db0318501704ebcc0ece2b75fb2d2222e818edabd4225c074cb1"
+    },
+    "gws-events": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "2885f13caf6c949bc52f24d45e4bc4c595c0c79a1c85919e936a5c2626a2050e"
+    },
+    "gws-events-renew": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "19b4097c6459cab6b759b51fb915a99f7cf787300a65d2ea9ce07d76744effc1"
+    },
+    "gws-events-subscribe": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "87728ce393e45890414f812b16c1443257649a9abdd39afa4786c5cab3047ee3"
+    },
+    "gws-forms": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "06aa0c48af2163b25227f2a6e112e044827470c28dc216fe2c09eb91c4f2a539"
+    },
+    "gws-gmail": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "31b12bd4bfa3fe1b5132067c597f85f5d3456060658a904a54ed6cb5b32ab6e4"
+    },
+    "gws-gmail-forward": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "55a617ef3be0b39c45e23309323a8a9b36274aa1cb1028ab9fd5402cc58dcd0a"
+    },
+    "gws-gmail-read": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "1d5f6f6bc447a3cec110b2335a289cc4e3d4eb39b87b0ba54f0f0fb900fc8683"
+    },
+    "gws-gmail-reply": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "dfed0b1a7cf5c96bacaa4835cfffb99c88c764b0977a9c8ecc1e28aa306f7987"
+    },
+    "gws-gmail-reply-all": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "d80f8f0ec6c66bf81a30dd313346eaf7f4ee87d1e944aa4d214d7e45c02c2e20"
+    },
+    "gws-gmail-send": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "a41a646aac4deb02f018e5a5e29ff58660aa8e4565a5e8b92b33dec89fdceaf6"
+    },
+    "gws-gmail-triage": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "12cae23da45451794098c6d8d93cb5e6163f141135769f3e986d565d4c1a8b45"
+    },
+    "gws-gmail-watch": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "dfbf1ae21f6e80a2e0cc4569da7e46859df5520e77c8b03ba1d1ef5d590ddeef"
+    },
+    "gws-keep": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "79561d37e2413957f971af9b7e0e455ddb03fca653716764389b197fb8b1af81"
+    },
+    "gws-meet": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "7000f27cfe29f1481d4698227d187770df6ff80922752013bd8cd6e8bd347a17"
+    },
+    "gws-modelarmor": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "4943862b26d8e3f030d0240f25ac7b40ad43b34b505c75a2237dd695db871ac9"
+    },
+    "gws-modelarmor-create-template": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "dbec42119c36409b1734b1aa843fe70eb61eb2a0541244bb52183542fec65993"
+    },
+    "gws-modelarmor-sanitize-prompt": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "b024f5e515c17eb95984b71f28a79fd1edf0a74472171127d3423ec27172a323"
+    },
+    "gws-modelarmor-sanitize-response": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "c9dc3149041c6e785e25bd07539052be75185323e02016c9570f347eb4f0b41a"
+    },
+    "gws-people": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "e751e6b9224ed44da3d469500fd7c0867202a1a32d93e1a0535011b96425a269"
+    },
+    "gws-script": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "6f78b4fff627cd42d8205e7bba8dadab428b2206d99e52aef8f55ae3ce4774d7"
+    },
+    "gws-script-push": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "3a28d8822b14b45610bbd70ab2bffb9e127c8bc0ef64c787372791e133f059ee"
+    },
+    "gws-shared": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "da1efa9a68aca4faa72795fb3d785a04465b2ca9c12c936fee66be812d2a5cf1"
+    },
+    "gws-sheets": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "cfa962871f24236925362044aa6cb5f68f44929b50a935bd2c1ea3c55ba6183d"
+    },
+    "gws-sheets-append": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "f107b47cfc18dfc5faffad548af76ece65cf206371dd1313120be32d264ac55a"
+    },
+    "gws-sheets-read": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "aca4344d53da37b2e88751f2901210b7a6fe83b5b15841f886e32c80c7672ec3"
+    },
+    "gws-slides": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "b9300a6cbc13380916b9a4ab225010beb0a74c853fe85d5edd00eae61601efd8"
+    },
+    "gws-tasks": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "bdf6b3b129f22862757426272950ee2aecd615a5c408f065487149c95e0d8327"
+    },
+    "gws-workflow": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "6cf12e4e9407d5535b6f2c82b487fff9accd7f619b48f98c403daf48200714e4"
+    },
+    "gws-workflow-email-to-task": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "9e4f0c84c7a5b4822ebae01b093a6649d5406b9991144427a283d2958a5d3015"
+    },
+    "gws-workflow-file-announce": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "79c82ea8a06c81df0164aa9568bb2290132a216caaf1c98c900505a112458ec8"
+    },
+    "gws-workflow-meeting-prep": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "3ddf39ccba14616051208ed2c8cbe66c536078658bf1a106403e8a77e6d44c63"
+    },
+    "gws-workflow-standup-report": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "a2ec743d039151c369fe8b4ce476f4e4997784e02ce28b2a51a8e8207def1ed1"
+    },
+    "gws-workflow-weekly-digest": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "f450003a378b061de3e4e15489a9111c07a727547ef68351c35fdff92a9ccbe8"
+    }
+  }
+}

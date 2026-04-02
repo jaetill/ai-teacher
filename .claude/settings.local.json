@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(claude-api)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:github.com)",
+      "Skill(update-config)",
+      "Bash(gws:*)"
+    ]
+  }
+}
