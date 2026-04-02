@@ -4,6 +4,89 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
+function LessonCard({ lesson }: { lesson: Lesson }) {
+  const [expanded, setExpanded] = useState(false);
+  const activities = (lesson.lessonPlan as { activities?: string[] })
+    ?.activities;
+
+  return (
+    <div
+      className="rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-zinc-400 mb-0.5">
+            Day {lesson.sortOrder}
+            {lesson.durationMinutes && ` · ${lesson.durationMinutes} min`}
+          </div>
+          <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            {lesson.title}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {lesson.source === "human" && (
+            <span className="text-xs text-emerald-500">from docs</span>
+          )}
+          <span
+            className={`text-zinc-400 text-xs transition-transform ${expanded ? "rotate-90" : ""}`}
+          >
+            →
+          </span>
+        </div>
+      </div>
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+          {lesson.objectives && lesson.objectives.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Objectives
+              </div>
+              <ul className="space-y-1">
+                {lesson.objectives.map((obj, i) => (
+                  <li
+                    key={i}
+                    className="text-xs text-zinc-600 dark:text-zinc-400 pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-zinc-400"
+                  >
+                    {obj}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {activities && activities.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Activities
+              </div>
+              <ul className="space-y-1">
+                {activities.map((act, i) => (
+                  <li
+                    key={i}
+                    className="text-xs text-zinc-600 dark:text-zinc-400 pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-zinc-400"
+                  >
+                    {act}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {lesson.teacherNotes && (
+            <div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Notes
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {lesson.teacherNotes}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Types ───
 
 type Standard = {
@@ -170,9 +253,14 @@ export default function UnitDetailPage() {
               {unit.title}
             </h1>
           </div>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            {unit.summary}
-          </p>
+          <div>
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              Summary
+            </h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              {unit.summary}
+            </p>
+          </div>
           {unit.essentialQuestions && (
             <div>
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -256,40 +344,7 @@ export default function UnitDetailPage() {
             </h2>
             <div className="space-y-3">
               {unit.lessons.map((lesson) => (
-                <div
-                  key={lesson.id}
-                  className="rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs text-zinc-400 mb-0.5">
-                        Day {lesson.sortOrder}
-                        {lesson.durationMinutes &&
-                          ` · ${lesson.durationMinutes} min`}
-                      </div>
-                      <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                        {lesson.title}
-                      </div>
-                    </div>
-                    {lesson.source === "human" && (
-                      <span className="text-xs text-emerald-500 shrink-0">
-                        from docs
-                      </span>
-                    )}
-                  </div>
-                  {lesson.objectives && lesson.objectives.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {lesson.objectives.map((obj, i) => (
-                        <li
-                          key={i}
-                          className="text-xs text-zinc-500 dark:text-zinc-400 pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-zinc-400"
-                        >
-                          {obj}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                <LessonCard key={lesson.id} lesson={lesson} />
               ))}
             </div>
           </div>

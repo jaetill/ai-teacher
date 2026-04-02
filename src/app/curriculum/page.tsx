@@ -191,56 +191,74 @@ export default function CurriculumPage() {
 
         {/* ── Existing courses ─── */}
         {courses.length > 0 && !showForm && (
-          <div className="space-y-8">
-            {courses.map((course) => (
-              <div key={course.id}>
-                <h2 className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3">
-                  Grade {course.grade}
-                </h2>
-                {course.units.length > 0 ? (
-                  <div className="grid gap-3">
-                    {course.units.map((unit, i) => (
-                      <Link
-                        key={unit.id}
-                        href={`/curriculum/${unit.id}`}
-                        className="block bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 px-5 py-4 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <div className="text-xs text-zinc-400 mb-1">
-                              Unit {i + 1} · {unit.durationWeeks} weeks
-                              {unit.source === "human" && (
-                                <span className="ml-2 text-emerald-500">
-                                  from curriculum docs
-                                </span>
-                              )}
+          <div className="space-y-10">
+            {courses.map((course) => {
+              // Group units into quarters (2 units per quarter as a rough guide)
+              const quarters = ["Q1", "Q2", "Q3", "Q4"];
+              const unitsPerQuarter = Math.max(
+                2,
+                Math.ceil(course.units.length / 4)
+              );
+
+              return (
+                <div key={course.id}>
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 mb-4">
+                    Grade {course.grade} — {course.title}
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {quarters.map((q, qi) => {
+                      const start = qi * unitsPerQuarter;
+                      const quarterUnits = course.units.slice(
+                        start,
+                        start + unitsPerQuarter
+                      );
+
+                      return (
+                        <div
+                          key={q}
+                          className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
+                        >
+                          <h3 className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3">
+                            {q}
+                          </h3>
+                          {quarterUnits.length > 0 ? (
+                            <div className="space-y-2">
+                              {quarterUnits.map((unit, i) => (
+                                <Link
+                                  key={unit.id}
+                                  href={`/curriculum/${unit.id}`}
+                                  className="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+                                >
+                                  <div className="text-xs text-zinc-400 mb-0.5">
+                                    Unit {start + i + 1} ·{" "}
+                                    {unit.durationWeeks} weeks
+                                    {unit.source === "human" && (
+                                      <span className="ml-1 text-emerald-500">
+                                        from docs
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                                    {unit.title}
+                                  </div>
+                                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
+                                    {unit.summary}
+                                  </div>
+                                </Link>
+                              ))}
                             </div>
-                            <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                              {unit.title}
-                            </div>
-                            <div className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
-                              {unit.summary}
-                            </div>
-                            {unit.contentWarnings && (
-                              <div className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                Warning: {unit.contentWarnings}
-                              </div>
-                            )}
-                          </div>
-                          <span className="text-zinc-400 text-sm shrink-0">
-                            →
-                          </span>
+                          ) : (
+                            <p className="text-xs text-zinc-400 italic">
+                              No units planned
+                            </p>
+                          )}
                         </div>
-                      </Link>
-                    ))}
+                      );
+                    })}
                   </div>
-                ) : (
-                  <p className="text-sm text-zinc-400">
-                    No units yet — generate a year plan to get started.
-                  </p>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
