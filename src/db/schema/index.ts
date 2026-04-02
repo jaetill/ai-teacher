@@ -13,3 +13,4 @@ export {
 } from "./calendar";
 export { copilotConversations, copilotMessages } from "./copilot";
 export { aiInteractions } from "./ai-interactions";
+export { driveFolders } from "./drive-folders";
