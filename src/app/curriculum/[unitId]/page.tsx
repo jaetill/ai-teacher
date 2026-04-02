@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
 import { useCopilot } from "@/components/CopilotProvider";
 
 // Group lessons into weeks by distributing evenly across the unit duration.
@@ -362,8 +361,6 @@ export default function UnitDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
-  const [generatedPlan, setGeneratedPlan] = useState("");
-  const [generating, setGenerating] = useState(false);
   const [inferring, setInferring] = useState(false);
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -378,9 +375,6 @@ export default function UnitDetailPage() {
       const data = await res.json();
       setUnit(data.unit);
       setNotes(data.unit.teacherNotes ?? "");
-      if (data.unit.aiGenerationContext?.lessonPlanMarkdown) {
-        setGeneratedPlan(data.unit.aiGenerationContext.lessonPlanMarkdown);
-      }
       // Set copilot context
       const u = data.unit;
       const q = `Q${Math.ceil(u.sortOrder / 2)}`;
@@ -409,53 +403,6 @@ export default function UnitDetailPage() {
       });
     } finally {
       setSavingNotes(false);
-    }
-  }
-
-  async function generateLessonPlan() {
-    if (!unit) return;
-    setGenerating(true);
-    setGeneratedPlan("");
-
-    let accumulated = "";
-
-    try {
-      const res = await fetch("/api/curriculum", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grade: unit.grade,
-          theme: unit.title,
-          weeks: unit.durationWeeks,
-          standards: unit.standards.map((s) => s.id).join(", "),
-          context:
-            unit.summary + (notes ? `\n\nTeacher notes: ${notes}` : ""),
-        }),
-      });
-
-      if (!res.ok || !res.body) throw new Error(`API error ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        setGeneratedPlan(accumulated);
-      }
-
-      // Save to DB
-      await fetch("/api/curriculum/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ unitId: unit.id, lessonPlan: accumulated }),
-      });
-    } catch (err) {
-      setGeneratedPlan("Something went wrong. Please try again.");
-      console.error(err);
-    } finally {
-      setGenerating(false);
     }
   }
 
@@ -716,54 +663,6 @@ export default function UnitDetailPage() {
           <UnitStandardsSection standards={unit.standards} />
         )}
 
-        {/* ── AI lesson sequence (only for units without real lessons) ─── */}
-        {unit.lessons.length === 0 && (
-        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                AI Lesson Sequence
-              </h2>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Generate a detailed week-by-week breakdown
-              </p>
-            </div>
-            {generatedPlan && !generating && (
-              <button
-                onClick={generateLessonPlan}
-                className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-              >
-                Regenerate
-              </button>
-            )}
-          </div>
-
-          {!generatedPlan && !generating && (
-            <button
-              onClick={generateLessonPlan}
-              className="w-full h-11 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
-            >
-              Generate Lesson Sequence
-            </button>
-          )}
-
-          {generating && !generatedPlan && (
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse" />
-              Building lesson sequence...
-            </div>
-          )}
-
-          {generatedPlan && (
-            <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
-              <ReactMarkdown>{generatedPlan}</ReactMarkdown>
-              {generating && (
-                <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
-              )}
-            </div>
-          )}
-        </div>
-        )}
       </div>
     </div>
   );
