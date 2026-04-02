@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { href: "/curriculum", label: "Curriculum" },
   { href: "/differentiation", label: "Differentiation" },
   { href: "/communications", label: "Communications" },
-  { href: "/upload", label: "Upload" },
+  { href: "/import", label: "Import" },
 ];
 
 export default function NavBar() {
