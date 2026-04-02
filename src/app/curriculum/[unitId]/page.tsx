@@ -90,49 +90,6 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </ul>
             </div>
           )}
-          <div onClick={(e) => e.stopPropagation()}>
-            <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-              Notes
-            </div>
-            <textarea
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={saveNotes}
-              placeholder="Pacing thoughts, what to adjust, student reactions..."
-              className="w-full resize-none rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
-            />
-            {saving && (
-              <span className="text-xs text-zinc-400 mt-0.5">Saving...</span>
-            )}
-          </div>
-          {lesson.standards && lesson.standards.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-                Standards
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {lesson.standards.map((s) => (
-                  <span
-                    key={s.id}
-                    className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-400"
-                    title={s.coverageType}
-                  >
-                    {s.id}
-                    <span className="text-zinc-400 dark:text-zinc-500">
-                      {s.coverageType === "introduces"
-                        ? "intro"
-                        : s.coverageType === "teaches"
-                          ? "teach"
-                          : s.coverageType === "reinforces"
-                            ? "review"
-                            : "assess"}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
           {lesson.materials && lesson.materials.length > 0 && (
             <div>
               <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
@@ -164,6 +121,80 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </div>
             </div>
           )}
+          <div onClick={(e) => e.stopPropagation()}>
+            <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+              Notes
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
+              }}
+              ref={(el) => {
+                if (el) {
+                  el.style.height = "auto";
+                  el.style.height = el.scrollHeight + "px";
+                }
+              }}
+              onBlur={saveNotes}
+              placeholder="Pacing thoughts, what to adjust, student reactions..."
+              className="w-full resize-none rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 overflow-hidden"
+            />
+            {saving && (
+              <span className="text-xs text-zinc-400 mt-0.5">Saving...</span>
+            )}
+          </div>
+          {lesson.standards && lesson.standards.length > 0 && (
+            <LessonStandardsSection standards={lesson.standards} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LessonStandardsSection({
+  standards,
+}: {
+  standards: LessonStandard[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
+        className="text-xs font-medium text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400 transition-colors flex items-center gap-1"
+      >
+        <span className={`transition-transform ${open ? "rotate-90" : ""}`}>
+          →
+        </span>
+        Standards ({standards.length})
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {standards.map((s) => (
+            <span
+              key={s.id}
+              className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-400"
+              title={s.coverageType}
+            >
+              {s.id}
+              <span className="text-zinc-400 dark:text-zinc-500">
+                {s.coverageType === "introduces"
+                  ? "intro"
+                  : s.coverageType === "teaches"
+                    ? "teach"
+                    : s.coverageType === "reinforces"
+                      ? "review"
+                      : "assess"}
+              </span>
+            </span>
+          ))}
         </div>
       )}
     </div>
