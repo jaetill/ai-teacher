@@ -10,7 +10,13 @@ const modules = [
   {
     href: "/upload",
     name: "Bulk Upload",
-    description: "Upload files to Google Drive with AI-powered classification",
+    description: "Upload files from your computer to Drive with AI classification",
+    available: true,
+  },
+  {
+    href: "/import",
+    name: "Drive Import",
+    description: "Import files from a shared Google Drive folder into your AI Teacher structure",
     available: true,
   },
   {
