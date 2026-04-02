@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 
 const GRADES = [6, 7, 8];
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
-const UNIT_SUBFOLDERS = ["Curriculum", "Lessons", "Activities", "Assessments"];
+const UNIT_SUBFOLDERS = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
 
 type FolderEntry = { key: string; driveId: string; name: string; parentKey: string | null };
 

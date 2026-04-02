@@ -37,6 +37,7 @@ export const CATEGORIES = [
   "Lessons",
   "Activities",
   "Assessments",
+  "Resources",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
