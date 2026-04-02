@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CATEGORIES,
@@ -23,7 +24,7 @@ type DriveFile = {
   driveWebUrl?: string;
 };
 
-type Step = "input" | "classify" | "import";
+type Step = "input" | "classify" | "import" | "build";
 
 // ── Helpers ───
 
@@ -39,6 +40,7 @@ function extractFolderId(input: string): string | null {
 // ── Component ───
 
 export default function ImportFromDrive() {
+  const router = useRouter();
   const [step, setStep] = useState<Step>("input");
   const [folderInput, setFolderInput] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -46,6 +48,8 @@ export default function ImportFromDrive() {
   const [loading, setLoading] = useState(false);
   const [classifying, setClassifying] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [building, setBuilding] = useState(false);
+  const [buildResult, setBuildResult] = useState<{ unitId: string; unitTitle: string; lessonCount: number } | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +132,54 @@ export default function ImportFromDrive() {
       setError(err instanceof Error ? err.message : "Classification failed");
     } finally {
       setClassifying(false);
+    }
+  }
+
+  // ── Step 3.5: Build curriculum ───
+
+  async function buildCurriculum() {
+    // Determine grade and quarter from the majority of imported files
+    const gradeCounts = new Map<number, number>();
+    const destCounts = new Map<string, number>();
+    for (const f of files) {
+      if (f.status === "done") {
+        gradeCounts.set(f.grade, (gradeCounts.get(f.grade) ?? 0) + 1);
+        if (f.destination !== "YearPlan") {
+          destCounts.set(f.destination, (destCounts.get(f.destination) ?? 0) + 1);
+        }
+      }
+    }
+    const topGrade = [...gradeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 8;
+    const topDest = [...destCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Q1";
+
+    setBuilding(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/import/build-curriculum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade: topGrade, quarter: topDest }),
+      });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Server error building curriculum");
+      }
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to build curriculum");
+      }
+      setBuildResult({
+        unitId: data.unitId,
+        unitTitle: data.unitTitle,
+        lessonCount: data.lessonCount,
+      });
+      setStep("build");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to build curriculum");
+    } finally {
+      setBuilding(false);
     }
   }
 
@@ -470,16 +522,43 @@ export default function ImportFromDrive() {
               </table>
             </div>
 
-            {!importing && (
-              <div className="mt-4">
+            {!importing && doneCount > 0 && (
+              <div className="mt-4 flex gap-3">
+                <button
+                  onClick={buildCurriculum}
+                  disabled={building}
+                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 transition-colors"
+                >
+                  {building
+                    ? "Building curriculum..."
+                    : "Build Curriculum from These Files"}
+                </button>
                 <Link
                   href="/"
                   className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors inline-block"
                 >
-                  Back to Home
+                  Skip
                 </Link>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Step 4: Build result ─── */}
+        {step === "build" && buildResult && (
+          <div>
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300 mb-4">
+              Created &quot;{buildResult.unitTitle}&quot; with{" "}
+              {buildResult.lessonCount} lessons
+            </div>
+            <button
+              onClick={() =>
+                router.push(`/curriculum/${buildResult.unitId}`)
+              }
+              className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+            >
+              View Unit
+            </button>
           </div>
         )}
     </div>
