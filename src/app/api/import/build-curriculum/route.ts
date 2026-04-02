@@ -83,7 +83,7 @@ export async function POST(req: Request) {
 
   const message = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 8192,
+    max_tokens: 16384,
     system: `You are building a curriculum unit from a set of teaching materials (files).
 Analyze the file names, types, and folder categories to understand the unit's content.
 Generate a complete unit structure with lessons, and map standards and materials to lessons.
