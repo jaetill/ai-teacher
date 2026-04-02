@@ -1,5 +1,4 @@
 import Link from "next/link";
-import UserNav from "@/components/UserNav";
 
 const modules = [
   {
@@ -32,18 +31,18 @@ const modules = [
     description: "Draft parent and admin emails from a quick situation description",
     available: true,
   },
+  {
+    href: "/upload",
+    name: "Bulk Upload",
+    description: "Upload files to Google Drive with AI-powered classification",
+    available: true,
+  },
 ];
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-3xl font-semibold text-zinc-900 dark:text-zinc-50">
-            AI Teacher
-          </h1>
-          <UserNav />
-        </div>
         <p className="text-zinc-500 dark:text-zinc-400 mb-10">
           Planning intelligence and daily operations
         </p>

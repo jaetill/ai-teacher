@@ -95,6 +95,16 @@ export async function uploadFile(
   return res.data;
 }
 
+export async function listFilesInFolder(accessToken: string, folderId: string) {
+  const drive = getDriveClient(accessToken);
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: "files(id, name, mimeType, modifiedTime, webViewLink)",
+    pageSize: 200,
+  });
+  return res.data.files ?? [];
+}
+
 export async function listFiles(accessToken: string, query?: string) {
   const drive = getDriveClient(accessToken);
   const res = await drive.files.list({
