@@ -11,6 +11,7 @@ export default function CopilotPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -35,11 +36,20 @@ export default function CopilotPage() {
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages }),
+        body: JSON.stringify({
+          messages: nextMessages,
+          conversationId,
+        }),
       });
 
       if (!res.ok || !res.body) {
         throw new Error(`API error ${res.status}`);
+      }
+
+      // Capture conversation ID from first response
+      const newConvId = res.headers.get("X-Conversation-Id");
+      if (newConvId && !conversationId) {
+        setConversationId(newConvId);
       }
 
       const reader = res.body.getReader();
@@ -81,16 +91,33 @@ export default function CopilotPage() {
     }
   }
 
+  function newConversation() {
+    setMessages([]);
+    setConversationId(null);
+  }
+
   return (
     <div className="flex flex-col h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
       <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 bg-white dark:bg-zinc-900">
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Teacher Copilot
-        </h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Rubrics, lesson plans, differentiation, and more
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              Teacher Copilot
+            </h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Rubrics, lesson plans, differentiation, and more
+            </p>
+          </div>
+          {messages.length > 0 && (
+            <button
+              onClick={newConversation}
+              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+            >
+              New conversation
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Messages */}
