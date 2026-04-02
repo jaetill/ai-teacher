@@ -88,13 +88,20 @@ export async function GET(
     standards: stdsByLesson.get(l.id) ?? [],
   }));
 
-  // ── Drive folder link ───
+  // ── Drive folder links ───
   const quarter = `Q${Math.ceil(unit.sortOrder / 2)}`;
-  const folderKey = `grade_${course?.grade}_${quarter}`;
-  const [driveFolder] = await db
+  const curriculumFolderKey = `grade_${course?.grade}_${quarter}_Curriculum`;
+  const [curriculumFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, folderKey))
+    .where(eq(driveFolders.folderKey, curriculumFolderKey))
+    .limit(1);
+
+  const quarterFolderKey = `grade_${course?.grade}_${quarter}`;
+  const [quarterFolder] = await db
+    .select({ driveId: driveFolders.driveId })
+    .from(driveFolders)
+    .where(eq(driveFolders.folderKey, quarterFolderKey))
     .limit(1);
 
   return Response.json({
@@ -104,8 +111,11 @@ export async function GET(
       courseTitle: course?.title,
       lessons: lessonsWithStandards,
       standards: linkedStandards,
-      driveUrl: driveFolder
-        ? `https://drive.google.com/drive/folders/${driveFolder.driveId}`
+      driveCurriculumUrl: curriculumFolder
+        ? `https://drive.google.com/drive/folders/${curriculumFolder.driveId}`
+        : null,
+      driveQuarterUrl: quarterFolder
+        ? `https://drive.google.com/drive/folders/${quarterFolder.driveId}`
         : null,
     },
   });

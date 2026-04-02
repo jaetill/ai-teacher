@@ -158,7 +158,8 @@ type UnitDetail = {
   source: string;
   lessons: Lesson[];
   standards: Standard[];
-  driveUrl: string | null;
+  driveCurriculumUrl: string | null;
+  driveQuarterUrl: string | null;
 };
 
 // ── Component ───
@@ -307,9 +308,30 @@ export default function UnitDetailPage() {
             Curriculum
           </Link>
           <span>/</span>
-          <span>Grade {unit.grade}</span>
+          <Link
+            href="/curriculum"
+            className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+          >
+            Grade {unit.grade}
+          </Link>
           <span>/</span>
-          <span>Q{Math.ceil(unit.sortOrder / 2)}</span>
+          {unit.driveQuarterUrl ? (
+            <a
+              href={unit.driveQuarterUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            >
+              Q{Math.ceil(unit.sortOrder / 2)}
+            </a>
+          ) : (
+            <Link
+              href="/curriculum"
+              className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            >
+              Q{Math.ceil(unit.sortOrder / 2)}
+            </Link>
+          )}
           <span>/</span>
           <span className="text-zinc-600 dark:text-zinc-300 truncate">
             {unit.title}
@@ -360,14 +382,14 @@ export default function UnitDetailPage() {
               Warning: {unit.contentWarnings}
             </div>
           )}
-          {unit.driveUrl && (
+          {unit.driveCurriculumUrl && (
             <a
-              href={unit.driveUrl}
+              href={unit.driveCurriculumUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
             >
-              View in Google Drive →
+              Curriculum files in Drive →
             </a>
           )}
         </div>
