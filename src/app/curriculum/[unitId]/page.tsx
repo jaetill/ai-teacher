@@ -380,23 +380,12 @@ export default function UnitDetailPage() {
             Grade {unit.grade}
           </Link>
           <span>/</span>
-          {unit.driveQuarterUrl ? (
-            <a
-              href={unit.driveQuarterUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-            >
-              Q{Math.ceil(unit.sortOrder / 2)}
-            </a>
-          ) : (
-            <Link
-              href="/curriculum"
-              className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-            >
-              Q{Math.ceil(unit.sortOrder / 2)}
-            </Link>
-          )}
+          <Link
+            href="/curriculum"
+            className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+          >
+            Q{Math.ceil(unit.sortOrder / 2)}
+          </Link>
           <span>/</span>
           <span className="text-zinc-600 dark:text-zinc-300 truncate">
             {unit.title}
