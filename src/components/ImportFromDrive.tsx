@@ -43,6 +43,8 @@ export default function ImportFromDrive() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("input");
   const [folderInput, setFolderInput] = useState("");
+  const [defaultGrade, setDefaultGrade] = useState(8);
+  const [defaultQuarter, setDefaultQuarter] = useState("Q1");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -80,8 +82,8 @@ export default function ImportFromDrive() {
       setFiles(
         data.files.map((f: { id: string; name: string; mimeType: string }) => ({
           ...f,
-          grade: 8,
-          destination: "Q1",
+          grade: defaultGrade,
+          destination: defaultQuarter,
           category: "Activities",
           materialType: "other",
           status: "pending",
@@ -105,6 +107,7 @@ export default function ImportFromDrive() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filenames: files.map((f) => f.name),
+          zipName: `Grade ${defaultGrade} Quarter ${defaultQuarter.replace("Q", "")}`,
         }),
       });
       if (!res.ok) throw new Error("Classification failed");
@@ -270,6 +273,40 @@ export default function ImportFromDrive() {
         {/* ── Step 1: Folder input ─── */}
         {step === "input" && (
           <div>
+            <div className="flex gap-3 mb-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Grade
+                </label>
+                <select
+                  value={defaultGrade}
+                  onChange={(e) => setDefaultGrade(parseInt(e.target.value))}
+                  className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-100"
+                >
+                  {GRADES.map((g) => (
+                    <option key={g} value={g}>
+                      Grade {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Quarter
+                </label>
+                <select
+                  value={defaultQuarter}
+                  onChange={(e) => setDefaultQuarter(e.target.value)}
+                  className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-100"
+                >
+                  {DESTINATIONS.filter((d) => d !== "YearPlan").map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="flex gap-3">
               <input
                 type="text"
