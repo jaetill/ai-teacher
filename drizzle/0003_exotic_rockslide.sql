@@ -1,0 +1,1 @@
+ALTER TABLE "units" ADD COLUMN "quarter" text;

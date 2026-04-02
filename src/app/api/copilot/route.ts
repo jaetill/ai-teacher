@@ -71,7 +71,7 @@ async function buildCurriculumContext(): Promise<string> {
 
     const courseUnits = allUnits.filter(u => u.courseId === course.id);
     for (const unit of courseUnits) {
-      const q = `Q${Math.ceil(unit.sortOrder / 2)}`;
+      const q = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
       ctx += `\n### ${q} — Unit ${unit.sortOrder}: ${unit.title} (${unit.durationWeeks} weeks)\n`;
       ctx += `Summary: ${unit.summary}\n`;
       if (unit.essentialQuestions) ctx += `Essential questions: ${unit.essentialQuestions}\n`;

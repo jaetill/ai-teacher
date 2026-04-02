@@ -337,6 +337,7 @@ type UnitDetail = {
   grade: number;
   courseTitle: string;
   sortOrder: number;
+  quarter: string | null;
   durationWeeks: number;
   summary: string;
   essentialQuestions: string | null;
@@ -377,7 +378,7 @@ export default function UnitDetailPage() {
       setNotes(data.unit.teacherNotes ?? "");
       // Set copilot context
       const u = data.unit;
-      const q = `Q${Math.ceil(u.sortOrder / 2)}`;
+      const q = u.quarter ?? "Q1";
       setPageContext(
         `Grade ${u.grade}, ${q}, Unit: ${u.title} (${u.durationWeeks} weeks, ${u.lessons.length} lessons, ${u.standards.length} standards)`
       );
@@ -489,7 +490,7 @@ export default function UnitDetailPage() {
             href="/curriculum"
             className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
           >
-            Q{Math.ceil(unit.sortOrder / 2)}
+            Q{unit.quarter?.replace("Q", "") ?? "?"}
           </Link>
           <span>/</span>
           <span className="text-zinc-600 dark:text-zinc-300 truncate">

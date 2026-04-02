@@ -20,6 +20,7 @@ export const units = pgTable(
       .references(() => courses.id, { onDelete: "cascade" }),
     title: text("title").notNull(), // "Night & The Hiding Place"
     sortOrder: smallint("sort_order").notNull(),
+    quarter: text("quarter"), // "Q1", "Q2", "Q3", "Q4"
     durationWeeks: smallint("duration_weeks").notNull(),
     summary: text("summary").notNull(), // AI-readable 2-3 sentence summary
     essentialQuestions: text("essential_questions"),

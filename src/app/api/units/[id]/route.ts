@@ -91,7 +91,7 @@ export async function GET(
   }));
 
   // ── Drive folder links ───
-  const quarter = `Q${Math.ceil(unit.sortOrder / 2)}`;
+  const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
   const curriculumFolderKey = `grade_${course?.grade}_${quarter}_Curriculum`;
   const [curriculumFolder] = await db
     .select({ driveId: driveFolders.driveId })

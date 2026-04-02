@@ -205,12 +205,9 @@ ${standardsList}`,
     .where(eq(units.courseId, courseId))
     .orderBy(asc(units.sortOrder));
 
-  // Quarter number → sort order (Q1=1, Q2=2, etc.)
-  const quarterNum = parseInt(quarter.replace("Q", ""));
-  // Use quarter number * 2 - 1 as sort order (leaves room for multiple units per quarter)
   const sortOrder = existingUnits.length > 0
     ? Math.max(...existingUnits.map((u) => u.sortOrder)) + 1
-    : quarterNum * 2 - 1;
+    : 1;
 
   // ── 6. Create unit ───
   const [createdUnit] = await db
@@ -219,6 +216,7 @@ ${standardsList}`,
       courseId,
       title: parsed.unit.title,
       sortOrder,
+      quarter,
       durationWeeks: parsed.unit.durationWeeks,
       summary: parsed.unit.summary,
       essentialQuestions: parsed.unit.essentialQuestions || null,

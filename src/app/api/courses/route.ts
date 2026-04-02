@@ -24,6 +24,7 @@ export async function GET() {
       courseId: units.courseId,
       title: units.title,
       sortOrder: units.sortOrder,
+      quarter: units.quarter,
       durationWeeks: units.durationWeeks,
       summary: units.summary,
       contentWarnings: units.contentWarnings,

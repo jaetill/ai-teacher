@@ -46,7 +46,7 @@ export async function POST(
   }
 
   // ── Find materials in this unit's quarter folders ───
-  const quarter = `Q${Math.ceil(unit.sortOrder / 2)}`;
+  const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
   const folderCategories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
   const folderKeys = folderCategories.map(
     (c) => `grade_${course.grade}_${quarter}_${c}`

@@ -10,6 +10,7 @@ type UnitSummary = {
   id: string;
   title: string;
   sortOrder: number;
+  quarter: string | null;
   durationWeeks: number;
   summary: string;
   contentWarnings: string | null;
@@ -200,12 +201,7 @@ export default function CurriculumPage() {
         {courses.length > 0 && !showForm && (
           <div className="space-y-10">
             {courses.map((course) => {
-              // Group units into quarters (2 units per quarter as a rough guide)
               const quarters = ["Q1", "Q2", "Q3", "Q4"];
-              const unitsPerQuarter = Math.max(
-                2,
-                Math.ceil(course.units.length / 4)
-              );
 
               return (
                 <div key={course.id}>
@@ -213,11 +209,9 @@ export default function CurriculumPage() {
                     Grade {course.grade} — {course.title}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {quarters.map((q, qi) => {
-                      const start = qi * unitsPerQuarter;
-                      const quarterUnits = course.units.slice(
-                        start,
-                        start + unitsPerQuarter
+                    {quarters.map((q) => {
+                      const quarterUnits = course.units.filter(
+                        (u) => u.quarter === q
                       );
 
                       return (
@@ -230,14 +224,13 @@ export default function CurriculumPage() {
                           </h3>
                           {quarterUnits.length > 0 ? (
                             <div className="space-y-2">
-                              {quarterUnits.map((unit, i) => (
+                              {quarterUnits.map((unit) => (
                                 <Link
                                   key={unit.id}
                                   href={`/curriculum/${unit.id}`}
                                   className="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
                                 >
                                   <div className="text-xs text-zinc-400 mb-0.5">
-                                    Unit {start + i + 1} ·{" "}
                                     {unit.durationWeeks} weeks
                                     {unit.source === "human" && (
                                       <span className="ml-1 text-emerald-500">
