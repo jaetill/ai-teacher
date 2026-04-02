@@ -23,7 +23,10 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
 
+export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
+
 export async function POST(req: Request) {
+  try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
@@ -306,4 +309,11 @@ ${standardsList}`,
     materialLinkCount,
     materialCount: quarterMaterials.length,
   });
+  } catch (err) {
+    console.error("build-curriculum error:", err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
+  }
 }
