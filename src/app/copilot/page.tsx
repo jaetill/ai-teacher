@@ -97,16 +97,16 @@ export default function CopilotPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex flex-col flex-1 min-h-0 bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
-      <header className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 bg-white dark:bg-zinc-900">
+      <div className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 bg-white dark:bg-zinc-900">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               Teacher Copilot
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Rubrics, lesson plans, differentiation, and more
+              Ask about your curriculum, standards, lessons — I have access to your data
             </p>
           </div>
           {messages.length > 0 && (
@@ -118,7 +118,7 @@ export default function CopilotPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">

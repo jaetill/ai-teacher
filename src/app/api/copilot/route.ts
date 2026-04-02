@@ -7,19 +7,109 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { copilotConversations, copilotMessages } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import {
+  copilotConversations,
+  copilotMessages,
+  courses,
+  units,
+  lessons,
+  unitStandards,
+  lessonStandards,
+  standards,
+} from "@/db/schema";
+import { eq, sql, asc, inArray } from "drizzle-orm";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are an expert teacher planning assistant. You help teachers with:
+const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with full access to this teacher's curriculum database. You help teachers with:
 - Creating rubrics, lesson plans, unit maps, and pacing guides
 - Generating differentiated materials (ELL, SPED, above/below grade level)
 - Writing vocabulary lists, discussion questions, and exit tickets
 - Drafting parent and admin communications
 - Transforming existing documents (e.g., simplifying a reading, converting notes to slides)
+- Answering questions about their curriculum, standards coverage, and lesson alignment
 
-Be concise and practical. Produce ready-to-use outputs when asked. When generating structured content like rubrics or lesson plans, use clear formatting.`;
+Be concise and practical. Produce ready-to-use outputs when asked. When generating structured content like rubrics or lesson plans, use clear formatting.
+
+You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.`;
+
+async function buildCurriculumContext(): Promise<string> {
+  const allCourses = await db.select().from(courses).orderBy(asc(courses.grade));
+  if (allCourses.length === 0) return "";
+
+  const allUnits = await db.select().from(units).orderBy(asc(units.sortOrder));
+  const allLessons = await db
+    .select({ id: lessons.id, unitId: lessons.unitId, title: lessons.title, sortOrder: lessons.sortOrder, objectives: lessons.objectives })
+    .from(lessons)
+    .orderBy(asc(lessons.sortOrder));
+
+  // Unit-level standards
+  const allUnitStds = await db
+    .select({ unitId: unitStandards.unitId, standardId: unitStandards.standardId, emphasis: unitStandards.emphasis })
+    .from(unitStandards);
+
+  // Lesson-level standards
+  const allLessonStds = await db
+    .select({ lessonId: lessonStandards.lessonId, standardId: lessonStandards.standardId, coverageType: lessonStandards.coverageType })
+    .from(lessonStandards);
+
+  // Standards descriptions
+  const stdIds = new Set([
+    ...allUnitStds.map(s => s.standardId),
+    ...allLessonStds.map(s => s.standardId),
+  ]);
+  const stdRows = stdIds.size > 0
+    ? await db.select({ id: standards.id, description: standards.description }).from(standards).where(inArray(standards.id, [...stdIds]))
+    : [];
+  const stdMap = new Map(stdRows.map(s => [s.id, s.description]));
+
+  let ctx = "\n── CURRICULUM DATABASE ──\n\n";
+
+  for (const course of allCourses) {
+    ctx += `## Grade ${course.grade} — ${course.title}\n`;
+    if (course.teacherNotes) ctx += `Teacher notes: ${course.teacherNotes}\n`;
+
+    const courseUnits = allUnits.filter(u => u.courseId === course.id);
+    for (const unit of courseUnits) {
+      const q = `Q${Math.ceil(unit.sortOrder / 2)}`;
+      ctx += `\n### ${q} — Unit ${unit.sortOrder}: ${unit.title} (${unit.durationWeeks} weeks)\n`;
+      ctx += `Summary: ${unit.summary}\n`;
+      if (unit.essentialQuestions) ctx += `Essential questions: ${unit.essentialQuestions}\n`;
+      if (unit.anchorTexts) ctx += `Anchor texts: ${unit.anchorTexts}\n`;
+      if (unit.teacherNotes) ctx += `Teacher notes: ${unit.teacherNotes}\n`;
+
+      // Unit standards
+      const uStds = allUnitStds.filter(s => s.unitId === unit.id);
+      if (uStds.length > 0) {
+        ctx += `Unit standards: ${uStds.map(s => s.standardId).join(", ")}\n`;
+      }
+
+      // Lessons
+      const unitLessons = allLessons.filter(l => l.unitId === unit.id);
+      for (const lesson of unitLessons) {
+        const lStds = allLessonStds.filter(s => s.lessonId === lesson.id);
+        const stdsStr = lStds.length > 0
+          ? ` [${lStds.map(s => `${s.standardId}(${s.coverageType})`).join(", ")}]`
+          : "";
+        ctx += `  Day ${lesson.sortOrder}: ${lesson.title}${stdsStr}\n`;
+        if (lesson.objectives?.length) {
+          ctx += `    Objectives: ${lesson.objectives.join("; ")}\n`;
+        }
+      }
+    }
+    ctx += "\n";
+  }
+
+  // Standards reference
+  if (stdRows.length > 0) {
+    ctx += "## Standards Reference\n";
+    for (const s of stdRows) {
+      ctx += `${s.id}: ${s.description}\n`;
+    }
+  }
+
+  return ctx;
+}
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -60,10 +150,11 @@ export async function POST(request: Request) {
     sortOrder: messageIndex,
   });
 
-  // ── Stream the response ───
+  // ── Build system prompt with curriculum context ───
+  const curriculumContext = await buildCurriculumContext();
   const system = context
-    ? `${SYSTEM_PROMPT}\n\n── Current context ───\n${context}`
-    : SYSTEM_PROMPT;
+    ? `${BASE_SYSTEM_PROMPT}${curriculumContext}\n\n── Additional context ───\n${context}`
+    : `${BASE_SYSTEM_PROMPT}${curriculumContext}`;
 
   const stream = client.messages.stream({
     model: "claude-opus-4-6",
