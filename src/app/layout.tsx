@@ -3,6 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SessionProvider from "@/components/SessionProvider";
 import NavBar from "@/components/NavBar";
+import CopilotProvider from "@/components/CopilotProvider";
+import CopilotPanel from "@/components/CopilotPanel";
+import MainContent from "@/components/MainContent";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,13 +33,14 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="h-full flex flex-col">
-          <SessionProvider>
+        <SessionProvider>
+          <CopilotProvider>
             <NavBar />
-            <div className="flex flex-col flex-1 min-h-0">
-              {children}
-            </div>
-          </SessionProvider>
-        </body>
+            <MainContent>{children}</MainContent>
+            <CopilotPanel />
+          </CopilotProvider>
+        </SessionProvider>
+      </body>
     </html>
   );
 }

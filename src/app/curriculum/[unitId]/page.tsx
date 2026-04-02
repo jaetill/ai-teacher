@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import { useCopilot } from "@/components/CopilotProvider";
 
 // Group lessons into weeks by distributing evenly across the unit duration.
 // e.g. 20 lessons across 7 weeks → ~3 per week
@@ -356,6 +357,7 @@ type UnitDetail = {
 
 export default function UnitDetailPage() {
   const { unitId } = useParams<{ unitId: string }>();
+  const { setPageContext } = useCopilot();
   const [unit, setUnit] = useState<UnitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
@@ -379,6 +381,12 @@ export default function UnitDetailPage() {
       if (data.unit.aiGenerationContext?.lessonPlanMarkdown) {
         setGeneratedPlan(data.unit.aiGenerationContext.lessonPlanMarkdown);
       }
+      // Set copilot context
+      const u = data.unit;
+      const q = `Q${Math.ceil(u.sortOrder / 2)}`;
+      setPageContext(
+        `Grade ${u.grade}, ${q}, Unit: ${u.title} (${u.durationWeeks} weeks, ${u.lessons.length} lessons, ${u.standards.length} standards)`
+      );
     } catch (err) {
       console.error("Failed to load unit", err);
     } finally {

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import UserNav from "./UserNav";
+import { useCopilot } from "./CopilotProvider";
 
 const NAV_ITEMS = [
-  { href: "/copilot", label: "Copilot" },
   { href: "/curriculum", label: "Curriculum" },
   { href: "/differentiation", label: "Differentiation" },
   { href: "/communications", label: "Communications" },
@@ -14,9 +14,10 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const pathname = usePathname();
+  const { isOpen, toggle } = useCopilot();
 
   return (
-    <nav className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-6 py-3">
+    <nav className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-6 py-3 shrink-0 z-50 relative">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link
@@ -44,6 +45,16 @@ export default function NavBar() {
                 </Link>
               );
             })}
+            <button
+              onClick={toggle}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                isOpen
+                  ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                  : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              }`}
+            >
+              Copilot
+            </button>
           </div>
         </div>
         <UserNav />
