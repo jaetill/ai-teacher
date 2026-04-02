@@ -716,7 +716,8 @@ export default function UnitDetailPage() {
           <UnitStandardsSection standards={unit.standards} />
         )}
 
-        {/* ── AI lesson sequence ─── */}
+        {/* ── AI lesson sequence (only for units without real lessons) ─── */}
+        {unit.lessons.length === 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -762,6 +763,7 @@ export default function UnitDetailPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
