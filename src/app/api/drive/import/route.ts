@@ -44,6 +44,8 @@ export async function GET(req: Request) {
         fields: "nextPageToken, files(id, name, mimeType, parents)",
         pageSize: 200,
         pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
       });
       for (const file of res.data.files ?? []) {
         if (file.mimeType === "application/vnd.google-apps.folder") {
@@ -61,7 +63,16 @@ export async function GET(req: Request) {
     } while (pageToken);
   }
 
-  await listFolder(folderId);
+  try {
+    await listFolder(folderId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Drive import scan failed:", message);
+    return Response.json(
+      { error: `Failed to scan folder: ${message}` },
+      { status: 500 }
+    );
+  }
 
   return Response.json({ files: allFiles, count: allFiles.length });
 }

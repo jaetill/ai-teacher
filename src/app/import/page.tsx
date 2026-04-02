@@ -65,11 +65,16 @@ export default function ImportPage() {
 
     try {
       const res = await fetch(`/api/drive/import?folderId=${id}`);
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Server error — try signing out and back in");
+      }
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Failed to scan folder");
       }
-      const data = await res.json();
       setFiles(
         data.files.map((f: { id: string; name: string; mimeType: string }) => ({
           ...f,
