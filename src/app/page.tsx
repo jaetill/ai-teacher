@@ -11,7 +11,7 @@ const modules = [
     href: "/curriculum",
     name: "Curriculum Compiler",
     description: "Unit maps, lesson sequences, and pacing guides from standards",
-    available: false,
+    available: true,
   },
   {
     href: "/differentiation",

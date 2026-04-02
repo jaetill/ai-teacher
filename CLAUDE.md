@@ -13,12 +13,12 @@ Target user: one teacher (primary), with potential sharing to a small teaching c
 ## Tech stack
 - **Frontend**: Next.js (App Router) + TypeScript + Tailwind CSS
 - **AI**: Claude API (streaming) via Anthropic SDK — conversational copilot experience
-- **Hosting**: Vercel (planned)
+- **Hosting**: Vercel — https://ai-teacher-omega-sage.vercel.app
 - **Auth**: TBD (Cognito or NextAuth depending on multi-user needs)
 - **Database**: TBD (DynamoDB or Neon/PostgreSQL — data is relational)
 
 ## Project status
-Early scaffolding. No AWS resources provisioned yet. No deployment pipeline yet.
+Live on Vercel. Teacher Copilot (streaming chat) is functional. Other modules are scaffolded but not yet built.
 
 ## Source structure (`src/app/`)
 Next.js App Router layout — each major module will be a route segment.
@@ -60,6 +60,9 @@ src/
 - React (not Angular) — better AI codegen support, larger ecosystem, cleaner learning path
 - TypeScript from the start — this codebase is more complex than meal-planner
 
-## Deployment (planned)
-- Vercel connected to GitHub repo, auto-deploy on push to `main`
-- Environment variables: `ANTHROPIC_API_KEY`, database connection string, auth secrets
+## Deployment
+- Vercel project connected to `jaetill/ai-teacher` on GitHub
+- Auto-deploys on push to `main`
+- Production URL: https://ai-teacher-omega-sage.vercel.app
+- Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`
+- To deploy: `git push origin main`
