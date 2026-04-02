@@ -7,8 +7,23 @@ import ReactMarkdown from "react-markdown";
 
 function LessonCard({ lesson }: { lesson: Lesson }) {
   const [expanded, setExpanded] = useState(false);
+  const [notes, setNotes] = useState(lesson.teacherNotes ?? "");
+  const [saving, setSaving] = useState(false);
   const activities = (lesson.lessonPlan as { activities?: string[] })
     ?.activities;
+
+  async function saveNotes() {
+    setSaving(true);
+    try {
+      await fetch(`/api/lessons/${lesson.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div
@@ -26,6 +41,9 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {lesson.teacherNotes && !expanded && (
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Has notes" />
+          )}
           {lesson.source === "human" && (
             <span className="text-xs text-emerald-500">from docs</span>
           )}
@@ -72,16 +90,22 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </ul>
             </div>
           )}
-          {lesson.teacherNotes && (
-            <div>
-              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-                Notes
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {lesson.teacherNotes}
-              </p>
+          <div onClick={(e) => e.stopPropagation()}>
+            <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+              Notes
             </div>
-          )}
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={saveNotes}
+              placeholder="Pacing thoughts, what to adjust, student reactions..."
+              className="w-full resize-none rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+            />
+            {saving && (
+              <span className="text-xs text-zinc-400 mt-0.5">Saving...</span>
+            )}
+          </div>
           {lesson.standards && lesson.standards.length > 0 && (
             <div>
               <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
