@@ -201,6 +201,41 @@ function LessonStandardsSection({
   );
 }
 
+function UnitStandardsSection({ standards }: { standards: Standard[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between"
+      >
+        <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+          Standards Reference ({standards.length})
+        </h2>
+        <span
+          className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}
+        >
+          →
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-2 mt-4">
+          {standards.map((s) => (
+            <div key={s.id} className="flex gap-3 text-sm">
+              <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400 shrink-0 pt-0.5">
+                {s.id}
+              </span>
+              <span className="text-zinc-600 dark:text-zinc-400">
+                {s.description}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Types ───
 
 type Standard = {
@@ -503,27 +538,6 @@ export default function UnitDetailPage() {
           )}
         </div>
 
-        {/* ── Standards ─── */}
-        {unit.standards.length > 0 && (
-          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
-            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              Standards ({unit.standards.length})
-            </h2>
-            <div className="space-y-2">
-              {unit.standards.map((s) => (
-                <div key={s.id} className="flex gap-3 text-sm">
-                  <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400 shrink-0 pt-0.5">
-                    {s.id}
-                  </span>
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    {s.description}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* ── Teacher notes ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
           <div>
@@ -627,6 +641,11 @@ export default function UnitDetailPage() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* ── Standards (collapsible) ─── */}
+        {unit.standards.length > 0 && (
+          <UnitStandardsSection standards={unit.standards} />
         )}
 
         {/* ── AI lesson sequence ─── */}
