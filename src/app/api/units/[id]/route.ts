@@ -2,8 +2,16 @@
 // Returns a single unit with its lessons and linked standards.
 
 import { db } from "@/db";
-import { units, lessons, unitStandards, standards, courses } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import {
+  units,
+  lessons,
+  unitStandards,
+  lessonStandards,
+  standards,
+  courses,
+  driveFolders,
+} from "@/db/schema";
+import { eq, asc, inArray } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -50,13 +58,55 @@ export async function GET(
     .innerJoin(standards, eq(unitStandards.standardId, standards.id))
     .where(eq(unitStandards.unitId, id));
 
+  // ── Lesson-level standards ───
+  const lessonIds = unitLessons.map((l) => l.id);
+  const lessonStandardRows = lessonIds.length
+    ? await db
+        .select({
+          lessonId: lessonStandards.lessonId,
+          standardId: lessonStandards.standardId,
+          coverageType: lessonStandards.coverageType,
+        })
+        .from(lessonStandards)
+        .where(inArray(lessonStandards.lessonId, lessonIds))
+    : [];
+
+  // Group by lesson
+  const stdsByLesson = new Map<string, Array<{ id: string; coverageType: string }>>();
+  for (const row of lessonStandardRows) {
+    if (!stdsByLesson.has(row.lessonId)) {
+      stdsByLesson.set(row.lessonId, []);
+    }
+    stdsByLesson.get(row.lessonId)!.push({
+      id: row.standardId,
+      coverageType: row.coverageType,
+    });
+  }
+
+  const lessonsWithStandards = unitLessons.map((l) => ({
+    ...l,
+    standards: stdsByLesson.get(l.id) ?? [],
+  }));
+
+  // ── Drive folder link ───
+  const quarter = `Q${Math.ceil(unit.sortOrder / 2)}`;
+  const folderKey = `grade_${course?.grade}_${quarter}`;
+  const [driveFolder] = await db
+    .select({ driveId: driveFolders.driveId })
+    .from(driveFolders)
+    .where(eq(driveFolders.folderKey, folderKey))
+    .limit(1);
+
   return Response.json({
     unit: {
       ...unit,
       grade: course?.grade,
       courseTitle: course?.title,
-      lessons: unitLessons,
+      lessons: lessonsWithStandards,
       standards: linkedStandards,
+      driveUrl: driveFolder
+        ? `https://drive.google.com/drive/folders/${driveFolder.driveId}`
+        : null,
     },
   });
 }

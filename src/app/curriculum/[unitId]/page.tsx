@@ -82,6 +82,33 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </p>
             </div>
           )}
+          {lesson.standards && lesson.standards.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                Standards
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {lesson.standards.map((s) => (
+                  <span
+                    key={s.id}
+                    className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-400"
+                    title={s.coverageType}
+                  >
+                    {s.id}
+                    <span className="text-zinc-400 dark:text-zinc-500">
+                      {s.coverageType === "introduces"
+                        ? "intro"
+                        : s.coverageType === "teaches"
+                          ? "teach"
+                          : s.coverageType === "reinforces"
+                            ? "review"
+                            : "assess"}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -98,6 +125,11 @@ type Standard = {
   emphasis: string;
 };
 
+type LessonStandard = {
+  id: string;
+  coverageType: string;
+};
+
 type Lesson = {
   id: string;
   title: string;
@@ -107,6 +139,7 @@ type Lesson = {
   lessonPlan: Record<string, unknown>;
   teacherNotes: string | null;
   source: string;
+  standards: LessonStandard[];
 };
 
 type UnitDetail = {
@@ -125,6 +158,7 @@ type UnitDetail = {
   source: string;
   lessons: Lesson[];
   standards: Standard[];
+  driveUrl: string | null;
 };
 
 // ── Component ───
@@ -137,6 +171,7 @@ export default function UnitDetailPage() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [inferring, setInferring] = useState(false);
 
   const fetchUnit = useCallback(async () => {
     try {
@@ -223,6 +258,25 @@ export default function UnitDetailPage() {
     }
   }
 
+  async function inferStandards() {
+    if (!unit) return;
+    setInferring(true);
+    try {
+      const res = await fetch(`/api/units/${unit.id}/infer-standards`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await fetchUnit();
+      }
+    } finally {
+      setInferring(false);
+    }
+  }
+
+  const hasLessonStandards = unit?.lessons.some(
+    (l) => l.standards && l.standards.length > 0
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
@@ -306,6 +360,16 @@ export default function UnitDetailPage() {
               Warning: {unit.contentWarnings}
             </div>
           )}
+          {unit.driveUrl && (
+            <a
+              href={unit.driveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            >
+              View in Google Drive →
+            </a>
+          )}
         </div>
 
         {/* ── Standards ─── */}
@@ -359,9 +423,22 @@ export default function UnitDetailPage() {
         {/* ── Lessons from DB ─── */}
         {unit.lessons.length > 0 && (
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
-            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              Lessons ({unit.lessons.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                Lessons ({unit.lessons.length})
+              </h2>
+              {!hasLessonStandards && unit.standards.length > 0 && (
+                <button
+                  onClick={inferStandards}
+                  disabled={inferring}
+                  className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
+                >
+                  {inferring
+                    ? "Mapping standards..."
+                    : "Map standards to lessons"}
+                </button>
+              )}
+            </div>
             <div className="space-y-3">
               {unit.lessons.map((lesson) => (
                 <LessonCard key={lesson.id} lesson={lesson} />
