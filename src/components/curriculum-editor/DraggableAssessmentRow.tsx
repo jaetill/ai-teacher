@@ -14,11 +14,22 @@ const ASSESSMENT_TYPES = [
   { value: "exit_ticket", label: "Exit Ticket" },
 ];
 
-const ROLE_STYLES: Record<string, string> = {
-  primary: "text-blue-600 dark:text-blue-400",
-  supporting: "text-zinc-400 dark:text-zinc-500",
-  teacher_reference: "text-violet-500 dark:text-violet-400",
-};
+const ROLE_OPTIONS = [
+  { value: "primary", label: "Primary" },
+  { value: "supporting", label: "Supporting" },
+  { value: "teacher_reference", label: "Reference" },
+];
+
+const MATERIAL_TYPE_OPTIONS = [
+  { value: "worksheet", label: "Worksheet" },
+  { value: "handout", label: "Handout" },
+  { value: "rubric", label: "Rubric" },
+  { value: "answer_key", label: "Answer Key" },
+  { value: "presentation", label: "Presentation" },
+  { value: "reading", label: "Reading" },
+  { value: "video_link", label: "Video" },
+  { value: "other", label: "Other" },
+];
 
 type Props = {
   assessment: EditorAssessment;
@@ -26,6 +37,7 @@ type Props = {
   onUpdateType: (assessmentType: string) => void;
   onRetype: () => void;
   onDetachMaterial: (attachmentId: string) => void;
+  onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
 };
 
 export default function DraggableAssessmentRow({
@@ -34,6 +46,7 @@ export default function DraggableAssessmentRow({
   onUpdateType,
   onRetype,
   onDetachMaterial,
+  onUpdateMaterial,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const {
@@ -142,9 +155,15 @@ export default function DraggableAssessmentRow({
               key={mat.attachmentId}
               className="flex items-center gap-2 py-1 px-2.5 rounded-md bg-amber-50/80 dark:bg-amber-950/20 text-[12px]"
             >
-              <span className={`text-[9px] font-medium uppercase tracking-wider ${ROLE_STYLES[mat.role] ?? ROLE_STYLES.supporting}`}>
-                {mat.role === "teacher_reference" ? "ref" : mat.role}
-              </span>
+              <select
+                value={mat.role}
+                onChange={(e) => onUpdateMaterial(mat.attachmentId, { role: e.target.value })}
+                className="text-[9px] font-medium uppercase tracking-wider bg-transparent border border-transparent hover:border-amber-200 dark:hover:border-amber-800/50 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer text-blue-600 dark:text-blue-400"
+              >
+                {ROLE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
               <span className="flex-1 min-w-0 truncate text-zinc-700 dark:text-zinc-300">
                 {mat.driveWebUrl ? (
                   <a
@@ -160,9 +179,15 @@ export default function DraggableAssessmentRow({
                   mat.title
                 )}
               </span>
-              <span className="text-[9px] text-zinc-400 dark:text-zinc-600 shrink-0">
-                {mat.materialType.replace(/_/g, " ")}
-              </span>
+              <select
+                value={mat.materialType}
+                onChange={(e) => onUpdateMaterial(mat.attachmentId, { materialType: e.target.value })}
+                className="text-[9px] text-zinc-400 dark:text-zinc-500 bg-transparent border border-transparent hover:border-amber-200 dark:hover:border-amber-800/50 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer shrink-0"
+              >
+                {MATERIAL_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
               <button
                 onClick={() => onDetachMaterial(mat.attachmentId)}
                 className="text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 shrink-0 transition-colors"

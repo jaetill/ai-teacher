@@ -213,6 +213,9 @@ export default function CurriculumEditorPage() {
                   onDetachMaterial={(attachmentId) =>
                     editor.detachMaterial(attachmentId)
                   }
+                  onUpdateMaterial={(attachmentId, fields) =>
+                    editor.updateMaterial(attachmentId, fields)
+                  }
                 />
               ))
             ) : (

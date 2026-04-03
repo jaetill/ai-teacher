@@ -48,6 +48,7 @@ type Props = {
   onRetypeLesson: (lessonId: string) => void;
   onRetypeAssessment: (assessmentId: string) => void;
   onDetachMaterial: (attachmentId: string) => void;
+  onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
 };
 
 export default function UnitColumn({
@@ -58,6 +59,7 @@ export default function UnitColumn({
   onRetypeLesson,
   onRetypeAssessment,
   onDetachMaterial,
+  onUpdateMaterial,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -157,6 +159,7 @@ export default function UnitColumn({
                       onUpdateTitle={(title) => onUpdateLesson(lesson.id, { title })}
                       onRetype={() => onRetypeLesson(lesson.id)}
                       onDetachMaterial={onDetachMaterial}
+                      onUpdateMaterial={onUpdateMaterial}
                     />
                   ))}
                 </div>
@@ -187,6 +190,7 @@ export default function UnitColumn({
                       }
                       onRetype={() => onRetypeAssessment(assessment.id)}
                       onDetachMaterial={onDetachMaterial}
+                      onUpdateMaterial={onUpdateMaterial}
                     />
                   ))}
                 </div>

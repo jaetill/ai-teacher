@@ -245,6 +245,42 @@ export function useCurriculumEditor(courseId: string) {
     }
   }
 
+  // ── Update material attachment role or material type ───
+
+  async function updateMaterial(
+    attachmentId: string,
+    fields: { role?: string; materialType?: string }
+  ) {
+    // Optimistic update
+    setUnits((prev) =>
+      prev.map((u) => ({
+        ...u,
+        lessons: u.lessons.map((l) => ({
+          ...l,
+          materials: l.materials.map((m) =>
+            m.attachmentId === attachmentId
+              ? { ...m, ...(fields.role && { role: fields.role }), ...(fields.materialType && { materialType: fields.materialType }) }
+              : m
+          ),
+        })),
+        assessments: u.assessments.map((a) => ({
+          ...a,
+          materials: a.materials.map((m) =>
+            m.attachmentId === attachmentId
+              ? { ...m, ...(fields.role && { role: fields.role }), ...(fields.materialType && { materialType: fields.materialType }) }
+              : m
+          ),
+        })),
+      }))
+    );
+
+    try {
+      await apiCall("update-material", { attachmentId, ...fields });
+    } catch {
+      await fetchData();
+    }
+  }
+
   // ── Detach material ───
 
   async function detachMaterial(materialAttachmentId: string) {
@@ -269,6 +305,7 @@ export function useCurriculumEditor(courseId: string) {
     retypeContent,
     attachMaterial,
     detachMaterial,
+    updateMaterial,
     refresh: fetchData,
   };
 }
