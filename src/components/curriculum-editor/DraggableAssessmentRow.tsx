@@ -51,7 +51,7 @@ export default function DraggableAssessmentRow({
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-amber-300 dark:text-amber-700 hover:text-amber-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="cursor-grab active:cursor-grabbing text-amber-400 dark:text-amber-500 hover:text-amber-600 dark:hover:text-amber-300 shrink-0 transition-colors"
         title="Drag to reorder"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">

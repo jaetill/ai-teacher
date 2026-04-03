@@ -37,7 +37,7 @@ function DraggableMaterial({ material }: { material: PoolMaterial }) {
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-zinc-200 dark:text-zinc-700 hover:text-zinc-400 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-500 hover:text-zinc-500 dark:hover:text-zinc-300 shrink-0 mt-0.5 transition-colors"
       >
         <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
           <rect x="2" y="1" width="3.5" height="1.5" rx="0.5" />

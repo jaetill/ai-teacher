@@ -37,7 +37,7 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype }: 
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-zinc-200 dark:text-zinc-700 hover:text-zinc-400 dark:hover:text-zinc-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-500 hover:text-zinc-500 dark:hover:text-zinc-300 shrink-0 transition-colors"
         title="Drag to reorder"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
