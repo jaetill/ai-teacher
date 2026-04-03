@@ -2,6 +2,15 @@
 
 // ── Entity types as displayed in the editor ───
 
+export type EditorMaterialLink = {
+  attachmentId: string;
+  materialId: string;
+  title: string;
+  materialType: string;
+  role: string;
+  driveWebUrl: string | null;
+};
+
 export type EditorLesson = {
   id: string;
   title: string;
@@ -9,6 +18,7 @@ export type EditorLesson = {
   durationMinutes: number | null;
   source: string;
   materialCount: number;
+  materials: EditorMaterialLink[];
 };
 
 export type EditorAssessment = {
@@ -18,6 +28,7 @@ export type EditorAssessment = {
   sortOrder: number;
   source: string;
   materialCount: number;
+  materials: EditorMaterialLink[];
 };
 
 export type EditorUnit = {

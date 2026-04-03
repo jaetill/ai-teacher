@@ -210,6 +210,9 @@ export default function CurriculumEditorPage() {
                   onRetypeAssessment={(assessmentId) =>
                     editor.retypeContent("assessment", assessmentId, "lesson")
                   }
+                  onDetachMaterial={(attachmentId) =>
+                    editor.detachMaterial(attachmentId)
+                  }
                 />
               ))
             ) : (

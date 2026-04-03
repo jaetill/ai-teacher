@@ -2,8 +2,8 @@
 // Returns all units, lessons, and assessments for a course in editor format.
 
 import { db } from "@/db";
-import { courses, units, lessons, assessments, materialAttachments } from "@/db/schema";
-import { eq, asc, inArray, sql } from "drizzle-orm";
+import { courses, units, lessons, assessments, materialAttachments, materials } from "@/db/schema";
+import { eq, asc, inArray, sql, and } from "drizzle-orm";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -47,38 +47,78 @@ export async function GET(req: Request) {
         .orderBy(asc(assessments.sortOrder))
     : [];
 
-  // Count materials per lesson/assessment
+  // Load material details per lesson/assessment
   const lessonIds = allLessons.map((l) => l.id);
   const assessmentIds = allAssessments.map((a) => a.id);
 
-  const lessonMatCounts = lessonIds.length
+  type MatLink = {
+    attachmentId: string;
+    materialId: string;
+    title: string;
+    materialType: string;
+    role: string;
+    driveWebUrl: string | null;
+    attachableId: string;
+  };
+
+  const lessonMats: MatLink[] = lessonIds.length
     ? await db
         .select({
+          attachmentId: materialAttachments.id,
+          materialId: materials.id,
+          title: materials.title,
+          materialType: materials.materialType,
+          role: materialAttachments.role,
+          driveWebUrl: materials.driveWebUrl,
           attachableId: materialAttachments.attachableId,
-          count: sql<number>`count(*)::int`,
         })
         .from(materialAttachments)
+        .innerJoin(materials, eq(materials.id, materialAttachments.materialId))
         .where(
-          sql`${materialAttachments.attachableType} = 'lesson' AND ${materialAttachments.attachableId} IN ${lessonIds}`
+          and(
+            eq(materialAttachments.attachableType, "lesson"),
+            inArray(materialAttachments.attachableId, lessonIds)
+          )
         )
-        .groupBy(materialAttachments.attachableId)
+        .orderBy(asc(materialAttachments.sortOrder))
     : [];
 
-  const assessmentMatCounts = assessmentIds.length
+  const assessmentMats: MatLink[] = assessmentIds.length
     ? await db
         .select({
+          attachmentId: materialAttachments.id,
+          materialId: materials.id,
+          title: materials.title,
+          materialType: materials.materialType,
+          role: materialAttachments.role,
+          driveWebUrl: materials.driveWebUrl,
           attachableId: materialAttachments.attachableId,
-          count: sql<number>`count(*)::int`,
         })
         .from(materialAttachments)
+        .innerJoin(materials, eq(materials.id, materialAttachments.materialId))
         .where(
-          sql`${materialAttachments.attachableType} = 'assessment' AND ${materialAttachments.attachableId} IN ${assessmentIds}`
+          and(
+            eq(materialAttachments.attachableType, "assessment"),
+            inArray(materialAttachments.attachableId, assessmentIds)
+          )
         )
-        .groupBy(materialAttachments.attachableId)
+        .orderBy(asc(materialAttachments.sortOrder))
     : [];
 
-  const lessonMatMap = new Map(lessonMatCounts.map((r) => [r.attachableId, r.count]));
-  const assessmentMatMap = new Map(assessmentMatCounts.map((r) => [r.attachableId, r.count]));
+  // Group by attachable ID
+  const lessonMatMap = new Map<string, MatLink[]>();
+  for (const m of lessonMats) {
+    const arr = lessonMatMap.get(m.attachableId) ?? [];
+    arr.push(m);
+    lessonMatMap.set(m.attachableId, arr);
+  }
+
+  const assessmentMatMap = new Map<string, MatLink[]>();
+  for (const m of assessmentMats) {
+    const arr = assessmentMatMap.get(m.attachableId) ?? [];
+    arr.push(m);
+    assessmentMatMap.set(m.attachableId, arr);
+  }
 
   const result = courseUnits.map((unit) => ({
     id: unit.id,
@@ -89,24 +129,46 @@ export async function GET(req: Request) {
     summary: unit.summary,
     lessons: allLessons
       .filter((l) => l.unitId === unit.id)
-      .map((l) => ({
-        id: l.id,
-        title: l.title,
-        sortOrder: l.sortOrder,
-        durationMinutes: l.durationMinutes,
-        source: l.source,
-        materialCount: lessonMatMap.get(l.id) ?? 0,
-      })),
+      .map((l) => {
+        const mats = lessonMatMap.get(l.id) ?? [];
+        return {
+          id: l.id,
+          title: l.title,
+          sortOrder: l.sortOrder,
+          durationMinutes: l.durationMinutes,
+          source: l.source,
+          materialCount: mats.length,
+          materials: mats.map((m) => ({
+            attachmentId: m.attachmentId,
+            materialId: m.materialId,
+            title: m.title,
+            materialType: m.materialType,
+            role: m.role,
+            driveWebUrl: m.driveWebUrl,
+          })),
+        };
+      }),
     assessments: allAssessments
       .filter((a) => a.unitId === unit.id)
-      .map((a) => ({
-        id: a.id,
-        title: a.title,
-        assessmentType: a.assessmentType,
-        sortOrder: a.sortOrder,
-        source: a.source,
-        materialCount: assessmentMatMap.get(a.id) ?? 0,
-      })),
+      .map((a) => {
+        const mats = assessmentMatMap.get(a.id) ?? [];
+        return {
+          id: a.id,
+          title: a.title,
+          assessmentType: a.assessmentType,
+          sortOrder: a.sortOrder,
+          source: a.source,
+          materialCount: mats.length,
+          materials: mats.map((m) => ({
+            attachmentId: m.attachmentId,
+            materialId: m.materialId,
+            title: m.title,
+            materialType: m.materialType,
+            role: m.role,
+            driveWebUrl: m.driveWebUrl,
+          })),
+        };
+      }),
   }));
 
   return Response.json({
