@@ -12,6 +12,23 @@ const ROLE_OPTIONS = [
   { value: "teacher_reference", label: "Reference" },
 ];
 
+const TYPE_COLORS: Record<string, string> = {
+  worksheet: "text-blue-700 dark:text-blue-300",
+  handout: "text-emerald-700 dark:text-emerald-300",
+  rubric: "text-violet-700 dark:text-violet-300",
+  presentation: "text-orange-700 dark:text-orange-300",
+  reading: "text-rose-700 dark:text-rose-300",
+  answer_key: "text-teal-700 dark:text-teal-300",
+  video_link: "text-sky-700 dark:text-sky-300",
+  other: "text-zinc-500 dark:text-zinc-400",
+};
+
+const ROLE_COLORS: Record<string, string> = {
+  primary: "text-blue-600 dark:text-blue-400",
+  supporting: "text-zinc-500 dark:text-zinc-400",
+  teacher_reference: "text-violet-600 dark:text-violet-400",
+};
+
 const MATERIAL_TYPE_OPTIONS = [
   { value: "worksheet", label: "Worksheet" },
   { value: "handout", label: "Handout" },
@@ -137,7 +154,7 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, on
               <select
                 value={mat.role}
                 onChange={(e) => onUpdateMaterial(mat.attachmentId, { role: e.target.value })}
-                className="text-[9px] font-medium uppercase tracking-wider bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer text-blue-600 dark:text-blue-400"
+                className={`text-[9px] font-medium uppercase tracking-wider bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer ${ROLE_COLORS[mat.role] ?? ROLE_COLORS.supporting}`}
               >
                 {ROLE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -161,7 +178,7 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, on
               <select
                 value={mat.materialType}
                 onChange={(e) => onUpdateMaterial(mat.attachmentId, { materialType: e.target.value })}
-                className="text-[9px] text-zinc-400 dark:text-zinc-500 bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer shrink-0"
+                className={`text-[9px] font-medium bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer shrink-0 ${TYPE_COLORS[mat.materialType] ?? TYPE_COLORS.other}`}
               >
                 {MATERIAL_TYPE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
