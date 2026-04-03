@@ -29,6 +29,13 @@
       "when": 1775173031028,
       "tag": "0003_exotic_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775182893805,
+      "tag": "0004_dark_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

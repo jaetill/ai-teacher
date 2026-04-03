@@ -55,6 +55,31 @@ function splitOutput(raw: string): { display: string; json: string | null } {
   };
 }
 
+// ── Quarter styles (shared with editor) ───
+
+const QUARTER_STYLES: Record<string, { border: string; badge: string; accent: string }> = {
+  Q1: {
+    border: "border-l-blue-400 dark:border-l-blue-500",
+    badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    accent: "hover:border-blue-200 dark:hover:border-blue-800",
+  },
+  Q2: {
+    border: "border-l-violet-400 dark:border-l-violet-500",
+    badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+    accent: "hover:border-violet-200 dark:hover:border-violet-800",
+  },
+  Q3: {
+    border: "border-l-teal-400 dark:border-l-teal-500",
+    badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    accent: "hover:border-teal-200 dark:hover:border-teal-800",
+  },
+  Q4: {
+    border: "border-l-amber-400 dark:border-l-amber-500",
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    accent: "hover:border-amber-200 dark:hover:border-amber-800",
+  },
+};
+
 // ── Component ───
 
 export default function CurriculumPage() {
@@ -205,35 +230,52 @@ export default function CurriculumPage() {
 
               return (
                 <div key={course.id}>
-                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 mb-4">
-                    Grade {course.grade} — {course.title}
-                  </h2>
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      Grade {course.grade} — {course.title}
+                    </h2>
+                    <Link
+                      href={`/curriculum/edit/${course.id}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="opacity-60">
+                        <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
+                      </svg>
+                      Edit Curriculum
+                    </Link>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {quarters.map((q) => {
                       const quarterUnits = course.units.filter(
                         (u) => u.quarter === q
                       );
+                      const qs = QUARTER_STYLES[q];
 
                       return (
                         <div
                           key={q}
-                          className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
+                          className={`rounded-xl border border-l-4 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 ${qs?.border ?? ""}`}
                         >
-                          <h3 className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3">
-                            {q}
-                          </h3>
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${qs?.badge ?? "bg-zinc-100 text-zinc-500"}`}>
+                              {q}
+                            </span>
+                            <span className="text-xs text-zinc-400">
+                              {quarterUnits.length} {quarterUnits.length === 1 ? "unit" : "units"}
+                            </span>
+                          </div>
                           {quarterUnits.length > 0 ? (
                             <div className="space-y-2">
                               {quarterUnits.map((unit) => (
                                 <Link
                                   key={unit.id}
                                   href={`/curriculum/${unit.id}`}
-                                  className="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+                                  className={`block rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 transition-colors ${qs?.accent ?? "hover:border-zinc-300"}`}
                                 >
-                                  <div className="text-xs text-zinc-400 mb-0.5">
-                                    {unit.durationWeeks} weeks
+                                  <div className="flex items-center gap-2 text-xs text-zinc-400 mb-1">
+                                    <span>{unit.durationWeeks} weeks</span>
                                     {unit.source === "human" && (
-                                      <span className="ml-1 text-emerald-500">
+                                      <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 rounded-full px-2 py-0.5">
                                         from docs
                                       </span>
                                     )}
@@ -241,7 +283,7 @@ export default function CurriculumPage() {
                                   <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
                                     {unit.title}
                                   </div>
-                                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
+                                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2 leading-relaxed">
                                     {unit.summary}
                                   </div>
                                 </Link>

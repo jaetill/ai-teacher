@@ -46,17 +46,22 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
 
   return (
     <div
-      className="rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+      className="rounded-lg border border-zinc-100 dark:border-zinc-800 px-4 py-3 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
       onClick={() => setExpanded(!expanded)}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs text-zinc-400 mb-0.5">
-            Day {lesson.sortOrder}
-            {lesson.durationMinutes && ` · ${lesson.durationMinutes} min`}
-          </div>
-          <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-            {lesson.title}
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 rounded-md w-6 h-6 flex items-center justify-center shrink-0 mt-0.5">
+            {lesson.sortOrder}
+          </span>
+          <div className="min-w-0">
+            <div className="text-xs text-zinc-400 mb-0.5">
+              Day {lesson.sortOrder}
+              {lesson.durationMinutes && ` · ${lesson.durationMinutes} min`}
+            </div>
+            <div className="text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
+              {lesson.title}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -64,13 +69,17 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Has notes" />
           )}
           {lesson.source === "human" && (
-            <span className="text-xs text-emerald-500">from docs</span>
+            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 rounded-full px-2 py-0.5">from docs</span>
           )}
-          <span
-            className={`text-zinc-400 text-xs transition-transform ${expanded ? "rotate-90" : ""}`}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="currentColor"
+            className={`text-zinc-400 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
           >
-            →
-          </span>
+            <path d="M3 1l5 4-5 4V1z" />
+          </svg>
         </div>
       </div>
       {expanded && (
@@ -228,30 +237,34 @@ function WeekGroup({ week }: { week: { week: number; lessons: Lesson[] } }) {
     <div className="rounded-lg border border-zinc-100 dark:border-zinc-800">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors rounded-lg"
       >
         <div className="flex items-center gap-3">
-          <span
-            className={`text-zinc-400 text-xs transition-transform ${open ? "rotate-90" : ""}`}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="currentColor"
+            className={`text-zinc-400 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
           >
-            →
-          </span>
+            <path d="M3 1l5 4-5 4V1z" />
+          </svg>
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Week {week.week}
           </span>
-          <span className="text-xs text-zinc-400">
+          <span className="text-[11px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-full px-2 py-0.5">
             {week.lessons.length} lessons
           </span>
           {noteCount > 0 && (
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title={`${noteCount} with notes`} />
           )}
         </div>
-        <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate max-w-[50%] text-right">
-          {week.lessons.map((l) => l.title).join(" · ")}
+        <div className="text-xs text-zinc-400/70 dark:text-zinc-500/70 truncate max-w-[50%] text-right">
+          {week.lessons.map((l) => l.title).join("  /  ")}
         </div>
       </button>
       {open && (
-        <div className="px-4 pb-3 space-y-2">
+        <div className="px-4 pb-3 space-y-1.5">
           {week.lessons.map((lesson) => (
             <LessonCard key={lesson.id} lesson={lesson} />
           ))}
@@ -501,9 +514,19 @@ export default function UnitDetailPage() {
         {/* ── Unit summary ─── */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
           <div>
-            <div className="text-xs text-zinc-400 mb-1">
-              {unit.durationWeeks} weeks ·{" "}
-              {unit.source === "human" ? "from curriculum docs" : "AI generated"}
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs text-zinc-400">
+                {unit.durationWeeks} weeks
+              </span>
+              {unit.source === "human" ? (
+                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 rounded-full px-2 py-0.5">
+                  from curriculum docs
+                </span>
+              ) : (
+                <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-full px-2 py-0.5">
+                  AI generated
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
               {unit.title}
