@@ -118,4 +118,6 @@ export type EditAction =
   | "update_title"
   | "update_metadata"
   | "attach_material"
-  | "detach_material";
+  | "detach_material"
+  | "update_material_role"
+  | "update_material_type";

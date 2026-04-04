@@ -15,6 +15,7 @@ export const curriculumEditLog = pgTable(
       .references(() => courses.id, { onDelete: "cascade" }),
     // 'reorder_lesson' | 'move_lesson' | 'move_assessment' | 'retype_content'
     // | 'update_title' | 'update_metadata' | 'attach_material' | 'detach_material'
+    // | 'update_material_role' | 'update_material_type'
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(), // 'lesson' | 'assessment' | 'material' | 'unit'
     entityId: uuid("entity_id").notNull(),

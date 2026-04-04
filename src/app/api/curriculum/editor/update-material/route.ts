@@ -2,8 +2,9 @@
 // Updates the role on a material_attachment and/or the materialType on the material itself.
 
 import { db } from "@/db";
-import { materialAttachments, materials } from "@/db/schema";
+import { materialAttachments, materials, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { logEdit } from "../log-edit";
 
 const VALID_ROLES = ["primary", "supporting", "teacher_reference"];
 const VALID_MATERIAL_TYPES = [
@@ -52,6 +53,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "Attachment not found" }, { status: 404 });
   }
 
+  // Capture previous values before updating
+  const prevRole = attachment.role;
+  const prevMaterialType = materialType
+    ? (
+        await db
+          .select({ materialType: materials.materialType })
+          .from(materials)
+          .where(eq(materials.id, attachment.materialId))
+          .limit(1)
+      )[0]?.materialType
+    : undefined;
+
   // Update role on the attachment
   if (role) {
     await db
@@ -66,6 +79,72 @@ export async function POST(req: Request) {
       .update(materials)
       .set({ materialType, updatedAt: new Date() })
       .where(eq(materials.id, attachment.materialId));
+  }
+
+  // Log the edit — look up courseId via the attachment's unit
+  const [unit] = await db
+    .select({ courseId: units.courseId })
+    .from(units)
+    .where(eq(units.id, attachment.attachableId))
+    .limit(1);
+
+  // attachableType might be 'lesson' or 'assessment', not 'unit' — try via the lesson/assessment's unit
+  let courseId = unit?.courseId;
+  if (!courseId) {
+    // Attachment is on a lesson or assessment — need to look up its unit
+    const { lessons, assessments } = await import("@/db/schema");
+    if (attachment.attachableType === "lesson") {
+      const [lesson] = await db
+        .select({ unitId: lessons.unitId })
+        .from(lessons)
+        .where(eq(lessons.id, attachment.attachableId))
+        .limit(1);
+      if (lesson) {
+        const [u] = await db
+          .select({ courseId: units.courseId })
+          .from(units)
+          .where(eq(units.id, lesson.unitId))
+          .limit(1);
+        courseId = u?.courseId;
+      }
+    } else if (attachment.attachableType === "assessment") {
+      const [assessment] = await db
+        .select({ unitId: assessments.unitId })
+        .from(assessments)
+        .where(eq(assessments.id, attachment.attachableId))
+        .limit(1);
+      if (assessment) {
+        const [u] = await db
+          .select({ courseId: units.courseId })
+          .from(units)
+          .where(eq(units.id, assessment.unitId))
+          .limit(1);
+        courseId = u?.courseId;
+      }
+    }
+  }
+
+  if (courseId) {
+    if (role) {
+      await logEdit({
+        courseId,
+        action: "update_material_role",
+        entityType: "material",
+        entityId: attachment.materialId,
+        previousValue: { role: prevRole, attachmentId },
+        newValue: { role, attachmentId },
+      });
+    }
+    if (materialType) {
+      await logEdit({
+        courseId,
+        action: "update_material_type",
+        entityType: "material",
+        entityId: attachment.materialId,
+        previousValue: { materialType: prevMaterialType },
+        newValue: { materialType },
+      });
+    }
   }
 
   return Response.json({ ok: true });
