@@ -107,8 +107,8 @@ export async function POST(
 For each material, determine which lesson(s) it belongs to based on the filename, material type, and folder category. A material can be linked to multiple lessons if it spans them.
 
 Also assign a role:
-- primary: the main resource for that lesson (e.g., the slide deck, the main handout)
-- supporting: supplementary material (e.g., answer key, reading passage)
+- primary: the main resource for that lesson (e.g., the lesson slides, the main activity)
+- supporting: supplementary material (e.g., reading passage, rubric)
 - teacher_reference: for teacher use only (e.g., curriculum overview, notes for improvement)
 
 Some materials may be unit-level (curriculum overviews, timelines) rather than lesson-specific. For those, set lessonSortOrder to 0 to indicate unit-level attachment.

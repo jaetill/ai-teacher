@@ -8,14 +8,13 @@ import { logEdit } from "../log-edit";
 
 const VALID_ROLES = ["primary", "supporting", "teacher_reference"];
 const VALID_MATERIAL_TYPES = [
-  "presentation",
-  "worksheet",
   "reading",
+  "activity",
   "rubric",
-  "answer_key",
-  "handout",
-  "video_link",
-  "supplementary",
+  "lesson",
+  "assessment",
+  "resource",
+  "curriculum",
   "other",
 ];
 

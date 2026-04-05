@@ -20,10 +20,18 @@ For each filename, infer:
    - Activities: worksheets, graphic organizers, group work, projects, creative writing prompts, handouts for student practice
    - Assessments: quizzes, tests, rubrics, essay prompts, answer keys
    - Resources: supplementary source materials, reference documents, articles, timelines, or external content used to build activities but not student-facing on their own
-4. **materialType** — one of: presentation, worksheet, reading, rubric, answer_key, handout, video_link, supplementary, other
+4. **materialType** — one of: reading, activity, rubric, lesson, assessment, resource, curriculum, other
+   - reading: reading passages, novels, articles, texts students read
+   - activity: worksheets, graphic organizers, group work, projects, creative writing prompts, student practice handouts
+   - rubric: rubrics, scoring guides
+   - lesson: lesson plans, slide decks, presentations, guided notes, vocabulary lists, daily instruction materials
+   - assessment: quizzes, tests, essay prompts, answer keys, exit tickets
+   - resource: supplementary source materials, reference documents, teacher resources
+   - curriculum: quarter overviews, pacing guides, scope-and-sequence, curriculum maps
+   - other: anything that doesn't fit the above
 
 Return ONLY a JSON array with one object per filename:
-[{"filename": "...", "grade": 8, "destination": "Q1", "category": "Lessons", "materialType": "presentation"}]
+[{"filename": "...", "grade": 8, "destination": "Q1", "category": "Lessons", "materialType": "lesson"}]
 
 No markdown fencing, no explanation — just the JSON array.`;
 

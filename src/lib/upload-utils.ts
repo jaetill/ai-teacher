@@ -51,12 +51,13 @@ export const DESTINATIONS = [
 export type Destination = (typeof DESTINATIONS)[number];
 
 export const MATERIAL_TYPES = [
-  "presentation",
-  "worksheet",
   "reading",
+  "activity",
   "rubric",
-  "answer_key",
-  "handout",
+  "lesson",
+  "assessment",
+  "resource",
+  "curriculum",
   "other",
 ] as const;
 export type MaterialType = (typeof MATERIAL_TYPES)[number];

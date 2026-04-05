@@ -22,14 +22,13 @@ const ROLE_OPTIONS = [
 ];
 
 const TYPE_COLORS: Record<string, string> = {
-  worksheet: "text-blue-700 dark:text-blue-300",
-  handout: "text-emerald-700 dark:text-emerald-300",
-  rubric: "text-violet-700 dark:text-violet-300",
-  presentation: "text-orange-700 dark:text-orange-300",
   reading: "text-rose-700 dark:text-rose-300",
-  answer_key: "text-teal-700 dark:text-teal-300",
-  video_link: "text-sky-700 dark:text-sky-300",
-  supplementary: "text-cyan-700 dark:text-cyan-300",
+  activity: "text-blue-700 dark:text-blue-300",
+  rubric: "text-violet-700 dark:text-violet-300",
+  lesson: "text-orange-700 dark:text-orange-300",
+  assessment: "text-teal-700 dark:text-teal-300",
+  resource: "text-cyan-700 dark:text-cyan-300",
+  curriculum: "text-emerald-700 dark:text-emerald-300",
   other: "text-zinc-500 dark:text-zinc-400",
 };
 
@@ -40,14 +39,13 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const MATERIAL_TYPE_OPTIONS = [
-  { value: "worksheet", label: "Worksheet" },
-  { value: "handout", label: "Handout" },
-  { value: "rubric", label: "Rubric" },
-  { value: "answer_key", label: "Answer Key" },
-  { value: "presentation", label: "Presentation" },
   { value: "reading", label: "Reading" },
-  { value: "video_link", label: "Video" },
-  { value: "supplementary", label: "Supplementary" },
+  { value: "activity", label: "Activity" },
+  { value: "rubric", label: "Rubric" },
+  { value: "lesson", label: "Lesson" },
+  { value: "assessment", label: "Assessment" },
+  { value: "resource", label: "Resource" },
+  { value: "curriculum", label: "Curriculum" },
   { value: "other", label: "Other" },
 ];
 

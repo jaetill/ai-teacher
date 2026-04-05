@@ -5,13 +5,13 @@ import { useDraggable } from "@dnd-kit/core";
 import type { PoolMaterial } from "@/types/curriculum-editor";
 
 const TYPE_COLORS: Record<string, string> = {
-  worksheet: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  handout: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  rubric: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-  presentation: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
   reading: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
-  answer_key: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
-  supplementary: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  activity: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  rubric: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  lesson: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  assessment: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+  resource: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  curriculum: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   other: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
