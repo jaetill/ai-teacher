@@ -6,15 +6,18 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useCurriculumEditor } from "@/lib/use-curriculum-editor";
 import UnitColumn from "@/components/curriculum-editor/UnitColumn";
 import ContentPool from "@/components/curriculum-editor/ContentPool";
@@ -30,6 +33,27 @@ export default function CurriculumEditorPage() {
       activationConstraint: { distance: 5 },
     })
   );
+
+  // ── Custom collision detection ───
+  // When dragging a pool material, use pointerWithin so it detects
+  // unit drop zones and lesson/assessment targets in the left panel.
+  // For lesson/assessment reordering, use closestCenter (default sortable behavior).
+  const activeDataRef = useRef<Record<string, unknown> | null>(null);
+
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    const activeType = activeDataRef.current?.type;
+
+    if (activeType === "pool-material") {
+      // pointerWithin works better for cross-panel — detects what's under the cursor
+      const pointerCollisions = pointerWithin(args);
+      if (pointerCollisions.length > 0) return pointerCollisions;
+      // Fallback to rect intersection for edge cases
+      return rectIntersection(args);
+    }
+
+    // For lessons/assessments, closestCenter gives good sortable UX
+    return closestCenter(args);
+  }, []);
 
   // ── Find which unit contains a lesson or assessment ───
 
@@ -48,22 +72,57 @@ export default function CurriculumEditorPage() {
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as string);
+    activeDataRef.current = event.active.data.current ?? null;
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
+    activeDataRef.current = null;
     const { active, over } = event;
     if (!over) return;
 
     const activeData = active.data.current;
     const overId = over.id as string;
 
-    // Pool material dropped on a unit
+    // Pool material dropped on a unit, lesson, or assessment
     if (activeData?.type === "pool-material") {
-      const targetUnitId = over.data.current?.unitId;
-      if (targetUnitId) {
-        editor.attachMaterial(activeData.materialId, "unit", targetUnitId);
+      const overData = over.data.current;
+
+      // Dropped on unit drop zone (id: "unit-drop-{id}")
+      if (overData?.unitId) {
+        editor.attachMaterial(activeData.materialId, "unit", overData.unitId);
+        return;
       }
+
+      // Dropped on a lesson droppable (id: "lesson-drop-{id}")
+      if (overData?.lessonId) {
+        editor.attachMaterial(activeData.materialId, "lesson", overData.lessonId);
+        return;
+      }
+
+      // Dropped on an assessment droppable (id: "assessment-drop-{id}")
+      if (overData?.assessmentId) {
+        editor.attachMaterial(activeData.materialId, "assessment", overData.assessmentId);
+        return;
+      }
+
+      // Dropped on a sortable lesson/assessment item directly
+      if (overData?.type === "lesson") {
+        editor.attachMaterial(activeData.materialId, "lesson", overId);
+        return;
+      }
+      if (overData?.type === "assessment") {
+        editor.attachMaterial(activeData.materialId, "assessment", overId);
+        return;
+      }
+
+      // Dropped on a unit card area — find the unit
+      const targetUnit = findUnitForItem(overId);
+      if (targetUnit) {
+        editor.attachMaterial(activeData.materialId, "unit", targetUnit.id);
+        return;
+      }
+
       return;
     }
 
@@ -183,7 +242,7 @@ export default function CurriculumEditorPage() {
       {/* ── Two-panel layout ─── */}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
@@ -229,7 +288,7 @@ export default function CurriculumEditorPage() {
 
           {/* Right panel: Content pool */}
           <div className="w-[380px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
-            <ContentPool materials={editor.pool} />
+            <ContentPool materials={editor.pool} onDetachMaterial={editor.detachMaterial} />
           </div>
         </div>
 

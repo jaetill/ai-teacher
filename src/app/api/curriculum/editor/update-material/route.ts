@@ -15,6 +15,7 @@ const VALID_MATERIAL_TYPES = [
   "answer_key",
   "handout",
   "video_link",
+  "supplementary",
   "other",
 ];
 

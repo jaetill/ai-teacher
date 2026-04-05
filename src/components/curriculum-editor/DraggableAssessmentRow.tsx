@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { EditorAssessment } from "@/types/curriculum-editor";
 import InlineEdit from "./InlineEdit";
@@ -28,6 +29,7 @@ const TYPE_COLORS: Record<string, string> = {
   reading: "text-rose-700 dark:text-rose-300",
   answer_key: "text-teal-700 dark:text-teal-300",
   video_link: "text-sky-700 dark:text-sky-300",
+  supplementary: "text-cyan-700 dark:text-cyan-300",
   other: "text-zinc-500 dark:text-zinc-400",
 };
 
@@ -45,6 +47,7 @@ const MATERIAL_TYPE_OPTIONS = [
   { value: "presentation", label: "Presentation" },
   { value: "reading", label: "Reading" },
   { value: "video_link", label: "Video" },
+  { value: "supplementary", label: "Supplementary" },
   { value: "other", label: "Other" },
 ];
 
@@ -69,11 +72,17 @@ export default function DraggableAssessmentRow({
   const {
     attributes,
     listeners,
-    setNodeRef,
+    setNodeRef: setSortableRef,
     transform,
     transition,
     isDragging,
   } = useSortable({ id: assessment.id, data: { type: "assessment", unitId: null } });
+
+  // Also register as a droppable target for pool materials
+  const { setNodeRef: setDropRef, isOver: isDropTarget } = useDroppable({
+    id: `assessment-drop-${assessment.id}`,
+    data: { type: "assessment", assessmentId: assessment.id },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -83,9 +92,16 @@ export default function DraggableAssessmentRow({
 
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setSortableRef(node);
+        setDropRef(node);
+      }}
       style={style}
-      className="rounded-lg border border-amber-200/60 dark:border-amber-800/30 bg-amber-50/50 dark:bg-amber-950/10 group hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors"
+      className={`rounded-lg border border-amber-200/60 dark:border-amber-800/30 group transition-colors ${
+        isDropTarget
+          ? "ring-2 ring-amber-400/50 bg-amber-100/50 dark:bg-amber-950/30"
+          : "bg-amber-50/50 dark:bg-amber-950/10 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+      }`}
     >
       <div className="flex items-center gap-3 px-3 py-2">
         {/* Drag handle */}

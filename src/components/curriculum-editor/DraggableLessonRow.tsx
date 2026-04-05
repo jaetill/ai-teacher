@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { EditorLesson } from "@/types/curriculum-editor";
 import InlineEdit from "./InlineEdit";
@@ -20,6 +21,7 @@ const TYPE_COLORS: Record<string, string> = {
   reading: "text-rose-700 dark:text-rose-300",
   answer_key: "text-teal-700 dark:text-teal-300",
   video_link: "text-sky-700 dark:text-sky-300",
+  supplementary: "text-cyan-700 dark:text-cyan-300",
   other: "text-zinc-500 dark:text-zinc-400",
 };
 
@@ -37,6 +39,7 @@ const MATERIAL_TYPE_OPTIONS = [
   { value: "presentation", label: "Presentation" },
   { value: "reading", label: "Reading" },
   { value: "video_link", label: "Video" },
+  { value: "supplementary", label: "Supplementary" },
   { value: "other", label: "Other" },
 ];
 
@@ -53,11 +56,17 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, on
   const {
     attributes,
     listeners,
-    setNodeRef,
+    setNodeRef: setSortableRef,
     transform,
     transition,
     isDragging,
   } = useSortable({ id: lesson.id, data: { type: "lesson", unitId: null } });
+
+  // Also register as a droppable target for pool materials
+  const { setNodeRef: setDropRef, isOver: isDropTarget } = useDroppable({
+    id: `lesson-drop-${lesson.id}`,
+    data: { type: "lesson", lessonId: lesson.id },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -67,9 +76,16 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, on
 
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setSortableRef(node);
+        setDropRef(node);
+      }}
       style={style}
-      className="rounded-lg group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+      className={`rounded-lg group transition-colors ${
+        isDropTarget
+          ? "ring-2 ring-blue-400/50 bg-blue-50/50 dark:bg-blue-950/20"
+          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+      }`}
     >
       <div className="flex items-center gap-3 px-3 py-2">
         {/* Drag handle */}

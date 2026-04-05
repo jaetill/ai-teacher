@@ -13,7 +13,7 @@ export const materials = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     title: text("title").notNull(),
-    // 'presentation' | 'worksheet' | 'reading' | 'rubric' | 'answer_key' | 'handout' | 'video_link' | 'other'
+    // 'presentation' | 'worksheet' | 'reading' | 'rubric' | 'answer_key' | 'handout' | 'video_link' | 'supplementary' | 'other'
     materialType: text("material_type").notNull(),
     // 'google_drive' | 'url' | 'inline'
     storageType: text("storage_type").notNull(),
