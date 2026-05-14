@@ -1,0 +1,33 @@
+# Build output / deps / generated
+node_modules/
+.next/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
+public/
+package-lock.json
+skills-lock.json
+*.min.js
+*.min.css
+
+# Drizzle migrations + snapshots are generated — not hand-formatted
+drizzle/
+
+# Platform tooling + runtime skill bundles — different lifecycle, owned
+# elsewhere; don't reformat them here
+.claude/
+.agents/
+AGENTS.md
+
+# Pre-existing application code + docs. This PR introduces the formatter
+# but intentionally does NOT reformat the existing tree (would be 99 files
+# of churn). lint-staged runs `prettier --write` on touch, so the codebase
+# converges on compliance organically. A one-shot `prettier --write .`
+# formatting PR can clear the rest when convenient.
+src/
+docs/
+CLAUDE.md
+README.md

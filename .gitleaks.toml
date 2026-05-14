@@ -1,0 +1,12 @@
+# Gitleaks config — extends the default ruleset with a focused allowlist
+# for known false positives. Real findings continue to fail the workflow.
+#
+# ai-teacher is greenfield for secret scanning — no historical secret-shaped
+# files to allowlist. This config is intentionally minimal. Add new entries
+# with a brief justification.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ai-teacher allowlist — minimal; add entries with justification"
