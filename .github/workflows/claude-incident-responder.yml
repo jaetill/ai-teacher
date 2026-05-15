@@ -1,0 +1,185 @@
+name: claude-incident-responder
+# Invokes the incident-responder subagent (.claude/agents/incident-responder.md)
+# on prod alerts.
+#
+# Triggers on issue creation with the `incident:p0` label. Sentry's native
+# GitHub integration creates issues for triggered alerts; we configure it to
+# apply the `incident:p0` label, which this workflow listens for. Using
+# native integrations on both ends avoids the custom-glue that the initial
+# design called for.
+#
+# The agent triages (reads the Sentry-shaped issue body, recent deploys,
+# context links), attempts mitigation guidance, updates the issue with
+# severity classification and suggested actions, and drafts a postmortem
+# skeleton in a comment.
+#
+# This is the ONLY platform agent meant to interrupt synchronously. Treat
+# its output as page-worthy.
+#
+# Setup required (one-time per project — see docs/runbooks/sentry-alerts.md):
+#   1. In Sentry, Settings → Integrations → GitHub → install (or already
+#      installed via the repo's GitHub App).
+#   2. In Sentry, configure the project's alert rules to use action
+#      "Create a GitHub Issue" → repo: jaetill/ai-teacher → labels:
+#      `incident:p0,source:sentry`.
+#   3. Ensure the `incident:p0` label exists in the repo (created on first
+#      manual smoke test if absent).
+#
+# NOTE: ai-teacher deploys via Vercel (auto-deploy on push to main), not a
+# GitHub Actions deploy workflow. The agent uses ci.yml runs on main as the
+# "what recently landed" signal; the actual deploy timeline lives in Vercel.
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      simulated_title:
+        description: "Title for the simulated incident issue (smoke test)"
+        required: false
+        default: "Smoke test: incident-responder wiring"
+      simulated_body:
+        description: "Body for the simulated issue"
+        required: false
+        default: |
+          source: sentry-smoke-test
+          level: info
+          project: ai-teacher
+          message: This issue was opened via workflow_dispatch to verify the incident-responder wiring. No real incident.
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
+
+# Don't cancel an in-flight triage; let it complete and post its findings
+# even if a duplicate alert comes in.
+concurrency:
+  group: incident-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    # Run only when the issue has (or was just labeled with) `incident:p0`.
+    # The `opened` event always runs; the `labeled` event runs only when
+    # the `incident:p0` label is the one being applied. For workflow_dispatch
+    # the agent path handles its own smoke-test logic.
+    if: |
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issues' && github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'incident:p0'))
+      || (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'incident:p0')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open a smoke-test issue (workflow_dispatch only)
+        id: smoke
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          T: ${{ inputs.simulated_title }}
+          B: ${{ inputs.simulated_body }}
+        run: |
+          # Ensure required labels exist (idempotent).
+          gh label create incident:p0 --color B60205 --description "Synchronous incident — incident-responder agent paged" 2>/dev/null || true
+          gh label create source:sentry --color 1D76DB --description "Issue created by a Sentry alert" 2>/dev/null || true
+          gh label create smoke-test --color CCCCCC --description "Workflow smoke-test artifact; safe to close" 2>/dev/null || true
+          # Create the issue. `gh issue create` prints the issue URL on
+          # stdout; extract the trailing number.
+          url=$(gh issue create --title "$T" --body "$B" --label "incident:p0,source:sentry,smoke-test")
+          number=${url##*/}
+          echo "issue_number=$number" >> "$GITHUB_OUTPUT"
+          echo "Created smoke-test issue #$number ($url)"
+      - name: Resolve target issue number
+        id: target
+        env:
+          ISSUE_FROM_EVENT: ${{ github.event.issue.number }}
+          ISSUE_FROM_SMOKE: ${{ steps.smoke.outputs.issue_number }}
+        run: |
+          if [[ -n "$ISSUE_FROM_SMOKE" ]]; then
+            echo "number=$ISSUE_FROM_SMOKE" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=$ISSUE_FROM_EVENT" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run incident-responder agent
+        env:
+          ISSUE_NUMBER: ${{ steps.target.outputs.number }}
+          # Pass Sentry API access to the agent so it can fetch full event
+          # context (breadcrumbs, user count, recent occurrences) rather
+          # than relying only on the truncated GitHub issue body.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: true
+          # Sentry's GitHub App creates the incident issue as actor
+          # `sentry[bot]`. The action's default safety guard refuses to
+          # run on bot-initiated events (loop-prevention). Explicitly
+          # whitelist sentry[bot] so the alert-to-triage chain completes.
+          # claude[bot] still gets blocked (the workflow-level if: skips
+          # those before this step is even reached).
+          allowed_bots: "sentry[bot]"
+          prompt: |
+            Act as the incident-responder subagent defined in .claude/agents/incident-responder.md.
+
+            An incident issue has been filed. Issue number is in the env var
+            ISSUE_NUMBER. Read it via:
+              gh issue view "$ISSUE_NUMBER" --json title,body,labels
+
+            Steps:
+            1. Read the issue body. The body is either a Sentry-generated
+               alert (look for fields like `level`, `project`, `culprit`,
+               URLs to sentry.io) or a smoke-test payload (look for
+               `source: sentry-smoke-test` or the `smoke-test` label).
+            2. If smoke test: post a comment confirming the wiring works,
+               then close it via `gh issue close $ISSUE_NUMBER`. STOP.
+            3. For real alerts:
+               a. Extract the Sentry issue ID from the GitHub issue body.
+                  Sentry's integration writes a line like
+                  `Sentry Issue: [AI-TEACHER-N](https://....sentry.io/issues/<id>/)`.
+                  Grep for the URL and pull out `<id>`.
+               b. If you got an ID and SENTRY_AUTH_TOKEN is set, fetch full
+                  Sentry context (a JSON blob with breadcrumbs, user count,
+                  release, tags, recent events):
+                    curl -s -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+                      "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/<id>/"
+                  Use this for richer triage than the GitHub issue body alone.
+               c. Pull recent activity on main: `gh run list --workflow=ci.yml --branch=main --limit=3`.
+                  ai-teacher deploys via Vercel auto-deploy on push to main;
+                  the actual deploy timeline lives in the Vercel dashboard.
+                  Treat the most recent ci.yml run as "what recently landed."
+               d. Classify severity (P0 / P1 / P2).
+               e. Identify probable cause (cite a recent merge to main if
+                  within the last 60 min; otherwise note as "pre-existing or
+                  external dependency"). Cross-reference the Sentry release
+                  tag with the latest main commit SHA — they should match.
+               f. Pick the right runbook (docs/runbooks/) if one matches.
+            4. Update the issue body with a triage block via `gh issue edit`:
+                 ## Triage (incident-responder)
+                 - **Severity**: P0 | P1 | P2
+                 - **Symptom**: <one line>
+                 - **Affected users**: <count from Sentry API, or "unknown">
+                 - **Probable cause**: <recent main commit SHA + timestamp, or "unknown / external">
+                 - **Mitigation suggested**: <rollback via Vercel / restart / no-action>
+                 - **Owner**: @jaetill
+                 - **Runbook**: <link to docs/runbooks/X.md or "none">
+                 - **Next checks**: <Vercel runtime logs, Sentry issue URL, specific log filters>
+            5. Post a comment with a postmortem skeleton (Detected / Impact /
+               Timeline / Root cause / Action items) — leave it for the
+               human to fill in after resolution.
+
+            Constraints:
+              - Do NOT attempt mitigation actions (no deploy/rollback here).
+                Surface recommendations; the human executes (Vercel dashboard).
+              - Do NOT close the issue unless it's a smoke test.
+              - Do NOT remove the incident:p0 label.
+          claude_args: |
+            --model claude-sonnet-4-6
+            --permission-mode bypassPermissions
+            --allowed-tools Bash,Read,Glob,Grep,WebFetch
+            --append-system-prompt "Follow the platform standards in docs/standards/."

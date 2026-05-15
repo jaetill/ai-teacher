@@ -1,0 +1,27 @@
+name: CI
+# Gate-only CI for ai-teacher. Vercel owns deployment (auto-deploy on push
+# to main) — this workflow does NOT deploy. It adds the unit-test + lint +
+# typecheck gate that Vercel's build check doesn't cover.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
