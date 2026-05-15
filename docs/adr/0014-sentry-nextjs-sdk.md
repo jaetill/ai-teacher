@@ -43,7 +43,7 @@ Specific version: `^10.53.1` (Sentry SDK v10.x, the current major as of 2026-05)
 - **Single-package integration.** One dependency covers client, server, and edge runtimes. No manual webpack plugin configuration; `withSentryConfig` wraps `next.config.ts` and handles source-map upload, tree-shaking, and tunnel configuration.
 - **Phase 5 unblocked.** ai-teacher gains error tracking and performance tracing per ADR-0009, closing the last observability gap before auto-rollback health signals can be wired.
 - **PII scrubbing enforced.** `beforeSend` hooks on both client and server strip `user.email`, `user.username`, and form input values from breadcrumbs before events leave the browser or server process.
-- **Graceful no-op.** All three config files (`sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`) guard initialization behind `if (dsn)`, so local dev without env vars works unchanged.
+- **Graceful no-op.** All three config files (`instrumentation-client.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`) guard initialization behind `if (dsn)`, so local dev without env vars works unchanged.
 - **Build-safe source maps.** The `errorHandler` in `withSentryConfig` downgrades upload failures to warnings, preventing broken deploys when `SENTRY_AUTH_TOKEN` is unset.
 
 ### Negative
@@ -87,7 +87,7 @@ Specific version: `^10.53.1` (Sentry SDK v10.x, the current major as of 2026-05)
 
 ## Implementation notes
 
-- **Config files added:** `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation.ts` — all at repo root per `@sentry/nextjs` conventions.
+- **Config files added:** `instrumentation-client.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation.ts` — all at repo root per `@sentry/nextjs` conventions. (Client config uses `instrumentation-client.ts` because Next.js 16 + Turbopack does not pick up the legacy `sentry.client.config.ts` filename.)
 - **Build wrapper:** `next.config.ts` wrapped with `withSentryConfig`. Source-map upload reads `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` from environment.
 - **Vercel env vars required:** `NEXT_PUBLIC_SENTRY_DSN` (runtime), `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` + `SENTRY_PROJECT` (build-time).
 - **PII scrubbing pattern:** `beforeSend` in client and server configs strips `user.email` and `user.username`. Client config additionally redacts `ui.input` breadcrumb values. Follows the pattern from game-night-pwa per ADR-0006.
