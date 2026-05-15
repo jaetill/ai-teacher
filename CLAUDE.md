@@ -13,6 +13,7 @@ Target user: one teacher (primary), with potential sharing to a small teaching c
 ## Tech stack
 - **Frontend**: Next.js (App Router) + TypeScript + Tailwind CSS
 - **AI**: Claude API (streaming) via Anthropic SDK — conversational copilot experience
+- **Observability**: Sentry (`@sentry/nextjs`) — error tracking + performance tracing
 - **Hosting**: Vercel — https://ai-teacher-omega-sage.vercel.app
 - **Auth**: TBD (Cognito or NextAuth depending on multi-user needs)
 - **Database**: TBD (DynamoDB or Neon/PostgreSQL — data is relational)
@@ -64,7 +65,8 @@ src/
 - Vercel project connected to `jaetill/ai-teacher` on GitHub
 - Auto-deploys on push to `main`
 - Production URL: https://ai-teacher-omega-sage.vercel.app
-- Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`
+- Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
+- Build-time secrets (Vercel + CI): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
 - To deploy: `git push origin main`
 
 ---
@@ -93,11 +95,10 @@ Several agent prompts use AWS/Lambda examples copied verbatim from game-night-pw
 
 ### What's NOT installed yet
 
-Phase 3 (quality gates), Phase 4 (CI workflows), Phase 5 (Sentry/observability), Phase 6 (IaC retrofit), Phase 7 (user-feedback API route) — all deferred. See `docs/adr/0001-platform-adoption.md` for the deferral reasons and what each phase needs from Jason.
+Phase 3 (quality gates), Phase 4 (CI workflows), Phase 6 (IaC retrofit), Phase 7 (user-feedback API route) — all deferred. See `docs/adr/0001-platform-adoption.md` for the deferral reasons and what each phase needs from Jason.
 
 Active gaps before the platform is "fully on":
 - Phase 3 — extend `eslint.config.mjs` to add platform plugins on top of `eslint-config-next`; add Prettier, vitest, Playwright, husky, commitlint, gitleaks
 - Phase 4 — add `.github/workflows/ci.yml` + the platform agent workflows; configure repo secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `SENTRY_*`, etc.); enable branch protection on `main`
-- Phase 5 — create Sentry project (Next.js platform), set Vercel + repo env vars, install `@sentry/nextjs` and the four config files it generates
 
 Each phase is its own PR.
