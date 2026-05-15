@@ -5,9 +5,11 @@ import unusedImports from "eslint-plugin-unused-imports";
 import promise from "eslint-plugin-promise";
 
 // Platform quality-gate plugins are layered ON TOP of eslint-config-next,
-// not replacing it. The new rules land at "warn" so introducing the gate
-// doesn't churn the existing codebase; tightening to "error" is a
-// deliberate follow-up once the tree is clean.
+// not replacing it. Severities match the platform reference (meal-planner):
+// `unused-imports/no-unused-imports` and `promise/always-return` are errors;
+// `promise/no-nesting` is a warning. Default severities from
+// eslint-config-next/typescript (no-explicit-any, no-require-imports as
+// errors) are preserved.
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -17,17 +19,9 @@ const eslintConfig = defineConfig([
       promise,
     },
     rules: {
-      "unused-imports/no-unused-imports": "warn",
-      "promise/always-return": "warn",
+      "unused-imports/no-unused-imports": "error",
+      "promise/always-return": "error",
       "promise/no-nesting": "warn",
-      // Pre-existing debt: eslint-config-next/typescript ships these as
-      // "error", but the existing src/ tree (untouched by this PR) doesn't
-      // satisfy them — the base branch's `npm run lint` was already red.
-      // Downgraded to "warn" so the new quality gate can land without
-      // churning application code. Tightening back to "error" is a
-      // follow-up once src/ is cleaned up.
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-require-imports": "warn",
     },
   },
   globalIgnores([

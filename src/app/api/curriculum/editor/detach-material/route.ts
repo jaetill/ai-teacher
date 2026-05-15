@@ -2,7 +2,7 @@
 // Removes a material attachment (does NOT delete the material itself).
 
 import { db } from "@/db";
-import { materialAttachments, materials, units, lessons, assessments } from "@/db/schema";
+import { materialAttachments, units, lessons, assessments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import type { DetachMaterialPayload } from "@/types/curriculum-editor";

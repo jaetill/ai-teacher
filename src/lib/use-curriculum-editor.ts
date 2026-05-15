@@ -4,11 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import type {
   EditorUnit,
   EditorLesson,
-  EditorAssessment,
   PoolMaterial,
 } from "@/types/curriculum-editor";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+// Shape returned by GET /api/curriculum/editor/pool — same fields as
+// PoolMaterial except the API returns the full `attachments` array; the
+// hook collapses it to a single `attachment` (the first one, or null).
+type PoolMaterialApiRow = Omit<PoolMaterial, "attachment"> & {
+  attachments?: NonNullable<PoolMaterial["attachment"]>[];
+};
 
 export function useCurriculumEditor(courseId: string) {
   const [units, setUnits] = useState<EditorUnit[]>([]);
@@ -30,10 +36,16 @@ export function useCurriculumEditor(courseId: string) {
       setCourse(data.course);
       setUnits(data.units);
       setPool(
-        (poolData.materials ?? []).map((m: any) => ({
-          ...m,
-          attachment: m.attachments?.[0] ?? null,
-        }))
+        (poolData.materials ?? []).map(
+          (m: PoolMaterialApiRow): PoolMaterial => ({
+            id: m.id,
+            title: m.title,
+            materialType: m.materialType,
+            driveWebUrl: m.driveWebUrl,
+            driveMimeType: m.driveMimeType,
+            attachment: m.attachments?.[0] ?? null,
+          })
+        )
       );
     } catch (err) {
       console.error("Failed to load editor data", err);

@@ -8,6 +8,7 @@ import {
   boolean,
   index,
   unique,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { courses } from "./courses";
 import { units } from "./units";
@@ -40,7 +41,7 @@ export const terms = pgTable(
     sortOrder: smallint("sort_order").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
-    parentTermId: uuid("parent_term_id").references((): any => terms.id),
+    parentTermId: uuid("parent_term_id").references((): AnyPgColumn => terms.id),
   },
   (table) => [
     index("idx_terms_year").on(table.schoolYearId, table.sortOrder),
