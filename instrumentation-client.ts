@@ -31,16 +31,25 @@ if (dsn) {
       // throwing — a throw here causes Sentry to send the original event
       // unredacted, defeating PII scrubbing (ADR-0006).
       const bc: unknown = event.breadcrumbs;
-      const scrub = (b: { category?: string; message?: string }) => {
-        if (b.category === "ui.input" && b.message) {
-          b.message = b.message.replace(/value=".*?"/g, 'value="[REDACTED]"');
+      const scrub = (b: { category?: string; message?: string; data?: Record<string, unknown> }) => {
+        if (b.category === "ui.input") {
+          if (b.message) {
+            b.message = b.message.replace(/value=".*?"/g, 'value="[REDACTED]"');
+          }
+          // Sentry stores the typed input value in breadcrumb.data.value on
+          // recent SDK versions, independent of message. Redact unconditionally.
+          if (b.data && typeof b.data === "object" && typeof b.data.value === "string") {
+            b.data.value = "[REDACTED]";
+          }
         }
         return b;
       };
       if (Array.isArray(bc)) {
         event.breadcrumbs = bc.map(scrub);
       } else if (bc && typeof bc === "object" && Array.isArray((bc as { values?: unknown }).values)) {
-        const envelope = bc as { values: Array<{ category?: string; message?: string }> };
+        const envelope = bc as {
+          values: Array<{ category?: string; message?: string; data?: Record<string, unknown> }>;
+        };
         envelope.values = envelope.values.map(scrub);
       }
       return event;
