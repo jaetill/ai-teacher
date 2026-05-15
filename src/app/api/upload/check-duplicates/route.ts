@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { listFilesInFolder } from "@/lib/drive";
 import { buildFolderKey } from "@/lib/upload-utils";
 

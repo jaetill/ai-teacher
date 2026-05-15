@@ -13,7 +13,6 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
-  type DragOverEvent,
   type CollisionDetection,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";

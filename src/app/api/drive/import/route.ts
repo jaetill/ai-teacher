@@ -6,14 +6,14 @@
 // Body: { sourceFolderId, files: [{ name, category, materialType, grade, destination }] }
 
 import { getServerSession } from "next-auth";
+import { google } from "googleapis";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { buildFolderKey, getMimeType } from "@/lib/upload-utils";
+import { buildFolderKey } from "@/lib/upload-utils";
 
 function getDriveClient(accessToken: string) {
-  const { google } = require("googleapis");
   const auth = new google.auth.OAuth2();
   auth.setCredentials({ access_token: accessToken });
   return google.drive({ version: "v3", auth });

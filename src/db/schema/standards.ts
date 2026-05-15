@@ -1,4 +1,11 @@
-import { pgTable, text, smallint, timestamp, index } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  smallint,
+  timestamp,
+  index,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 
 export const standards = pgTable(
   "standards",
@@ -10,7 +17,7 @@ export const standards = pgTable(
     subcategory: text("subcategory"), // "1", "2", "3" (sub-grouping)
     indicator: text("indicator"), // "A", "B", "C" (leaf node)
     description: text("description").notNull(), // Full standard text
-    parentId: text("parent_id").references((): any => standards.id),
+    parentId: text("parent_id").references((): AnyPgColumn => standards.id),
     framework: text("framework").notNull().default("VA_SOL_2024"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
