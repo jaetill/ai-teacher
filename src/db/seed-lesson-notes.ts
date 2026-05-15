@@ -11,7 +11,7 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { lessons } from "./schema/lessons";
 import { units } from "./schema/units";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 const sql = neon(process.env.DATABASE_URL!);
 const db = drizzle(sql);

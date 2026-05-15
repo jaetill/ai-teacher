@@ -87,6 +87,7 @@ export default function ImportFromComputer() {
                 forceUpload: false,
                 status: "pending",
               });
+              return;
             })
           );
         });

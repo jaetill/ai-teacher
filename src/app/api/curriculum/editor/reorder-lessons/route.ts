@@ -3,7 +3,7 @@
 
 import { db } from "@/db";
 import { lessons, units } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import type { ReorderLessonsPayload } from "@/types/curriculum-editor";
 

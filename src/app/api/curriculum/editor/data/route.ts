@@ -3,7 +3,7 @@
 
 import { db } from "@/db";
 import { courses, units, lessons, assessments, materialAttachments, materials } from "@/db/schema";
-import { eq, asc, inArray, sql, and } from "drizzle-orm";
+import { eq, asc, inArray, and } from "drizzle-orm";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
