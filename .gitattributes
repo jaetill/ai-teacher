@@ -1,0 +1,22 @@
+# Repo line-ending policy — see docs/adr/0002-source-control.md
+#
+# Default: Git auto-detects text vs binary. Text files are normalized to LF
+# in the repo; the working tree may be CRLF on Windows when core.autocrlf=true.
+* text=auto eol=lf
+
+# Shell scripts must be LF on disk (executed by Linux/macOS).
+*.sh   text eol=lf
+
+# Common binary types — never normalize.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  text
+*.pdf  binary
+*.zip  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary

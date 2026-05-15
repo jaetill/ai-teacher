@@ -66,3 +66,38 @@ src/
 - Production URL: https://ai-teacher-omega-sage.vercel.app
 - Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`
 - To deploy: `git push origin main`
+
+---
+
+## Platform inheritance
+
+This project adopts the Agentic Dev Environment platform (initial PR 2026-05-13). Standards live in `docs/standards/`, ADRs in `docs/adr/`. Project-specific deviations are in [docs/adr/0001-platform-adoption.md](docs/adr/0001-platform-adoption.md).
+
+### Three AI surfaces — don't confuse them
+
+1. **`.claude/agents/` + `.claude/commands/` + `.claude/hooks/`** — platform tooling Claude Code uses during a developer session (subagents like `code-reviewer`, slash commands like `/review`, hook scripts that gate Bash commands). Stack-agnostic; copied from the Agentic Dev Environment platform.
+2. **`.claude/skills/format-curriculum/`** — project-specific Claude skill encoding Heidi's curriculum conventions. **Preserved as-is.** Don't move it; don't overwrite it.
+3. **`.agents/skills/<name>/SKILL.md`** — Google Workspace + Model Armor skill bundles the app consumes at runtime. **Preserved as-is.** Different lifecycle from `.claude/`.
+
+`AGENTS.md` at the repo root is a Next.js-version-warning file — leave it alone.
+
+### What's installed (initial PR)
+
+- 14 specialist subagents at `.claude/agents/` (architect, code-reviewer, dep-watcher, doc-keeper, drift-detector, e2e-tester, functional-tester, iac-implementer, implementer, incident-responder, release-captain, security-reviewer, test-writer, triage-bot)
+- 10 platform slash commands at `.claude/commands/`
+- 10 hook scripts at `.claude/hooks/` (auto-format, block-credential-exposure, block-destructive-bash, block-protected-paths, audit-bash, check-clean-stop, confirm-pii-edits, inject-context, inject-session-context, lint-warn) + their `README.md`
+- Mixed-strictness hook policy in `.claude/settings.json`
+- Existing `.claude/settings.local.json` (Jason's per-machine allow-list) preserved
+
+Several agent prompts use AWS/Lambda examples copied verbatim from game-night-pwa. They function for ai-teacher's Vercel/Neon stack but the *illustrative* content is AWS-flavored. Adapting the examples for Next.js is a follow-up — not a blocker for use.
+
+### What's NOT installed yet
+
+Phase 3 (quality gates), Phase 4 (CI workflows), Phase 5 (Sentry/observability), Phase 6 (IaC retrofit), Phase 7 (user-feedback API route) — all deferred. See `docs/adr/0001-platform-adoption.md` for the deferral reasons and what each phase needs from Jason.
+
+Active gaps before the platform is "fully on":
+- Phase 3 — extend `eslint.config.mjs` to add platform plugins on top of `eslint-config-next`; add Prettier, vitest, Playwright, husky, commitlint, gitleaks
+- Phase 4 — add `.github/workflows/ci.yml` + the platform agent workflows; configure repo secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `SENTRY_*`, etc.); enable branch protection on `main`
+- Phase 5 — create Sentry project (Next.js platform), set Vercel + repo env vars, install `@sentry/nextjs` and the four config files it generates
+
+Each phase is its own PR.

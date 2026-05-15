@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Hook policy per Standard 10 / ADR-0011 — Mixed strictness with concrete rules. Each hook script returns non-zero exit code to block (with stderr explaining why), or zero to allow. Scripts live in .claude/hooks/ (this directory) and are propagated from templates/_shared/claude/hooks/ at scaffold time.",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-destructive-bash.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-credential-exposure.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-protected-paths.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/confirm-pii-edits.sh"
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-format.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/lint-warn.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/audit-bash.sh"
+          }
+        ]
+      }
+    ],
+
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/inject-context.sh"
+          }
+        ]
+      }
+    ],
+
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/inject-session-context.sh"
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-clean-stop.sh"
+          }
+        ]
+      }
+    ]
+  },
+
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(sudo rm*)",
+      "Bash(git push --force*)",
+      "Bash(*DROP TABLE*)",
+      "Bash(*TRUNCATE*)",
+      "Edit(*.tfstate*)",
+      "Edit(.env)",
+      "Write(*.tfstate*)",
+      "Write(.env)"
+    ]
+  }
+}
