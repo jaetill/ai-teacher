@@ -40,8 +40,8 @@ if (dsn) {
       if (Array.isArray(bc)) {
         event.breadcrumbs = bc.map(scrub);
       } else if (bc && typeof bc === "object" && Array.isArray((bc as { values?: unknown }).values)) {
-        (bc as { values: Array<{ category?: string; message?: string }> }).values =
-          (bc as { values: Array<{ category?: string; message?: string }> }).values.map(scrub);
+        const envelope = bc as { values: Array<{ category?: string; message?: string }> };
+        envelope.values = envelope.values.map(scrub);
       }
       return event;
     },

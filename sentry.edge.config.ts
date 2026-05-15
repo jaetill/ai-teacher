@@ -5,6 +5,7 @@
  *
  * Smaller surface than server.config.ts because edge runtime can't
  * use the full Node.js Sentry feature set (no profiling, etc.).
+ * Same PII-scrubbing posture as server (ADR-0006).
  */
 import * as Sentry from "@sentry/nextjs";
 
@@ -18,5 +19,12 @@ if (dsn) {
     environment,
     release,
     tracesSampleRate: environment === "production" ? 0.1 : 1.0,
+    beforeSend(event) {
+      if (event.user) {
+        delete event.user.email;
+        delete event.user.username;
+      }
+      return event;
+    },
   });
 }

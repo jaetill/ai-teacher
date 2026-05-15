@@ -42,7 +42,7 @@ Specific version: `^10.53.1` (Sentry SDK v10.x, the current major as of 2026-05)
 
 - **Single-package integration.** One dependency covers client, server, and edge runtimes. No manual webpack plugin configuration; `withSentryConfig` wraps `next.config.ts` and handles source-map upload, tree-shaking, and tunnel configuration.
 - **Phase 5 unblocked.** ai-teacher gains error tracking and performance tracing per ADR-0009, closing the last observability gap before auto-rollback health signals can be wired.
-- **PII scrubbing enforced.** `beforeSend` hooks on both client and server strip `user.email`, `user.username`, and form input values from breadcrumbs before events leave the browser or server process.
+- **PII scrubbing enforced.** `beforeSend` hooks on client, server, and edge all strip `user.email` and `user.username` before events leave the runtime. The client hook additionally redacts `ui.input` breadcrumb values; the server hook additionally redacts email-like substrings from breadcrumb messages and `data` strings. Edge currently scrubs only `user.*` — broader edge scrubbing is tracked in `[security-review] sentry.edge.config.ts:15`.
 - **Graceful no-op.** All three config files (`instrumentation-client.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`) guard initialization behind `if (dsn)`, so local dev without env vars works unchanged.
 - **Build-safe source maps.** The `errorHandler` in `withSentryConfig` downgrades upload failures to warnings, preventing broken deploys when `SENTRY_AUTH_TOKEN` is unset.
 
