@@ -25,13 +25,23 @@ if (dsn) {
         delete event.user.email;
         delete event.user.username;
       }
-      if (event.breadcrumbs) {
-        event.breadcrumbs = event.breadcrumbs.map((b) => {
-          if (b.category === "ui.input" && b.message) {
-            b.message = b.message.replace(/value=".*?"/g, 'value="[REDACTED]"');
-          }
-          return b;
-        });
+      // Sentry's Event.breadcrumbs is Breadcrumb[] in the public types but the
+      // SDK also accepts the envelope-style { values: Breadcrumb[] } shape, and
+      // both have been observed in beforeSend at runtime. Handle either without
+      // throwing — a throw here causes Sentry to send the original event
+      // unredacted, defeating PII scrubbing (ADR-0006).
+      const bc: unknown = event.breadcrumbs;
+      const scrub = (b: { category?: string; message?: string }) => {
+        if (b.category === "ui.input" && b.message) {
+          b.message = b.message.replace(/value=".*?"/g, 'value="[REDACTED]"');
+        }
+        return b;
+      };
+      if (Array.isArray(bc)) {
+        event.breadcrumbs = bc.map(scrub);
+      } else if (bc && typeof bc === "object" && Array.isArray((bc as { values?: unknown }).values)) {
+        (bc as { values: Array<{ category?: string; message?: string }> }).values =
+          (bc as { values: Array<{ category?: string; message?: string }> }).values.map(scrub);
       }
       return event;
     },

@@ -1,6 +1,6 @@
 # ADR-0014: Sentry SDK — `@sentry/nextjs` for ai-teacher observability
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-15
 - **Deciders:** Jason
 - **Tags:** observability, sentry, nextjs, dependency
