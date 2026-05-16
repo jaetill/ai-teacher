@@ -5,8 +5,8 @@
   "extraKnownMarketplaces": {
     "agentic-dev-environment": {
       "source": {
-        "source": "directory",
-        "path": "E:\\Users\\tille\\Documents\\Claude\\Projects\\Agentic Dev Environment"
+        "source": "github",
+        "repo": "jaetill/agentic-dev-environment"
       }
     }
   },
