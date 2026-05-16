@@ -75,21 +75,22 @@ This project adopts the Agentic Dev Environment platform (initial PR 2026-05-13)
 
 ### Three AI surfaces — don't confuse them
 
-1. **`.claude/agents/` + `.claude/commands/` + `.claude/hooks/`** — platform tooling Claude Code uses during a developer session (subagents like `code-reviewer`, slash commands like `/review`, hook scripts that gate Bash commands). Stack-agnostic; copied from the Agentic Dev Environment platform.
+1. **`.claude/agents/` + `.claude/commands/` + `.claude/hooks/`** — platform tooling Claude Code uses during a developer session (subagents like `code-reviewer`, slash commands like `/review`, hook scripts that gate Bash commands). Stack-agnostic; **inherited via the `ai-team` plugin** (no local copies — provided by the plugin subscription in `.claude/settings.json`).
 2. **`.claude/skills/format-curriculum/`** — project-specific Claude skill encoding Heidi's curriculum conventions. **Preserved as-is.** Don't move it; don't overwrite it.
 3. **`.agents/skills/<name>/SKILL.md`** — Google Workspace + Model Armor skill bundles the app consumes at runtime. **Preserved as-is.** Different lifecycle from `.claude/`.
 
 `AGENTS.md` at the repo root is a Next.js-version-warning file — leave it alone.
 
-### What's installed (initial PR)
+### What's installed
 
-- 14 specialist subagents at `.claude/agents/` (architect, code-reviewer, dep-watcher, doc-keeper, drift-detector, e2e-tester, functional-tester, iac-implementer, implementer, incident-responder, release-captain, security-reviewer, test-writer, triage-bot)
-- 10 platform slash commands at `.claude/commands/`
-- 10 hook scripts at `.claude/hooks/` (auto-format, block-credential-exposure, block-destructive-bash, block-protected-paths, audit-bash, check-clean-stop, confirm-pii-edits, inject-context, inject-session-context, lint-warn) + their `README.md`
-- Mixed-strictness hook policy in `.claude/settings.json`
-- Existing `.claude/settings.local.json` (Jason's per-machine allow-list) preserved
+Platform tooling is delivered via the **`ai-team` plugin** subscription in `.claude/settings.json` — no local copies of agents, commands, or hooks in this repo. The plugin provides:
 
-Several agent prompts use AWS/Lambda examples copied verbatim from game-night-pwa. They function for ai-teacher's Vercel/Neon stack but the *illustrative* content is AWS-flavored. Adapting the examples for Next.js is a follow-up — not a blocker for use.
+- 14 specialist subagents (architect, code-reviewer, dep-watcher, doc-keeper, drift-detector, e2e-tester, functional-tester, iac-implementer, implementer, incident-responder, release-captain, security-reviewer, test-writer, triage-bot)
+- 10 platform slash commands (/review, /adr, /brainstorm, /digest, /postmortem, /release-notes, /scaffold-project, /security-review, /test, /triage)
+- 10 hook scripts (auto-format, block-credential-exposure, block-destructive-bash, block-protected-paths, audit-bash, check-clean-stop, confirm-pii-edits, inject-context, inject-session-context, lint-warn)
+- Existing `.claude/settings.local.json` (Jason's per-machine allow-list) preserved locally
+
+The plugin is currently sourced from a local directory path in `settings.json`. When the platform workspace is published to GitHub, swap to `{"source": "github", "repo": "jaetill/agentic-dev-environment"}`.
 
 ### What's NOT installed yet
 
