@@ -1,0 +1,28 @@
+name: auto-label-sentry-issues
+# Sentry's GitHub integration creates issues authored by `sentry[bot]`. This
+# workflow auto-applies the `sentry` label so the implementer's label-trigger
+# fires (per ADR-0016 finding lifecycle / Sentry-bug auto-pickup).
+#
+# The label-add becomes the issues.labeled event that triggers
+# claude-implementer.yml.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  label:
+    if: github.event.issue.user.login == 'sentry[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply sentry label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --add-label sentry
