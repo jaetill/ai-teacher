@@ -1,7 +1,7 @@
 # Standard 06 — Observability
 
 **Status:** 🟩 Decided (2026-05-08)
-**ADRs:** [ADR-0009](../adr/0009-observability.md) (overall shape) · [ADR-0013](../adr/0013-grafana-cloudwatch-pull.md) (Grafana pull vs push)
+**ADRs:** [ADR-0009](../adr/0009-observability.md) (overall shape) · [ADR-0013](../adr/0013-grafana-cloudwatch-pull.md) (Grafana pull vs push) · [ADR-0014](../adr/0014-sentry-nextjs-sdk.md) (`@sentry/nextjs` SDK for ai-teacher)
 
 The runtime story closer. Auto-rollback's health checks live here. `triage-bot`'s ingestion source lives here. ADR-0006's PII-redaction rule gets operationalized here.
 
