@@ -6,6 +6,7 @@ import NavBar from "@/components/NavBar";
 import CopilotProvider from "@/components/CopilotProvider";
 import CopilotPanel from "@/components/CopilotPanel";
 import MainContent from "@/components/MainContent";
+import FeedbackButton from "@/components/FeedbackButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
             <MainContent>{children}</MainContent>
             <CopilotPanel />
           </CopilotProvider>
+        <FeedbackButton />
         </SessionProvider>
       </body>
     </html>
