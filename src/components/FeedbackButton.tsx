@@ -2,17 +2,12 @@
 // Renders a small button + modal dialog. Submits to /api/feedback.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function FeedbackButton() {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Restore body scroll when dialog closes
-  useEffect(() => {
-    if (!open) setStatus("");
-  }, [open]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -60,7 +55,11 @@ export default function FeedbackButton() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setStatus("");
+          setSubmitting(false);
+          setOpen(true);
+        }}
         aria-label="Send feedback"
         style={{
           position: "fixed",
