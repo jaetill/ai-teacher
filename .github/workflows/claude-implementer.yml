@@ -70,7 +70,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npm ci --prefix lambda
+          if [ -f lambda/package-lock.json ]; then npm ci --prefix lambda; fi
       - name: Configure git author
         run: |
           git config user.name 'claude[bot]'
@@ -267,7 +267,7 @@ jobs:
         if: steps.pr.outputs.skip != 'true'
         run: |
           npm ci
-          npm ci --prefix lambda
+          if [ -f lambda/package-lock.json ]; then npm ci --prefix lambda; fi
       - name: Configure git author
         if: steps.pr.outputs.skip != 'true'
         run: |
@@ -356,7 +356,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci && npm ci --prefix lambda
+      - run: |
+          npm ci
+          if [ -f lambda/package-lock.json ]; then npm ci --prefix lambda; fi
       - name: Configure git author
         run: |
           git config user.name 'claude[bot]'
