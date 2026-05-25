@@ -7,11 +7,13 @@
 
 > Format: MADR 4.x (single-decision form). See [`template.md`](template.md).
 
+> **ADR numbering note:** This ADR is numbered 0020 to match the platform's ADR series. ADRs 0015–0019 reside in the platform repo (`jaetill/agentic-dev-environment`) and have not been mirrored here; they cover platform-internal decisions that do not apply to this project.
+
 ## Context and Problem Statement
 
 The standalone `claude-triage-bot.yml` workflow fires on every issue-opened event, adding classification labels and a triage comment. It was adopted in ADR-0011 as the issue-intake layer for the implementer pipeline. However, it has a structural constraint: it explicitly does NOT add the `ready-for-implementer` label — that gate belongs to the human. The workflow therefore runs on every new issue regardless of whether that issue will ever be dispatched to the implementer.
 
-A companion platform change (`jaetill/agentic-dev-environment#33`) introduced fleet-dispatch — targeted `workflow_dispatch`-based implementer activation with a `mode` input — and retired the standalone triage workflow in the same sweep. ADR-0011 and ADR-0012 both reference `triage-bot` as a live platform component; without this ADR those documents are inconsistent with the operational reality post-merge.
+A companion platform change ([jaetill/agentic-dev-environment#33](https://github.com/jaetill/agentic-dev-environment/pull/33)) introduced fleet-dispatch — targeted `workflow_dispatch`-based implementer activation with a `mode` input — and retired the standalone triage workflow in the same sweep. ADR-0011 and ADR-0012 both reference `triage-bot` as a live platform component; without this ADR those documents are inconsistent with the operational reality post-merge.
 
 The question: should `claude-triage-bot.yml` remain as the intake layer, or should triage classification move inline to the implementer at dispatch time, with fleet-dispatch as the primary activation path?
 
@@ -19,7 +21,7 @@ The question: should `claude-triage-bot.yml` remain as the intake layer, or shou
 
 - **Token cost discipline.** A separate workflow run per issue-open event is overhead; most new issues never reach the implementer. Inline triage at dispatch time is zero-cost until work is actually requested.
 - **Dispatch simplicity.** Fleet-dispatch (`workflow_dispatch` with an `issue_number` input) plus the `ready-for-implementer` label already carry enough context; a pre-dispatch triage comment adds latency and noise for issues that will never be acted on.
-- **Bot-guard requirement.** Per ADR-0013, the `ready-for-implementer` trigger must only respond to human actors. A separate triage-bot adding intermediate labels increases the risk of accidental double-dispatch through automation.
+- **Bot-guard requirement.** Per ADR-0003 (AI shipping authority), the `ready-for-implementer` trigger must only respond to human actors. A separate triage-bot adding intermediate labels increases the risk of accidental double-dispatch through automation.
 - **ADR consistency.** Retiring the workflow without documenting the decision leaves ADR-0011 and ADR-0012 referencing a no-longer-live component — the gap that created issue #58.
 - **Customer-advocate lens preservation.** ADR-0012 §5 committed to the triage-bot's customer-advocate classification of `feedback:*` issues; that lens must be preserved regardless of which component does the classification.
 
@@ -90,4 +92,4 @@ The decisive factor: the bot-guard constraint makes pre-dispatch triage labels m
 
 - [ADR-0011](0011-ai-workflows.md) — originally defines `triage-bot`'s role and cheap-then-escalate pattern; `triage-bot` remains a named agent but the standing workflow is retired.
 - [ADR-0012](0012-user-feedback.md) — §5 (triage flow sub-decision) updated to reflect inline triage at dispatch time.
-- [ADR-0013](0013-grafana-cloudwatch-pull.md) — trust tiers; the bot-guard on `ready-for-implementer` enforces the Tier-3 → human-dispatch requirement.
+- [ADR-0003](0003-ci-cd.md) — AI shipping authority and approval model; the bot-guard on `ready-for-implementer` enforces the human-dispatch requirement for external requests.
