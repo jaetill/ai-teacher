@@ -34,7 +34,7 @@ The bundle has five sub-decisions:
 - **Sub-decision 2 — Storage:** chose **GitHub Issues with structured labels** (no intermediate DB)
 - **Sub-decision 3 — Auto-reply policy:** chose **Submit-confirmation + close-status-update; opt-in via email field**
 - **Sub-decision 4 — Rate limiting / abuse:** chose **Per-IP rate limit + honeypot + optional Turnstile**
-- **Sub-decision 5 — Triage flow:** chose **`triage-bot` ingests `feedback:*` labeled issues as a third input source**
+- **Sub-decision 5 — Triage flow:** ~~chose **`triage-bot` ingests `feedback:*` labeled issues as a third input source**~~ **Revised by ADR-0020:** standalone `claude-triage-bot.yml` retired; triage now inline at dispatch time
 
 ## Decision Outcome
 
@@ -44,7 +44,7 @@ We adopt:
 2. **GitHub Issues as the storage backend.** No intermediate database. Both tiers create GitHub Issues with structured labels (`feedback:from-sentry`, `feedback:user-submitted`, `type:bug|feature|other`). The work queue is unified — developer-filed and user-filed issues live side-by-side.
 3. **Auto-reply via AWS SES** (transactional email, per ADR-0006 secrets posture). Submit-time confirmation if email provided; status update on `closed:fixed` resolution. No reply for `closed:wontfix` or `:invalid` (avoid implying judgment).
 4. **Rate limiting**: per-IP (default 10/hour), honeypot field, optional Cloudflare Turnstile for high-traffic projects.
-5. **`triage-bot` agent gains GitHub Issues with `feedback:*` labels as a third input source.** Same classification + dedup + customer-advocate lens behavior; just an additional source. Silent-loss and visible-failure feedback gets escalated to head-agent digest immediately rather than waiting for daily.
+5. ~~**`triage-bot` agent gains GitHub Issues with `feedback:*` labels as a third input source.**~~ **Revised by ADR-0020.** The standalone `claude-triage-bot.yml` workflow has been retired. Feedback issues (`feedback:*` labels) are now classified inline by the `implementer` agent during Mode A processing, preserving the customer-advocate lens at dispatch time rather than on issue-open.
 6. **Privacy posture:** email field is optional with clear opt-in language; screenshots are PII-scrubbed server-side; no tracking IDs / cookies / fingerprints; data retention follows GitHub Issues; user-requested deletion is honored by editing the issue.
 
 ## Consequences
@@ -113,10 +113,13 @@ We adopt:
 
 ### Sub-decision 5: Triage flow
 
+> **Revised by ADR-0020.** The chosen option below was subsequently changed; see [ADR-0020](0020-fleet-dispatch-triage-bot-retirement.md) for the current decision.
+
 | Option | Trade-off |
 |---|---|
 | **Manual triage by human** | Maximum quality; rots; doesn't scale. |
-| **`triage-bot` ingests `feedback:*` labeled issues** (chosen) | Reuses the agent's existing classification + customer-advocate lens; consistent triage; near-zero marginal cost. |
+| **`triage-bot` ingests `feedback:*` labeled issues** ~~(chosen)~~ | Reuses the agent's existing classification + customer-advocate lens; consistent triage; near-zero marginal cost. Retired by ADR-0020. |
+| **Inline triage by `implementer` at dispatch time** **(current)** | Zero token cost until work is requested; bot-guard stays clean; customer-advocate lens preserved at dispatch time rather than issue-open. |
 | **Separate "feedback-triager" agent** | Specialized prompt; redundant with `triage-bot` (the lens is the same). |
 | **No triage; route everything to head-agent inbox** | Surfaces every signal; defeats the purpose of having an agent. |
 
@@ -139,4 +142,5 @@ We adopt:
 - ADR-0006 (Secrets) — PII discipline applied to feedback.
 - ADR-0009 (Observability) — Sentry as the existing error-tracking layer.
 - ADR-0011 (AI workflows) — `triage-bot` definition extended with new input source.
+- [ADR-0020](0020-fleet-dispatch-triage-bot-retirement.md) — retires the standalone `claude-triage-bot.yml` workflow; updates sub-decision 5 (triage flow) to inline triage at dispatch time.
 - [MADR 4.x](https://adr.github.io/madr/) — ADR format used.
