@@ -2,12 +2,53 @@
 // Renders a small button + modal dialog. Submits to /api/feedback.
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function FeedbackButton() {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        'select, textarea, input:not([tabindex="-1"]), button:not([disabled])'
+      );
+      first?.focus();
+    } else {
+      triggerRef.current?.focus();
+    }
+  }, [open]);
+
+  function handleDialogKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'select, textarea, input:not([tabindex="-1"]), button:not([disabled])'
+        ) ?? []
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -54,6 +95,7 @@ export default function FeedbackButton() {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           setStatus("");
@@ -81,8 +123,11 @@ export default function FeedbackButton() {
 
       {open && (
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
+          aria-labelledby="feedback-dialog-title"
+          onKeyDown={handleDialogKeyDown}
           style={{
             position: "fixed",
             inset: 0,
@@ -106,7 +151,7 @@ export default function FeedbackButton() {
               borderRadius: 8,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: "1.125rem" }}>Send feedback</h3>
+            <h3 id="feedback-dialog-title" style={{ margin: 0, fontSize: "1.125rem" }}>Send feedback</h3>
 
             <label style={{ display: "flex", flexDirection: "column", gap: ".25rem", fontSize: ".875rem" }}>
               Type
