@@ -10,14 +10,16 @@ export default function FeedbackButton() {
   const [submitting, setSubmitting] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const hasBeenOpenRef = useRef(false);
 
   useEffect(() => {
     if (open) {
+      hasBeenOpenRef.current = true;
       const first = dialogRef.current?.querySelector<HTMLElement>(
         'select, textarea, input:not([tabindex="-1"]), button:not([disabled])'
       );
       first?.focus();
-    } else {
+    } else if (hasBeenOpenRef.current) {
       triggerRef.current?.focus();
     }
   }, [open]);
