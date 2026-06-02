@@ -6,7 +6,8 @@
  * Smaller surface than server.config.ts because edge runtime can't
  * use the full Node.js Sentry feature set (no profiling, etc.).
  * PII scrubbing posture (ADR-0006): user.email + user.username deleted,
- * email-like substrings stripped from breadcrumb message/data fields.
+ * email-like substrings stripped from breadcrumb message/data fields and
+ * exception value strings.
  */
 import * as Sentry from "@sentry/nextjs";
 
@@ -39,9 +40,18 @@ if (dsn) {
       const bc: unknown = event.breadcrumbs;
       if (Array.isArray(bc)) {
         event.breadcrumbs = bc.map(scrub);
-      } else if (bc && typeof bc === "object" && Array.isArray((bc as { values?: unknown }).values)) {
-        const envelope = bc as { values: Array<{ message?: string; data?: Record<string, unknown> }> };
+      } else if (
+        bc &&
+        typeof bc === "object" &&
+        Array.isArray((bc as { values?: unknown }).values)
+      ) {
+        const envelope = bc as {
+          values: Array<{ message?: string; data?: Record<string, unknown> }>;
+        };
         envelope.values = envelope.values.map(scrub);
+      }
+      for (const ex of event.exception?.values ?? []) {
+        if (ex.value) ex.value = ex.value.replace(emailRe, "[REDACTED_EMAIL]");
       }
       return event;
     },
