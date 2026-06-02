@@ -83,7 +83,7 @@ The decisive factor: the bot-guard constraint makes pre-dispatch triage labels m
 ## Implementation notes
 
 - **Workflow deleted:** `.github/workflows/claude-triage-bot.yml` — removed in the PR that introduced fleet-dispatch support (PR #53, companion to platform PR `jaetill/agentic-dev-environment#33`).
-- **Workflow updated:** `.github/workflows/claude-implementer.yml` — the `initial` job's `ready-for-implementer` trigger adds `github.event.sender.type != 'Bot'`; a new `cleanup-sweep` Mode C job is added for batch deferred-nit processing.
+- **Workflow updated:** `.github/workflows/claude-implementer.yml` — the `run` job (ADR-0034 thin-caller; there is no separate `initial` job) has an `if: github.event.sender.type != 'Bot'` guard that prevents bot-triggered label/comment events from activating the implementer. The `cleanup-sweep` Mode C activation is handled via the `mode: 'cleanup-sweep'` `workflow_dispatch` input forwarded to the reusable workflow (no separate `cleanup-sweep` job exists in the caller).
 - **ADR-0012 §5:** Sub-decision 5 (triage flow) updated to reflect that inline triage replaces the standalone workflow. See [ADR-0012](0012-user-feedback.md).
 - **ADR-0011 reference:** ADR-0011 §2 lists `triage-bot` as one of the 12 subagents and references it in the cheap-then-escalate pattern. The agent definition is retained; only the standing automation is retired.
 - **Re-automation path:** If the volume of incoming issues justifies restoring automated triage, the preferred path is a new ADR that extends this one and re-introduces a workflow with an explicit bot-guard (no dispatch-triggering labels; comment-only output).
