@@ -25,17 +25,17 @@ describe("FeedbackButton keyboard accessibility", () => {
   });
 
   it("Tab from Submit button wraps focus to Type select", async () => {
-    await openDialog();
+    const { user } = await openDialog();
     screen.getByRole("button", { name: "Submit" }).focus();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab" });
-    expect(screen.getByLabelText("Type")).toHaveFocus();
+    await user.keyboard("{Tab}");
+    await waitFor(() => expect(screen.getByLabelText("Type")).toHaveFocus());
   });
 
   it("Shift+Tab from Type select wraps focus to Submit button", async () => {
-    await openDialog();
+    const { user } = await openDialog();
     screen.getByLabelText("Type").focus();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab", shiftKey: true });
-    expect(screen.getByRole("button", { name: "Submit" })).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).toHaveFocus());
   });
 
   it("Cancel button closes dialog and returns focus to trigger button", async () => {
