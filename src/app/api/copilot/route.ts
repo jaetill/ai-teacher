@@ -1,11 +1,13 @@
 // POST /api/copilot
-// Auth: none (unauthenticated for now)
+// Auth: NextAuth session required
 // Streams a Teacher Copilot response from Claude.
 // Body: { messages: Message[], context?: string, conversationId?: string }
 // Returns: streaming text/plain
 // Headers: X-Conversation-Id (returned so client can persist across turns)
 
 import Anthropic from "@anthropic-ai/sdk";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   copilotConversations,
@@ -112,6 +114,11 @@ async function buildCurriculumContext(): Promise<string> {
 }
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = await request.json();
   const { messages, context, conversationId } = body as {
     messages: Anthropic.MessageParam[];

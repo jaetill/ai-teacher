@@ -1,5 +1,5 @@
 // POST /api/year-plan
-// Auth: none
+// Auth: NextAuth session required
 // Streams a full-year curriculum plan for a given grade and standards set.
 // Body: { grade: 6|7|8, schoolYear: string, standards: string, existingCurriculum?: string, notes?: string }
 // Returns: streaming text/plain (markdown + JSON sentinel at end)
@@ -10,6 +10,8 @@
 // The client strips this from display and parses it to build unit cards.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 const client = new Anthropic();
 
@@ -45,6 +47,11 @@ Format your response as follows:
 [JSON array with one object per unit. Use exactly these keys: title, weeks, standards, summary, anchorTexts, flags]`;
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = await request.json();
   const { grade, schoolYear, standards, existingCurriculum, notes } =
     body as {

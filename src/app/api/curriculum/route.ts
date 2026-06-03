@@ -1,10 +1,12 @@
 // POST /api/curriculum
-// Auth: none
+// Auth: NextAuth session required
 // Generates a unit map, lesson sequence, and pacing guide from teacher inputs.
 // Body: { grade: 6|7|8, theme: string, weeks: number, standards: string, context?: string }
 // Returns: streaming text/plain (markdown)
 
 import Anthropic from "@anthropic-ai/sdk";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 const client = new Anthropic();
 
@@ -44,6 +46,11 @@ List 3-5 suggested anchor texts, supplementary readings, or media that fit the t
 Be specific and practical. Lesson descriptions should be concrete enough that a teacher knows what they're doing that day, not just vague topics. Calibrate complexity and reading level appropriately for the grade.`;
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = await request.json();
   const { grade, theme, weeks, standards, context } = body as {
     grade: number;
