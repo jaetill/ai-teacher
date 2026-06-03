@@ -235,7 +235,7 @@ export default function FeedbackButton() {
               <p style={{ margin: 0, fontSize: ".75rem", color: "#64748b", minHeight: "1.25em" }}>{status}</p>
             )}
             <small style={{ color: "#94a3b8" }}>
-              We collect only what you type. Email is optional and used only to follow up.
+              We collect only what you type. Email is optional and stored privately for follow-up.
             </small>
           </form>
         </div>
