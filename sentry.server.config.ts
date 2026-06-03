@@ -75,9 +75,21 @@ if (dsn) {
       const bc: unknown = event.breadcrumbs;
       if (Array.isArray(bc)) {
         event.breadcrumbs = bc.map(scrub);
-      } else if (bc && typeof bc === "object" && Array.isArray((bc as { values?: unknown }).values)) {
-        const envelope = bc as { values: Array<{ message?: string; data?: Record<string, unknown> }> };
+      } else if (
+        bc &&
+        typeof bc === "object" &&
+        Array.isArray((bc as { values?: unknown }).values)
+      ) {
+        const envelope = bc as {
+          values: Array<{ message?: string; data?: Record<string, unknown> }>;
+        };
         envelope.values = envelope.values.map(scrub);
+      }
+
+      // event.exception.values[].value — runtime exception messages can embed
+      // email addresses (e.g. DB constraint violations, upstream API errors).
+      for (const ex of event.exception?.values ?? []) {
+        if (ex.value) ex.value = redactString(ex.value);
       }
       return event;
     },
