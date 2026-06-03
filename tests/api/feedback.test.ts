@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Shared in-memory store that simulates a fleet-wide Redis — all "instances" see the
+// same counters, which is exactly what the KV rate limiter must guarantee.
+const kvStore = new Map<string, number>();
+vi.mock("@vercel/kv", () => ({
+  kv: {
+    incr: vi.fn(async (key: string) => {
+      const next = (kvStore.get(key) ?? 0) + 1;
+      kvStore.set(key, next);
+      return next;
+    }),
+    expire: vi.fn(async () => 1),
+    ttl: vi.fn(async () => 3599),
+  },
+}));
+
 // Mock Octokit before importing the route so the module-level client picks up the mock.
 const mockIssuesCreate = vi.fn().mockResolvedValue({ data: { number: 99 } });
 vi.mock("@octokit/rest", () => {
@@ -42,6 +57,7 @@ function makeRequest(body: unknown, ip = "1.2.3.4") {
 describe("POST /api/feedback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    kvStore.clear();
     process.env.GITHUB_TOKEN = "test-token";
   });
 
@@ -73,5 +89,29 @@ describe("POST /api/feedback", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
 
     expect(res.status).toBe(400);
+  });
+
+  it("enforces 10/hour limit fleet-wide: 11th request from the same IP returns 429", async () => {
+    // The shared kvStore mock simulates a cross-instance Redis — separate serverless
+    // instances all increment the same counter, so the 11th request is rejected
+    // regardless of which instance handles it.
+    const body = { type: "bug", description: "Fleet-wide rate limit regression test." };
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      const res = await POST(makeRequest(body) as unknown as import("next/server").NextRequest);
+      statuses.push(res.status);
+    }
+
+    const allowed = statuses.filter((s) => s === 201).length;
+    const blocked = statuses.filter((s) => s === 429).length;
+    expect(allowed).toBe(10);
+    expect(blocked).toBe(1);
+
+    // Verify the 429 carries a Retry-After header.
+    const limitedRes = await POST(
+      makeRequest(body) as unknown as import("next/server").NextRequest,
+    );
+    expect(limitedRes.status).toBe(429);
+    expect(limitedRes.headers.get("Retry-After")).toBeTruthy();
   });
 });

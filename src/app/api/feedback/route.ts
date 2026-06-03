@@ -5,36 +5,35 @@
 //   GITHUB_TOKEN        - PAT with issues:write on jaetill/ai-teacher
 //   GITHUB_REPO_OWNER   - defaults to "jaetill"
 //   GITHUB_REPO_NAME    - defaults to "ai-teacher"
+//   KV_REST_API_URL     - Vercel KV REST endpoint (rate limiting)
+//   KV_REST_API_TOKEN   - Vercel KV REST token
 
 import { NextRequest } from "next/server";
 import { Octokit } from "@octokit/rest";
+import { kv } from "@vercel/kv";
 
 const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "jaetill";
 const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
 
 const ALLOWED_TYPES = new Set(["bug", "feature", "other"]);
-const WINDOW_MS = 60 * 60 * 1000;
+const WINDOW_SECS = 60 * 60;
 const LIMIT = 10;
 
-// In-memory rate limit per warm instance.
-const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>();
-
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now();
-  const existing = rateLimitBuckets.get(ip);
-  if (!existing || now - existing.windowStart >= WINDOW_MS) {
-    if (rateLimitBuckets.size >= 10_000) {
-      for (const [k, e] of rateLimitBuckets.entries()) {
-        if (now - e.windowStart >= WINDOW_MS) rateLimitBuckets.delete(k);
-      }
-    }
-    rateLimitBuckets.set(ip, { count: 1, windowStart: now });
-    return { allowed: true };
+// Fleet-wide rate limit via Vercel KV (Redis INCR + EXPIRE).
+// Fixes the per-instance limitation of the previous in-memory Map — each serverless
+// instance incremented its own counter independently, making the 10/hour ceiling
+// multiply by the number of warm instances.
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const key = `rl:fb:${ip}`;
+  const count = await kv.incr(key);
+  if (count === 1) {
+    // First request in the window — attach TTL atomically before any concurrent INCR.
+    await kv.expire(key, WINDOW_SECS);
   }
-  if (existing.count >= LIMIT) {
-    return { allowed: false, retryAfter: Math.ceil((WINDOW_MS - (now - existing.windowStart)) / 1000) };
+  if (count > LIMIT) {
+    const ttl = await kv.ttl(key);
+    return { allowed: false, retryAfter: ttl > 0 ? ttl : WINDOW_SECS };
   }
-  existing.count += 1;
   return { allowed: true };
 }
 
@@ -71,7 +70,7 @@ function validate(input: FeedbackBody): string | null {
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
-  const rl = checkRateLimit(ip);
+  const rl = await checkRateLimit(ip);
   if (!rl.allowed) {
     return Response.json(
       { error: "rate_limited", retry_after_seconds: rl.retryAfter },
