@@ -30,6 +30,7 @@ export const materials = pgTable(
 
     // AI-readable summary of what this material is
     description: text("description"),
+    ownerEmail: text("owner_email"), // session.user.email — scopes rows per teacher
     source: text("source").notNull().default("human"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

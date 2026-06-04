@@ -18,8 +18,9 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { eq, inArray, asc, and } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { getUserEmail } from "@/lib/auth-helpers";
 
 const client = new Anthropic();
 
@@ -27,6 +28,11 @@ export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
   try {
+  const userEmail = await getUserEmail();
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { grade, quarter } = (await req.json()) as {
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
@@ -36,14 +42,19 @@ export async function POST(req: Request) {
     return Response.json({ error: "grade and quarter required" }, { status: 400 });
   }
 
-  // ── 1. Find materials in this quarter's folders ───
+  // ── 1. Find materials in this quarter's folders (scoped to this user) ───
   const categories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
   const folderKeys = categories.map((c) => `grade_${grade}_${quarter}_${c}`);
 
   const folders = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, folderKeys));
+    .where(
+      and(
+        inArray(driveFolders.folderKey, folderKeys),
+        eq(driveFolders.ownerEmail, userEmail)
+      )
+    );
 
   const folderDriveIds = folders.map((f) => f.driveId);
   const driveIdToCategory = new Map(
@@ -57,7 +68,12 @@ export async function POST(req: Request) {
   const quarterMaterials = await db
     .select()
     .from(materials)
-    .where(inArray(materials.driveFolderId, folderDriveIds));
+    .where(
+      and(
+        inArray(materials.driveFolderId, folderDriveIds),
+        eq(materials.ownerEmail, userEmail)
+      )
+    );
 
   if (quarterMaterials.length === 0) {
     return Response.json({

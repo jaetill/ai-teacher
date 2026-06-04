@@ -5,6 +5,7 @@
 import { db } from "@/db";
 import { courses, units, unitStandards, standards } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { getUserEmail } from "@/lib/auth-helpers";
 
 type UnitInput = {
   title: string;
@@ -22,6 +23,11 @@ function parseStandardCodes(text: string): string[] {
 }
 
 export async function POST(req: Request) {
+  const userEmail = await getUserEmail();
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body = (await req.json()) as {
     grade: number;
     schoolYear: string;

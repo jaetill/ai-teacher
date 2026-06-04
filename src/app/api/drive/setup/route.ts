@@ -9,7 +9,7 @@ import { authOptions } from "@/lib/auth";
 import { findOrCreateFolder } from "@/lib/drive";
 import { db } from "@/db";
 import { driveFolders } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 const GRADES = [6, 7, 8];
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
@@ -19,10 +19,11 @@ type FolderEntry = { key: string; driveId: string; name: string; parentKey: stri
 
 export async function POST() {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  if (!session?.accessToken || !session.user?.email) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
   const token = session.accessToken;
+  const ownerEmail = session.user.email;
 
   const folders: FolderEntry[] = [];
 
@@ -56,25 +57,31 @@ export async function POST() {
     }
   }
 
-  // ── Persist to database (upsert) ───
+  // ── Persist to database (upsert, scoped to this user) ───
   for (const f of folders) {
+    const ownerFilter = and(
+      eq(driveFolders.folderKey, f.key),
+      eq(driveFolders.ownerEmail, ownerEmail)
+    );
+
     const existing = await db
       .select({ id: driveFolders.id })
       .from(driveFolders)
-      .where(eq(driveFolders.folderKey, f.key))
+      .where(ownerFilter)
       .limit(1);
 
     if (existing.length > 0) {
       await db
         .update(driveFolders)
         .set({ driveId: f.driveId, name: f.name, parentKey: f.parentKey, updatedAt: new Date() })
-        .where(eq(driveFolders.folderKey, f.key));
+        .where(ownerFilter);
     } else {
       await db.insert(driveFolders).values({
         folderKey: f.key,
         driveId: f.driveId,
         name: f.name,
         parentKey: f.parentKey,
+        ownerEmail,
       });
     }
   }

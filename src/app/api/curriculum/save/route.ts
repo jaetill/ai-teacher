@@ -4,8 +4,14 @@
 import { db } from "@/db";
 import { units } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getUserEmail } from "@/lib/auth-helpers";
 
 export async function POST(req: Request) {
+  const userEmail = await getUserEmail();
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { unitId, lessonPlan } = (await req.json()) as {
     unitId: string;
     lessonPlan: string;
