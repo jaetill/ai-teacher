@@ -3,6 +3,8 @@
 // then persists the mappings to lessonStandards.
 // This is a one-time operation per unit — results are saved to DB.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   units,
@@ -20,6 +22,11 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const { id } = await params;
 
   // ── Load unit, lessons, and standards ───
