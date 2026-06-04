@@ -1,10 +1,13 @@
 // POST /api/import/build-curriculum
+// Auth: requires Google OAuth session
 // After files are imported to Drive, this endpoint uses AI to build
 // the full curriculum structure: unit, lessons, standards, material links.
 //
 // Input: { grade: number, quarter: string }
 // Returns: { unitId, lessonCount, standardCount, materialLinkCount }
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   courses,
@@ -26,6 +29,10 @@ const client = new Anthropic();
 export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
   try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
