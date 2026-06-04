@@ -25,6 +25,7 @@ export const lessons = pgTable(
     // Structured AI content: opening, instruction, practice, closing, vocab, etc.
     lessonPlan: jsonb("lesson_plan").notNull().default({}),
     teacherNotes: text("teacher_notes"),
+    ownerEmail: text("owner_email"),
     source: text("source").notNull().default("ai"),
     aiGenerationContext: jsonb("ai_generation_context"),
     createdAt: timestamp("created_at", { withTimezone: true })
