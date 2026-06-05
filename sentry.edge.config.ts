@@ -28,10 +28,12 @@ if (dsn) {
       }
       const emailRe = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
       const redactString = (s: string) => s.replace(emailRe, "[REDACTED_EMAIL]");
-      const redactStringFields = (obj: Record<string, unknown>) => {
+      const redactDeep = (obj: Record<string, unknown>) => {
         for (const k of Object.keys(obj)) {
           const v = obj[k];
           if (typeof v === "string") obj[k] = redactString(v);
+          else if (v && typeof v === "object" && !Array.isArray(v))
+            redactDeep(v as Record<string, unknown>);
         }
       };
 
@@ -50,21 +52,21 @@ if (dsn) {
         if (typeof req.query_string === "string") {
           req.query_string = redactString(req.query_string);
         } else if (req.query_string && typeof req.query_string === "object") {
-          redactStringFields(req.query_string as Record<string, unknown>);
+          redactDeep(req.query_string as Record<string, unknown>);
         }
         if (req.headers && typeof req.headers === "object") {
-          redactStringFields(req.headers as Record<string, unknown>);
+          redactDeep(req.headers as Record<string, unknown>);
         }
         if (typeof req.data === "string") {
           req.data = redactString(req.data);
         } else if (req.data && typeof req.data === "object") {
-          redactStringFields(req.data as Record<string, unknown>);
+          redactDeep(req.data as Record<string, unknown>);
         }
       }
 
       const scrub = (b: { message?: string; data?: Record<string, unknown> }) => {
         if (b.message) b.message = redactString(b.message);
-        if (b.data && typeof b.data === "object") redactStringFields(b.data);
+        if (b.data && typeof b.data === "object") redactDeep(b.data);
         return b;
       };
       const bc: unknown = event.breadcrumbs;
