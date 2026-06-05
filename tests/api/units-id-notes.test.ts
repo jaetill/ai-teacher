@@ -104,4 +104,31 @@ describe("POST /api/units/[id]/notes", () => {
     const json = await res.json();
     expect(json.error).toBe("Unit not found");
   });
+
+  it("WHERE clause includes IS NULL guard for legacy units (regression #169)", async () => {
+    // Before fix: WHERE owner_email = $1 silently excludes rows where owner_email IS NULL
+    // (SQL NULL equality always evaluates to NULL, not TRUE), returning 404 for all pre-migration units.
+    // Fix: WHERE (owner_email = $1 OR owner_email IS NULL) so legacy rows remain accessible.
+    mockedGetServerSession.mockResolvedValue({
+      user: { email: "teacher@school.edu" },
+      expires: "",
+    });
+    const mocks = (
+      db as {
+        _mocks?: {
+          where: ReturnType<typeof vi.fn>;
+          returning: ReturnType<typeof vi.fn>;
+        };
+      }
+    )._mocks!;
+    mocks.returning.mockResolvedValue([{ id: "unit-uuid-123" }]);
+
+    const res = await POST(makeRequest({ notes: "notes" }), makeParams());
+
+    expect(res.status).toBe(200);
+    // Serialize the WHERE arg (symbols stripped) and confirm the IS NULL predicate is present.
+    const whereArg = mocks.where.mock.calls[0][0];
+    const sqlRepr = JSON.stringify(whereArg, (_k, v) => (typeof v === "symbol" ? undefined : v));
+    expect(sqlRepr).toContain("is null");
+  });
 });

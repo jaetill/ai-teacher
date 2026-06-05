@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { units } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 
 export async function POST(
   req: Request,
@@ -23,7 +23,12 @@ export async function POST(
   const [updated] = await db
     .update(units)
     .set({ teacherNotes: notes, updatedAt: new Date() })
-    .where(and(eq(units.id, id), eq(units.ownerEmail, userEmail)))
+    .where(
+      and(
+        eq(units.id, id),
+        or(eq(units.ownerEmail, userEmail), isNull(units.ownerEmail))
+      )
+    )
     .returning({ id: units.id });
 
   if (!updated) {
