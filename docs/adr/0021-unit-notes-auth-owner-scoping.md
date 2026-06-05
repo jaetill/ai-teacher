@@ -22,7 +22,7 @@ How should the endpoint enforce that only the owning teacher can update a unit's
 
 ## Considered Options
 
-- **Option A: Session guard + `owner_email` column on `units`** — Add `owner_email text` to `units` via migration; require a valid NextAuth session; scope the UPDATE WHERE clause to `units.owner_email = session.user.email`.
+- **Option A: Session guard + `owner_email` column on `units`** — Add `owner_email text` to `units` via migration; require a valid NextAuth session; scope the UPDATE WHERE clause to `(units.owner_email = session.user.email OR units.owner_email IS NULL)` so legacy rows without an owner remain writable.
 - **Option B: Middleware-level auth + separate ownership table** — Introduce a generic Next.js middleware that guards all `/api/units/*` routes; store ownership in a separate `entity_owners` join table.
 - **Option C: Session guard only (no ownership column)** — Require authentication but continue to allow any authenticated user to update any unit. Defer row-level ownership to a future authorization ADR.
 
@@ -41,7 +41,7 @@ Chosen option: **Option A — Session guard + `owner_email` column on `units`**,
 ### Negative
 
 - **Contract break for existing callers.** Any client that previously called this endpoint without a session cookie will now receive 401. This is intentional — the prior behavior was a vulnerability, not a feature — but any integration tests or scripts that skip auth will break.
-- **Nullable ownership column.** Units created before this migration have `owner_email = NULL`. The WHERE clause `owner_email = ?` will not match NULL rows, meaning legacy units cannot have their notes updated via this endpoint until their `owner_email` is backfilled. A backfill migration or admin script is a follow-up task.
+- **Nullable ownership column.** Units created before this migration have `owner_email = NULL`. The WHERE clause uses `OR owner_email IS NULL` so that any authenticated user can update legacy rows. This is a pragmatic trade-off: legacy units are world-writable to authenticated users until their `owner_email` is backfilled. A backfill migration or admin script is a follow-up task.
 - **Email as ownership key.** Using `email` rather than a stable user ID couples ownership to the email address. If a user changes their email, their ownership link breaks. Acceptable for a single-teacher MVP; a future user-ID-based ownership model (once a `users` table exists) should supersede this.
 
 ### Neutral
@@ -56,7 +56,7 @@ Chosen option: **Option A — Session guard + `owner_email` column on `units`**,
 - ✅ Pro: Reuses existing NextAuth infrastructure — no new auth dependencies.
 - ✅ Pro: `owner_email` column is reusable for other unit-scoped endpoints.
 - ❌ Con: Email-based ownership is fragile if emails change.
-- ❌ Con: Existing units with NULL `owner_email` are effectively locked until backfilled.
+- ❌ Con: Legacy units with NULL `owner_email` are writable by any authenticated user until backfilled.
 
 ### Option B: Middleware-level auth + separate ownership table
 
@@ -75,8 +75,8 @@ Chosen option: **Option A — Session guard + `owner_email` column on `units`**,
 
 - **Migration:** `drizzle/0005_unit_owner_email.sql` — `ALTER TABLE "units" ADD COLUMN "owner_email" text;`
 - **Schema:** `src/db/schema/units.ts` — adds `ownerEmail: text("owner_email")` to the Drizzle table definition.
-- **Route:** `src/app/api/units/[id]/notes/route.ts` — `getServerSession` guard + compound WHERE clause (`units.id = :id AND units.owner_email = :email`).
-- **Tests:** `tests/api/units-id-notes.test.ts` — covers 401 (no session), 401 (no email), 200 (owner match), 404 (no match).
+- **Route:** `src/app/api/units/[id]/notes/route.ts` — `getServerSession` guard + compound WHERE clause (`units.id = :id AND (units.owner_email = :email OR units.owner_email IS NULL)`).
+- **Tests:** `tests/api/units-id-notes.test.ts` — covers 401 (no session), 401 (no email), 200 (owner match), 404 (no match), IS NULL regression guard.
 - **Follow-up needed:** Backfill `owner_email` on existing units; extend the same pattern to other unit-write endpoints (`PATCH /api/units/[id]`, etc.).
 
 ## Links
