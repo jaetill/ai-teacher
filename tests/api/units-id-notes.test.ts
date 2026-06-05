@@ -104,5 +104,6 @@ describe("POST /api/units/[id]/notes", () => {
     // containing "isNull" — the route should use strict eq() only.
     const whereArg = (mockWhere.mock.calls as unknown[][])[0]?.[0];
     expect(JSON.stringify(whereArg)).not.toContain("isNull");
+    expect(JSON.stringify(whereArg)).toContain("owner_email");
   });
 });
