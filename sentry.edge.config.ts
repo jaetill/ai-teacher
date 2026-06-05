@@ -6,8 +6,8 @@
  * Smaller surface than server.config.ts because edge runtime can't
  * use the full Node.js Sentry feature set (no profiling, etc.).
  * PII scrubbing posture (ADR-0006): user.email + user.username deleted,
- * email-like substrings stripped from breadcrumb message/data fields and
- * exception value strings.
+ * email-like substrings stripped from request envelope, breadcrumb
+ * message/data fields, and exception value strings.
  */
 import * as Sentry from "@sentry/nextjs";
 
@@ -27,14 +27,44 @@ if (dsn) {
         delete event.user.username;
       }
       const emailRe = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
-      const scrub = (b: { message?: string; data?: Record<string, unknown> }) => {
-        if (b.message) b.message = b.message.replace(emailRe, "[REDACTED_EMAIL]");
-        if (b.data && typeof b.data === "object") {
-          for (const k of Object.keys(b.data)) {
-            const v = b.data[k];
-            if (typeof v === "string") b.data[k] = v.replace(emailRe, "[REDACTED_EMAIL]");
-          }
+      const redactString = (s: string) => s.replace(emailRe, "[REDACTED_EMAIL]");
+      const redactStringFields = (obj: Record<string, unknown>) => {
+        for (const k of Object.keys(obj)) {
+          const v = obj[k];
+          if (typeof v === "string") obj[k] = redactString(v);
         }
+      };
+
+      // event.request — edge middleware errors carry the raw request envelope
+      // (URL, query params, custom headers). Scrub each field for PII (ADR-0006).
+      const req = event.request as
+        | {
+            url?: string;
+            query_string?: string | Record<string, string>;
+            headers?: Record<string, string>;
+            data?: unknown;
+          }
+        | undefined;
+      if (req) {
+        if (typeof req.url === "string") req.url = redactString(req.url);
+        if (typeof req.query_string === "string") {
+          req.query_string = redactString(req.query_string);
+        } else if (req.query_string && typeof req.query_string === "object") {
+          redactStringFields(req.query_string as Record<string, unknown>);
+        }
+        if (req.headers && typeof req.headers === "object") {
+          redactStringFields(req.headers as Record<string, unknown>);
+        }
+        if (typeof req.data === "string") {
+          req.data = redactString(req.data);
+        } else if (req.data && typeof req.data === "object") {
+          redactStringFields(req.data as Record<string, unknown>);
+        }
+      }
+
+      const scrub = (b: { message?: string; data?: Record<string, unknown> }) => {
+        if (b.message) b.message = redactString(b.message);
+        if (b.data && typeof b.data === "object") redactStringFields(b.data);
         return b;
       };
       const bc: unknown = event.breadcrumbs;
@@ -51,7 +81,7 @@ if (dsn) {
         envelope.values = envelope.values.map(scrub);
       }
       for (const ex of event.exception?.values ?? []) {
-        if (ex.value) ex.value = ex.value.replace(emailRe, "[REDACTED_EMAIL]");
+        if (ex.value) ex.value = redactString(ex.value);
       }
       return event;
     },
