@@ -3,6 +3,8 @@
 // belong to which lessons, then persists via materialAttachments.
 // Materials must already be in the materials table (via bulk upload).
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   units,
@@ -21,6 +23,11 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session?.accessToken) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   // ── Load unit, course, and lessons ───
