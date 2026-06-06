@@ -31,8 +31,12 @@ if (dsn) {
         for (const k of Object.keys(obj)) {
           const v = obj[k];
           if (typeof v === "string") obj[k] = redactString(v);
-          else if (v && typeof v === "object" && !Array.isArray(v))
-            redactDeep(v as Record<string, unknown>);
+          else if (Array.isArray(v))
+            v.forEach((item) => {
+              if (item && typeof item === "object" && !Array.isArray(item))
+                redactDeep(item as Record<string, unknown>);
+            });
+          else if (v && typeof v === "object") redactDeep(v as Record<string, unknown>);
         }
       };
 
