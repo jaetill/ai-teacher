@@ -90,4 +90,23 @@ describe("sentry server config – beforeSend", () => {
     const result = beforeSend(event);
     expect(result).not.toBeNull();
   });
+
+  it("redacts email from array of objects in request.data", () => {
+    const event = { request: { data: { users: [{ email: "x@school.com" }] } } };
+    const result = beforeSend(event)!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const users = (result.request as any).data.users;
+    expect(users[0].email).toBe("[REDACTED_EMAIL]");
+  });
+
+  it("redacts email from array of objects in breadcrumb data", () => {
+    const event = {
+      breadcrumbs: [{ data: { students: [{ email: "s@school.com" }] } }],
+    };
+    const result = beforeSend(event)!;
+    const bc = result.breadcrumbs as Array<{
+      data: { students: Array<{ email: string }> };
+    }>;
+    expect(bc[0].data.students[0].email).toBe("[REDACTED_EMAIL]");
+  });
 });
