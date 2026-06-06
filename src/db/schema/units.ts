@@ -26,6 +26,7 @@ export const units = pgTable(
     essentialQuestions: text("essential_questions"),
     anchorTexts: text("anchor_texts"),
     contentWarnings: text("content_warnings"),
+    userId: text("user_id"),
     teacherNotes: text("teacher_notes"),
     aiGenerationContext: jsonb("ai_generation_context"), // Prompt/params that produced this
     source: text("source").notNull().default("ai"), // 'ai' | 'human' | 'ai_edited'
