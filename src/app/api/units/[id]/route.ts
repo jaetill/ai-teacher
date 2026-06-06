@@ -1,6 +1,8 @@
 // GET /api/units/[id]
 // Returns a single unit with its lessons and linked standards.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   units,
@@ -19,6 +21,11 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
