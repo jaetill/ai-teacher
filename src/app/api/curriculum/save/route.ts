@@ -1,11 +1,18 @@
 // POST /api/curriculum/save
 // Saves an AI-generated lesson sequence markdown to a unit.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { units } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { unitId, lessonPlan } = (await req.json()) as {
     unitId: string;
     lessonPlan: string;
