@@ -1,0 +1,1 @@
+ALTER TABLE "units" ADD COLUMN "owner_email" text;
