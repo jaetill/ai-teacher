@@ -8,6 +8,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import {
   courses,
@@ -32,6 +33,10 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const email = requireEmail(session);
+  if (!email) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
   try {
   const { grade, quarter } = (await req.json()) as {
@@ -200,6 +205,7 @@ ${standardsList}`,
         grade,
         subject: "ELA",
         schoolYearId: currentYear?.id ?? null,
+        ownerEmail: email,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;
