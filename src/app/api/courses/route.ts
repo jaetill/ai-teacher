@@ -1,11 +1,18 @@
 // GET /api/courses
 // Returns all courses with their units, ordered by grade and sort order.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, schoolYears } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   // Get current school year
   const [currentYear] = await db
     .select()
