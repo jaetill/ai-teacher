@@ -2,6 +2,9 @@
 // Saves an AI-generated year plan to the database.
 // Creates or finds a course for the grade, then inserts units.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { courses, units, unitStandards, standards } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -22,6 +25,15 @@ function parseStandardCodes(text: string): string[] {
 }
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const email = requireEmail(session);
+  if (!email) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body = (await req.json()) as {
     grade: number;
     schoolYear: string;
@@ -46,6 +58,7 @@ export async function POST(req: Request) {
         title: `Grade ${body.grade} English Language Arts`,
         grade: body.grade,
         subject: "ELA",
+        ownerEmail: email,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;
