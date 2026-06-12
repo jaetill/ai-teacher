@@ -30,9 +30,10 @@ export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.email) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const userEmail = session.user.email;
   try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
@@ -221,6 +222,7 @@ ${standardsList}`,
     .insert(units)
     .values({
       courseId,
+      ownerEmail: userEmail,
       title: parsed.unit.title,
       sortOrder,
       quarter,
