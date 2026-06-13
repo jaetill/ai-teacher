@@ -36,6 +36,13 @@
       "when": 1775182893805,
       "tag": "0004_dark_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1749648000000,
+      "tag": "0005_add_owner_email_to_courses",
+      "breakpoints": true
     }
   ]
 }

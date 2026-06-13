@@ -19,6 +19,7 @@ export const courses = pgTable(
     schoolYearId: uuid("school_year_id").references(() => schoolYears.id),
     description: text("description"), // Rich context for AI
     teacherNotes: text("teacher_notes"),
+    ownerEmail: text("owner_email"), // NULL = unclaimed (legacy); set on all new courses
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -28,6 +29,7 @@ export const courses = pgTable(
   },
   (table) => [
     index("idx_courses_grade").on(table.grade),
+    index("idx_courses_owner_email").on(table.ownerEmail),
     unique("uq_courses_grade_subject_year").on(
       table.grade,
       table.subject,

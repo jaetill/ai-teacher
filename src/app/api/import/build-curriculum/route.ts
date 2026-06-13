@@ -8,6 +8,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import {
   courses,
@@ -21,7 +22,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -32,6 +33,10 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const email = requireEmail(session);
+  if (!email) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
   try {
   const { grade, quarter } = (await req.json()) as {
@@ -180,7 +185,7 @@ ${standardsList}`,
   const [existingCourse] = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(eq(courses.grade, grade))
+    .where(and(eq(courses.grade, grade), eq(courses.ownerEmail, email)))
     .limit(1);
 
   let courseId: string;
@@ -200,6 +205,7 @@ ${standardsList}`,
         grade,
         subject: "ELA",
         schoolYearId: currentYear?.id ?? null,
+        ownerEmail: email,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;
