@@ -5,12 +5,17 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, schoolYears } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
   // Get current school year
@@ -23,22 +28,29 @@ export async function GET() {
   const allCourses = await db
     .select()
     .from(courses)
+    .where(eq(courses.ownerEmail, ownerEmail))
     .orderBy(asc(courses.grade));
 
-  const allUnits = await db
-    .select({
-      id: units.id,
-      courseId: units.courseId,
-      title: units.title,
-      sortOrder: units.sortOrder,
-      quarter: units.quarter,
-      durationWeeks: units.durationWeeks,
-      summary: units.summary,
-      contentWarnings: units.contentWarnings,
-      source: units.source,
-    })
-    .from(units)
-    .orderBy(asc(units.sortOrder));
+  const courseIds = allCourses.map((c) => c.id);
+
+  const allUnits =
+    courseIds.length > 0
+      ? await db
+          .select({
+            id: units.id,
+            courseId: units.courseId,
+            title: units.title,
+            sortOrder: units.sortOrder,
+            quarter: units.quarter,
+            durationWeeks: units.durationWeeks,
+            summary: units.summary,
+            contentWarnings: units.contentWarnings,
+            source: units.source,
+          })
+          .from(units)
+          .where(inArray(units.courseId, courseIds))
+          .orderBy(asc(units.sortOrder))
+      : [];
 
   const result = allCourses.map((course) => ({
     ...course,

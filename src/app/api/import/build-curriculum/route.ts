@@ -21,7 +21,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -176,11 +176,16 @@ ${standardsList}`,
     );
   }
 
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return new Response("Session missing email", { status: 401 });
+  }
+
   // ── 4. Find or create course ───
   const [existingCourse] = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(eq(courses.grade, grade))
+    .where(and(eq(courses.grade, grade), eq(courses.ownerEmail, ownerEmail)))
     .limit(1);
 
   let courseId: string;
@@ -196,6 +201,7 @@ ${standardsList}`,
     const [newCourse] = await db
       .insert(courses)
       .values({
+        ownerEmail,
         title: `Grade ${grade} English Language Arts`,
         grade,
         subject: "ELA",

@@ -13,6 +13,7 @@ export const courses = pgTable(
   "courses",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    ownerEmail: text("owner_email"),
     title: text("title").notNull(), // "Grade 8 English Language Arts"
     grade: smallint("grade").notNull(), // 6, 7, or 8
     subject: text("subject").notNull().default("ELA"),
