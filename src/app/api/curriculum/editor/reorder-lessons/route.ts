@@ -1,6 +1,8 @@
 // POST /api/curriculum/editor/reorder-lessons
 // Reorders lessons within a unit by updating sortOrder based on array position.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,6 +10,11 @@ import { logEdit } from "../log-edit";
 import type { ReorderLessonsPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: ReorderLessonsPayload = await req.json();
   const { unitId, lessonIds } = body;
 

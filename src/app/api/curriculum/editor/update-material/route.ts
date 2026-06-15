@@ -1,6 +1,8 @@
 // POST /api/curriculum/editor/update-material
 // Updates the role on a material_attachment and/or the materialType on the material itself.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materialAttachments, materials, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -19,6 +21,11 @@ const VALID_MATERIAL_TYPES = [
 ];
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body = await req.json();
   const { attachmentId, role, materialType } = body as {
     attachmentId: string;

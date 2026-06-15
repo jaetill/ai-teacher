@@ -2,6 +2,8 @@
 // Converts a lesson to an assessment or vice versa.
 // This is a delete+insert operation that preserves material attachments.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, assessments, units, materialAttachments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -9,6 +11,11 @@ import { logEdit } from "../log-edit";
 import type { RetypeContentPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: RetypeContentPayload = await req.json();
   const { entityType, entityId, newType } = body;
 
