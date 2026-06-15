@@ -1,6 +1,8 @@
 // POST /api/curriculum/editor/attach-material
 // Creates a new material attachment.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materialAttachments, units, lessons, assessments } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,6 +10,11 @@ import { logEdit } from "../log-edit";
 import type { AttachMaterialPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: AttachMaterialPayload = await req.json();
   const { materialId, attachableType, attachableId, role = "supporting" } = body;
 
