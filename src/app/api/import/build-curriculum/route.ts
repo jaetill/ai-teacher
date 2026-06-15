@@ -177,33 +177,32 @@ ${standardsList}`,
   }
 
   // ── 4. Find or create course ───
-  const [existingCourse] = await db
-    .select({ id: courses.id })
-    .from(courses)
-    .where(eq(courses.grade, grade))
+  const [currentYear] = await db
+    .select({ id: schoolYears.id })
+    .from(schoolYears)
+    .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
-  let courseId: string;
-  if (existingCourse) {
-    courseId = existingCourse.id;
-  } else {
-    const [currentYear] = await db
-      .select({ id: schoolYears.id })
-      .from(schoolYears)
-      .where(eq(schoolYears.isCurrent, true))
-      .limit(1);
+  let [course] = await db
+    .insert(courses)
+    .values({
+      title: `Grade ${grade} English Language Arts`,
+      grade,
+      subject: "ELA",
+      schoolYearId: currentYear?.id ?? null,
+    })
+    .onConflictDoNothing()
+    .returning({ id: courses.id });
 
-    const [newCourse] = await db
-      .insert(courses)
-      .values({
-        title: `Grade ${grade} English Language Arts`,
-        grade,
-        subject: "ELA",
-        schoolYearId: currentYear?.id ?? null,
-      })
-      .returning({ id: courses.id });
-    courseId = newCourse.id;
+  if (!course) {
+    [course] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(eq(courses.grade, grade))
+      .limit(1);
   }
+
+  const courseId = course.id;
 
   // ── 5. Determine sort order for new unit ───
   const existingUnits = await db
