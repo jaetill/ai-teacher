@@ -202,6 +202,13 @@ ${standardsList}`,
       .limit(1);
   }
 
+  if (!course) {
+    return Response.json(
+      { error: "Course not found or could not be created" },
+      { status: 500 }
+    );
+  }
+
   const courseId = course.id;
 
   // ── 5. Determine sort order for new unit ───
