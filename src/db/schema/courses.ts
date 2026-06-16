@@ -17,6 +17,7 @@ export const courses = pgTable(
     grade: smallint("grade").notNull(), // 6, 7, or 8
     subject: text("subject").notNull().default("ELA"),
     schoolYearId: uuid("school_year_id").references(() => schoolYears.id),
+    ownerEmail: text("owner_email"), // Google account email of the teacher who created this course
     description: text("description"), // Rich context for AI
     teacherNotes: text("teacher_notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
