@@ -19,6 +19,7 @@ export const courses = pgTable(
     schoolYearId: uuid("school_year_id").references(() => schoolYears.id),
     description: text("description"), // Rich context for AI
     teacherNotes: text("teacher_notes"),
+    ownerEmail: text("owner_email"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
