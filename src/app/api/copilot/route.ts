@@ -136,10 +136,19 @@ export async function POST(request: Request) {
     const [conv] = await db
       .insert(copilotConversations)
       .values({
+        ownerEmail: session.user?.email ?? null,
         systemContext: context ? { context } : undefined,
       })
       .returning({ id: copilotConversations.id });
     convId = conv.id;
+  } else {
+    const [conv] = await db
+      .select({ ownerEmail: copilotConversations.ownerEmail })
+      .from(copilotConversations)
+      .where(eq(copilotConversations.id, convId));
+    if (!conv || conv.ownerEmail !== session.user?.email) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   // ── Save the new user message ───
