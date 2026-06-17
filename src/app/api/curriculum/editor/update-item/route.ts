@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { lessons, assessments, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwner } from "../assert-course-owner";
 import type { UpdateItemPayload } from "@/types/curriculum-editor";
 
 const ALLOWED_FIELDS: Record<string, string[]> = {
@@ -52,6 +53,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
     courseId = unit!.courseId;
 
+    const forbidden = await assertCourseOwner(courseId, session);
+    if (forbidden) return forbidden;
+
     // Map camelCase to snake_case for raw update
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
@@ -65,6 +69,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
     courseId = unit!.courseId;
 
+    const forbidden = await assertCourseOwner(courseId, session);
+    if (forbidden) return forbidden;
+
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
     if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
@@ -75,6 +82,9 @@ export async function POST(req: Request) {
     if (!current) return Response.json({ error: "Not found" }, { status: 404 });
     previousValue = { title: current.title, sortOrder: current.sortOrder, durationWeeks: current.durationWeeks, quarter: current.quarter };
     courseId = current.courseId;
+
+    const forbidden = await assertCourseOwner(courseId, session);
+    if (forbidden) return forbidden;
 
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
