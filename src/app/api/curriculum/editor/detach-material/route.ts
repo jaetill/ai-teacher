@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { materialAttachments, units, lessons, assessments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { DetachMaterialPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
@@ -43,6 +44,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment!.unitId)).limit(1);
     courseId = unit!.courseId;
   }
+
+  const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+  if (forbidden) return forbidden;
 
   await db.delete(materialAttachments).where(eq(materialAttachments.id, materialAttachmentId));
 

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { lessons, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { ReorderLessonsPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
@@ -38,6 +39,9 @@ export async function POST(req: Request) {
   if (!unit) {
     return Response.json({ error: "Unit not found" }, { status: 404 });
   }
+
+  const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
+  if (forbidden) return forbidden;
 
   // Update sort orders
   for (let i = 0; i < lessonIds.length; i++) {
