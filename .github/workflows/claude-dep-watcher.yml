@@ -6,14 +6,19 @@ name: claude-dep-watcher
 
 on:
   schedule:
-    - cron: '0 9 * * 1'
+    - cron: "0 9 * * 1"
   workflow_dispatch:
 
 permissions:
-  contents: write   # ceiling for the reusable's publish job; generate job downgrades to read
-  id-token: write
+  contents: write # ceiling for the reusable's publish job; generate job downgrades to read
+  id-token: write # required: reusable generate job uses OIDC for claude-code-action
+  # issues: write intentionally absent — ADR-0045 retired digest issues;
+  # the reusable publishes findings via git commit to reports/dep-watch, not GitHub Issues.
 
 jobs:
   dep-watch:
-    uses: jaetill/agentic-dev-environment/.github/workflows/dep-watch.yml@main
+    # Pinned to SHA: id-token:write grants OIDC minting; pinning prevents an
+    # unpinned @main reusable from silently acquiring cloud-credential access.
+    # Bump this SHA when pulling in platform reusable updates.
+    uses: jaetill/agentic-dev-environment/.github/workflows/dep-watch.yml@1f20401c1f8b1badfc4c1e4ac1b42bc313131405
     secrets: inherit
