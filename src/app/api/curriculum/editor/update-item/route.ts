@@ -1,10 +1,13 @@
 // POST /api/curriculum/editor/update-item
 // Generic inline-edit endpoint for titles, metadata, etc.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, assessments, units } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { UpdateItemPayload } from "@/types/curriculum-editor";
 
 const ALLOWED_FIELDS: Record<string, string[]> = {
@@ -14,6 +17,11 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
 };
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: UpdateItemPayload = await req.json();
   const { entityType, entityId, fields } = body;
 
@@ -45,6 +53,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
     courseId = unit!.courseId;
 
+    const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+    if (forbidden) return forbidden;
+
     // Map camelCase to snake_case for raw update
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
@@ -58,6 +69,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
     courseId = unit!.courseId;
 
+    const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+    if (forbidden) return forbidden;
+
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
     if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
@@ -68,6 +82,9 @@ export async function POST(req: Request) {
     if (!current) return Response.json({ error: "Not found" }, { status: 404 });
     previousValue = { title: current.title, sortOrder: current.sortOrder, durationWeeks: current.durationWeeks, quarter: current.quarter };
     courseId = current.courseId;
+
+    const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+    if (forbidden) return forbidden;
 
     const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;

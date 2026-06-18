@@ -1,9 +1,11 @@
 // POST /api/differentiation
-// Auth: none
+// Auth: requires NextAuth session
 // Adapts an assignment, reading, or activity for a specific student need.
 // Body: { content: string, studentNeed: string, outputRequest: string, grade?: number }
 // Returns: streaming text/plain (markdown)
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -25,6 +27,11 @@ Format your response as:
 [2-4 bullet points explaining the key adaptations and the reasoning behind each one]`;
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
   const { content, studentNeed, outputRequest, grade } = body as {
     content: string;

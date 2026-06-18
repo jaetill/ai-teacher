@@ -1,13 +1,21 @@
 // POST /api/curriculum/editor/attach-material
 // Creates a new material attachment.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materialAttachments, units, lessons, assessments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { AttachMaterialPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: AttachMaterialPayload = await req.json();
   const { materialId, attachableType, attachableId, role = "supporting" } = body;
 
@@ -28,6 +36,9 @@ export async function POST(req: Request) {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment.unitId)).limit(1);
     courseId = unit!.courseId;
   }
+
+  const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+  if (forbidden) return forbidden;
 
   const [attachment] = await db.insert(materialAttachments).values({
     materialId,

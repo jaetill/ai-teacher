@@ -1,22 +1,36 @@
 // GET /api/curriculum/editor/data?courseId=xxx
 // Returns all units, lessons, and assessments for a course in editor format.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, lessons, assessments, materialAttachments, materials } from "@/db/schema";
 import { eq, asc, inArray, and } from "drizzle-orm";
 
 export async function GET(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const userEmail = session.user?.email;
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const courseId = searchParams.get("courseId");
 
-  if (!courseId) {
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!courseId || !UUID_RE.test(courseId)) {
     return Response.json({ error: "courseId required" }, { status: 400 });
   }
 
   const [course] = await db
     .select()
     .from(courses)
-    .where(eq(courses.id, courseId))
+    .where(and(eq(courses.id, courseId), eq(courses.ownerEmail, userEmail)))
     .limit(1);
 
   if (!course) {

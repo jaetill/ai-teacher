@@ -1,10 +1,12 @@
 // POST /api/copilot
-// Auth: none (unauthenticated for now)
+// Auth: requires NextAuth session
 // Streams a Teacher Copilot response from Claude.
 // Body: { messages: Message[], context?: string, conversationId?: string }
 // Returns: streaming text/plain
 // Headers: X-Conversation-Id (returned so client can persist across turns)
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import {
@@ -112,6 +114,11 @@ async function buildCurriculumContext(): Promise<string> {
 }
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
   const { messages, context, conversationId } = body as {
     messages: Anthropic.MessageParam[];
@@ -129,10 +136,19 @@ export async function POST(request: Request) {
     const [conv] = await db
       .insert(copilotConversations)
       .values({
+        ownerEmail: session.user?.email ?? null,
         systemContext: context ? { context } : undefined,
       })
       .returning({ id: copilotConversations.id });
     convId = conv.id;
+  } else {
+    const [conv] = await db
+      .select({ ownerEmail: copilotConversations.ownerEmail })
+      .from(copilotConversations)
+      .where(eq(copilotConversations.id, convId));
+    if (!conv || !conv.ownerEmail || !session.user?.email || conv.ownerEmail !== session.user.email) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   // ── Save the new user message ───

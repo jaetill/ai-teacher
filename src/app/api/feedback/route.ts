@@ -112,7 +112,6 @@ export async function POST(request: NextRequest) {
     "## Context",
     body.page_url ? `- Page: ${escapeMarkdown(body.page_url)}` : null,
     body.user_agent ? `- UA: ${escapeMarkdown(body.user_agent)}` : null,
-    body.email ? `- Email: ${escapeMarkdown(body.email)}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -127,7 +126,7 @@ export async function POST(request: NextRequest) {
       labels: ["feedback:user-submitted", `type:${body.type}`],
     });
     const id = `FB-${new Date().getFullYear()}-${String(result.data.number).padStart(6, "0")}`;
-    console.log("feedback.received", { id, type: body.type, issue_number: result.data.number });
+    console.log("feedback.received", { id, type: body.type, issue_number: result.data.number, has_email: !!body.email });
     return Response.json({ id, status: "received" }, { status: 201 });
   } catch (err) {
     const e = err as Error & { status?: number };

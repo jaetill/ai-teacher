@@ -1,10 +1,13 @@
 // POST /api/import/build-curriculum
+// Auth: requires Google OAuth session
 // After files are imported to Drive, this endpoint uses AI to build
 // the full curriculum structure: unit, lessons, standards, material links.
 //
 // Input: { grade: number, quarter: string }
 // Returns: { unitId, lessonCount, standardCount, materialLinkCount }
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   courses,
@@ -26,6 +29,10 @@ const client = new Anthropic();
 export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
   try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
@@ -170,33 +177,39 @@ ${standardsList}`,
   }
 
   // ── 4. Find or create course ───
-  const [existingCourse] = await db
-    .select({ id: courses.id })
-    .from(courses)
-    .where(eq(courses.grade, grade))
+  const [currentYear] = await db
+    .select({ id: schoolYears.id })
+    .from(schoolYears)
+    .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
-  let courseId: string;
-  if (existingCourse) {
-    courseId = existingCourse.id;
-  } else {
-    const [currentYear] = await db
-      .select({ id: schoolYears.id })
-      .from(schoolYears)
-      .where(eq(schoolYears.isCurrent, true))
-      .limit(1);
+  let [course] = await db
+    .insert(courses)
+    .values({
+      title: `Grade ${grade} English Language Arts`,
+      grade,
+      subject: "ELA",
+      schoolYearId: currentYear?.id ?? null,
+    })
+    .onConflictDoNothing()
+    .returning({ id: courses.id });
 
-    const [newCourse] = await db
-      .insert(courses)
-      .values({
-        title: `Grade ${grade} English Language Arts`,
-        grade,
-        subject: "ELA",
-        schoolYearId: currentYear?.id ?? null,
-      })
-      .returning({ id: courses.id });
-    courseId = newCourse.id;
+  if (!course) {
+    [course] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(eq(courses.grade, grade))
+      .limit(1);
   }
+
+  if (!course) {
+    return Response.json(
+      { error: "Course not found or could not be created" },
+      { status: 500 }
+    );
+  }
+
+  const courseId = course.id;
 
   // ── 5. Determine sort order for new unit ───
   const existingUnits = await db
