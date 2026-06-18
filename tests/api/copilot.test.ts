@@ -152,5 +152,21 @@ describe("POST /api/copilot", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("proceeds when conversationId belongs to the authenticated user", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION);
+      // Ownership check: conversation is owned by the session user
+      mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: SESSION.user.email }]));
+      // buildCurriculumContext: no courses → early return, no further selects needed
+      mockDbSelect.mockReturnValue(makeChain([]));
+      // User message insert
+      mockDbInsert.mockReturnValue(makeChain([]));
+
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-123" }));
+
+      // Ownership check passed — should not be blocked
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Conversation-Id")).toBe("conv-uuid-123");
+    });
   });
 });
