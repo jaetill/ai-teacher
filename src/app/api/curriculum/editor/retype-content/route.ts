@@ -2,13 +2,21 @@
 // Converts a lesson to an assessment or vice versa.
 // This is a delete+insert operation that preserves material attachments.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, assessments, units, materialAttachments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { RetypeContentPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: RetypeContentPayload = await req.json();
   const { entityType, entityId, newType } = body;
 
@@ -22,6 +30,9 @@ export async function POST(req: Request) {
     if (!lesson) return Response.json({ error: "Lesson not found" }, { status: 404 });
 
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, lesson.unitId)).limit(1);
+
+    const forbidden = await assertCourseOwnership(unit?.courseId, session.user?.email);
+    if (forbidden) return forbidden;
 
     // Insert as assessment
     const [newAssessment] = await db.insert(assessments).values({
@@ -64,6 +75,9 @@ export async function POST(req: Request) {
     if (!assessment) return Response.json({ error: "Assessment not found" }, { status: 404 });
 
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment.unitId)).limit(1);
+
+    const forbidden = await assertCourseOwnership(unit?.courseId, session.user?.email);
+    if (forbidden) return forbidden;
 
     // Insert as lesson
     const [newLesson] = await db.insert(lessons).values({

@@ -1,5 +1,5 @@
 // POST /api/communications
-// Auth: none
+// Auth: requires NextAuth session
 // Drafts a parent or admin email from a plain-language situation description.
 // Body: { recipient: "parent"|"admin", situation: string, tone: "positive"|"concerned"|"neutral", studentName?: string, recipientName?: string }
 // Returns: streaming text/plain
@@ -9,6 +9,8 @@
 //   [blank line]
 //   [email body]
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -34,6 +36,11 @@ Guidelines:
 - Do not invent specific details not mentioned in the situation`;
 
 export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
   const { recipient, situation, tone, studentName, recipientName } = body as {
     recipient: "parent" | "admin";

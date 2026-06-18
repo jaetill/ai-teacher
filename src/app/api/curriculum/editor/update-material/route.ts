@@ -1,10 +1,13 @@
 // POST /api/curriculum/editor/update-material
 // Updates the role on a material_attachment and/or the materialType on the material itself.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { materialAttachments, materials, units } from "@/db/schema";
+import { materialAttachments, materials, units, lessons, assessments } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 
 const VALID_ROLES = ["primary", "supporting", "teacher_reference"];
 const VALID_MATERIAL_TYPES = [
@@ -19,6 +22,11 @@ const VALID_MATERIAL_TYPES = [
 ];
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body = await req.json();
   const { attachmentId, role, materialType } = body as {
     attachmentId: string;
@@ -53,46 +61,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "Attachment not found" }, { status: 404 });
   }
 
-  // Capture previous values before updating
-  const prevRole = attachment.role;
-  const prevMaterialType = materialType
-    ? (
-        await db
-          .select({ materialType: materials.materialType })
-          .from(materials)
-          .where(eq(materials.id, attachment.materialId))
-          .limit(1)
-      )[0]?.materialType
-    : undefined;
-
-  // Update role on the attachment
-  if (role) {
-    await db
-      .update(materialAttachments)
-      .set({ role })
-      .where(eq(materialAttachments.id, attachmentId));
-  }
-
-  // Update materialType on the material itself
-  if (materialType) {
-    await db
-      .update(materials)
-      .set({ materialType, updatedAt: new Date() })
-      .where(eq(materials.id, attachment.materialId));
-  }
-
-  // Log the edit — look up courseId via the attachment's unit
-  const [unit] = await db
+  // Resolve courseId before any writes so we can assert ownership
+  const [topUnit] = await db
     .select({ courseId: units.courseId })
     .from(units)
     .where(eq(units.id, attachment.attachableId))
     .limit(1);
 
-  // attachableType might be 'lesson' or 'assessment', not 'unit' — try via the lesson/assessment's unit
-  let courseId = unit?.courseId;
+  let courseId = topUnit?.courseId;
   if (!courseId) {
-    // Attachment is on a lesson or assessment — need to look up its unit
-    const { lessons, assessments } = await import("@/db/schema");
     if (attachment.attachableType === "lesson") {
       const [lesson] = await db
         .select({ unitId: lessons.unitId })
@@ -122,6 +99,37 @@ export async function POST(req: Request) {
         courseId = u?.courseId;
       }
     }
+  }
+
+  const forbidden = await assertCourseOwnership(courseId, session.user?.email);
+  if (forbidden) return forbidden;
+
+  // Capture previous values before updating
+  const prevRole = attachment.role;
+  const prevMaterialType = materialType
+    ? (
+        await db
+          .select({ materialType: materials.materialType })
+          .from(materials)
+          .where(eq(materials.id, attachment.materialId))
+          .limit(1)
+      )[0]?.materialType
+    : undefined;
+
+  // Update role on the attachment
+  if (role) {
+    await db
+      .update(materialAttachments)
+      .set({ role })
+      .where(eq(materialAttachments.id, attachmentId));
+  }
+
+  // Update materialType on the material itself
+  if (materialType) {
+    await db
+      .update(materials)
+      .set({ materialType, updatedAt: new Date() })
+      .where(eq(materials.id, attachment.materialId));
   }
 
   if (courseId) {

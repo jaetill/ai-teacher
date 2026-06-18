@@ -45,6 +45,20 @@ describe("POST /api/feedback", () => {
     process.env.GITHUB_TOKEN = "test-token";
   });
 
+  it("does not include submitter email in the GitHub issue body", async () => {
+    const req = makeRequest({
+      type: "bug",
+      description: "Something broke on the login page.",
+      email: "user@example.com",
+    });
+    await POST(req as unknown as import("next/server").NextRequest);
+
+    expect(mockIssuesCreate).toHaveBeenCalledOnce();
+    const issuedBody: string = mockIssuesCreate.mock.calls[0][0].body as string;
+    expect(issuedBody).not.toContain("user@example.com");
+    expect(issuedBody).not.toMatch(/- Email:/i);
+  });
+
   it("does not include Source IP in the GitHub issue body", async () => {
     const req = makeRequest({ type: "bug", description: "Something broke on the login page." });
     await POST(req as unknown as import("next/server").NextRequest);
