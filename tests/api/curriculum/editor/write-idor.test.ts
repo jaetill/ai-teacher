@@ -130,17 +130,14 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       mockDbUpdate.mockReturnValue(makeChain(undefined));
       mockDbInsert.mockReturnValue(makeChain(undefined));
 
-      const { and: mockAnd, eq: mockEq } = await import("drizzle-orm");
+      const { and: mockAnd } = await import("drizzle-orm");
 
       const res = await postReorderLessons(makeRequest({ unitId: "u1", lessonIds: ["l1"] }));
 
       expect(res.status).toBe(200);
-      // `and` must be called — proves the update WHERE clause is compound (id AND unitId)
-      expect(mockAnd).toHaveBeenCalled();
-      // two eq() calls inside and(): one for lessons.id, one for lessons.unitId
-      const eqCalls = (mockEq as ReturnType<typeof vi.fn>).mock.calls;
-      const hasUnitIdScope = eqCalls.some(([_col, val]) => val === "u1");
-      expect(hasUnitIdScope).toBe(true);
+      // assertCourseOwnership contributes 1 and(); the UPDATE loop adds 1 per lessonId.
+      // Reverting the UPDATE WHERE to plain eq(lessons.id, ...) drops this to 1, failing here.
+      expect(mockAnd).toHaveBeenCalledTimes(2);
     });
   });
 
