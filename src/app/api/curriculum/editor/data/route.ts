@@ -33,7 +33,7 @@ export async function GET(req: Request) {
     .where(and(eq(courses.id, courseId), eq(courses.ownerEmail, userEmail)))
     .limit(1);
 
-  if (!course) {
+  if (!course || !course.ownerEmail || course.ownerEmail !== userEmail) {
     return Response.json({ error: "Course not found" }, { status: 404 });
   }
 
