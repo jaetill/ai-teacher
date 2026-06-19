@@ -114,6 +114,34 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
 
       expect(res.status).toBe(404);
     });
+
+    it("scopes each update to unitId so foreign lesson IDs cannot be mutated", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // lessons query (current sort order)
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", sortOrder: 1 }]));
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "userA@school.edu" }]));
+      // log-edit select calls
+      mockDbSelect.mockReturnValue(makeChain([]));
+      mockDbUpdate.mockReturnValue(makeChain(undefined));
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const { and: mockAnd, eq: mockEq } = await import("drizzle-orm");
+
+      const res = await postReorderLessons(makeRequest({ unitId: "u1", lessonIds: ["l1"] }));
+
+      expect(res.status).toBe(200);
+      // `and` must be called — proves the update WHERE clause is compound (id AND unitId)
+      expect(mockAnd).toHaveBeenCalled();
+      // two eq() calls inside and(): one for lessons.id, one for lessons.unitId
+      const eqCalls = (mockEq as ReturnType<typeof vi.fn>).mock.calls;
+      const hasUnitIdScope = eqCalls.some(([_col, val]) => val === "u1");
+      expect(hasUnitIdScope).toBe(true);
+    });
   });
 
   describe("POST /api/curriculum/editor/attach-material", () => {
