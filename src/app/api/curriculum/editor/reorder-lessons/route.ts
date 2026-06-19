@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, units } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { ReorderLessonsPayload } from "@/types/curriculum-editor";
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     await db
       .update(lessons)
       .set({ sortOrder: i + 1, updatedAt: new Date() })
-      .where(eq(lessons.id, lessonIds[i]));
+      .where(and(eq(lessons.id, lessonIds[i]), eq(lessons.unitId, unitId)));
   }
 
   await logEdit({
