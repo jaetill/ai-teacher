@@ -94,7 +94,7 @@ describe("POST /api/copilot", () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "attacker@evil.com" }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-123" }));
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -106,7 +106,7 @@ describe("POST /api/copilot", () => {
       mockDbSelect.mockReturnValueOnce(makeChain([]));
 
       const res = await POST(
-        makeRequest({ messages: MESSAGES, conversationId: "nonexistent-uuid" }),
+        makeRequest({ messages: MESSAGES, conversationId: "22222222-2222-4222-8222-222222222222" }),
       );
 
       expect(res.status).toBe(403);
@@ -122,7 +122,7 @@ describe("POST /api/copilot", () => {
       });
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-old" }));
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -133,7 +133,7 @@ describe("POST /api/copilot", () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-old" }));
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -146,7 +146,7 @@ describe("POST /api/copilot", () => {
       });
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "teacher@school.edu" }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-123" }));
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -162,11 +162,11 @@ describe("POST /api/copilot", () => {
       // User message insert
       mockDbInsert.mockReturnValue(makeChain([]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "conv-uuid-123" }));
+      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
 
       // Ownership check passed — should not be blocked
       expect(res.status).toBe(200);
-      expect(res.headers.get("X-Conversation-Id")).toBe("conv-uuid-123");
+      expect(res.headers.get("X-Conversation-Id")).toBe("11111111-1111-4111-8111-111111111111");
     });
   });
 });
