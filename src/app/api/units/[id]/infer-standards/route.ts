@@ -3,6 +3,8 @@
 // then persists the mappings to lessonStandards.
 // This is a one-time operation per unit — results are saved to DB.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   units,
@@ -20,12 +22,22 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   // ── Load unit, lessons, and standards ───
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
   if (!unit) {
     return Response.json({ error: "Unit not found" }, { status: 404 });
+  }
+
+  // null userId = legacy row; any authenticated user may proceed (migration path)
+  if (unit.userId && unit.userId !== session.user?.id) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const unitLessons = await db

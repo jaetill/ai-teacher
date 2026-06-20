@@ -27,6 +27,7 @@ export const units = pgTable(
     anchorTexts: text("anchor_texts"),
     contentWarnings: text("content_warnings"),
     teacherNotes: text("teacher_notes"),
+    userId: text("user_id"), // Google OAuth sub — null on pre-auth rows (any authed user may access)
     aiGenerationContext: jsonb("ai_generation_context"), // Prompt/params that produced this
     source: text("source").notNull().default("ai"), // 'ai' | 'human' | 'ai_edited'
     createdAt: timestamp("created_at", { withTimezone: true })
