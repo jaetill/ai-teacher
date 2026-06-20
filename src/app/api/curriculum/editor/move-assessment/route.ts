@@ -22,15 +22,11 @@ export async function POST(req: Request) {
   const [assessment] = await db
     .select()
     .from(assessments)
-    .where(eq(assessments.id, assessmentId))
+    .where(and(eq(assessments.id, assessmentId), eq(assessments.unitId, fromUnitId)))
     .limit(1);
 
   if (!assessment) {
     return Response.json({ error: "Assessment not found" }, { status: 404 });
-  }
-
-  if (assessment.unitId !== fromUnitId) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const [fromUnit] = await db

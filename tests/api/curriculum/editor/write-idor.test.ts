@@ -478,5 +478,24 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 404 when assessmentId belongs to a different unit than fromUnitId (IDOR #307)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // Combined WHERE(id AND unitId) finds nothing — attacker supplies victim's assessmentId
+      // paired with their own fromUnitId; the DB predicate rejects the mismatch.
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveAssessment(
+        makeRequest({
+          assessmentId: "victim-a1",
+          fromUnitId: "attacker-u1",
+          toUnitId: "u2",
+          newSortOrder: 1,
+        }),
+      );
+
+      expect(res.status).toBe(404);
+    });
   });
 });
