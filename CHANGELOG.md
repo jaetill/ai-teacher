@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1](https://github.com/jaetill/ai-teacher/compare/v1.0.0...v1.0.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* **editor:** wrap move-assessment sort-order writes in a db transaction ([#334](https://github.com/jaetill/ai-teacher/issues/334)) ([30f7163](https://github.com/jaetill/ai-teacher/commit/30f71636de7386b10ee6a9c55c234ea50cbcf2d4)), closes [#310](https://github.com/jaetill/ai-teacher/issues/310)
+* **security:** auth + ownership guard on infer-standards; pin null-bypass test (closes [#141](https://github.com/jaetill/ai-teacher/issues/141)) ([#321](https://github.com/jaetill/ai-teacher/issues/321)) ([f93189b](https://github.com/jaetill/ai-teacher/commit/f93189bdc80f6dc42170e7bba88f3acf8e52635a))
+* **security:** auth + ownership on move-lesson + move-assessment (closes [#327](https://github.com/jaetill/ai-teacher/issues/327)) ([#328](https://github.com/jaetill/ai-teacher/issues/328)) ([12304ef](https://github.com/jaetill/ai-teacher/commit/12304efc20e40f4e3520bd0a0f5b84c7fedfa4a9))
+* **security:** validate conversationId as UUID before DB query (closes [#271](https://github.com/jaetill/ai-teacher/issues/271)) ([#272](https://github.com/jaetill/ai-teacher/issues/272)) ([eaac241](https://github.com/jaetill/ai-teacher/commit/eaac2418bb056ac29c9424b5efedee23a58cfbdc))
+
 ## 1.0.0 (2026-06-20)
 
 
