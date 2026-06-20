@@ -478,5 +478,18 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 404 when assessment does not exist", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessment query → not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Assessment not found");
+    });
   });
 });
