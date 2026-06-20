@@ -130,6 +130,12 @@ export async function POST(request: Request) {
     return new Response("messages are required", { status: 400 });
   }
 
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (conversationId && !UUID_RE.test(conversationId)) {
+    return Response.json({ error: "Bad Request" }, { status: 400 });
+  }
+
   // ── Get or create conversation ───
   let convId = conversationId;
   if (!convId) {
