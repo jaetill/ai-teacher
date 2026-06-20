@@ -59,23 +59,29 @@ export async function POST(req: Request) {
   const destForbidden = await assertCourseOwnership(toUnit.courseId, session.user?.email);
   if (destForbidden) return destForbidden;
 
-  // Close gap in source unit
-  await db
-    .update(assessments)
-    .set({ sortOrder: sql<number>`${assessments.sortOrder} - 1`, updatedAt: new Date() })
-    .where(and(eq(assessments.unitId, fromUnitId), gt(assessments.sortOrder, assessment.sortOrder)));
+  try {
+    await db.transaction(async (tx) => {
+      // Close gap in source unit
+      await tx
+        .update(assessments)
+        .set({ sortOrder: sql<number>`${assessments.sortOrder} - 1`, updatedAt: new Date() })
+        .where(and(eq(assessments.unitId, fromUnitId), gt(assessments.sortOrder, assessment.sortOrder)));
 
-  // Make room in target unit
-  await db
-    .update(assessments)
-    .set({ sortOrder: sql<number>`${assessments.sortOrder} + 1`, updatedAt: new Date() })
-    .where(and(eq(assessments.unitId, toUnitId), gte(assessments.sortOrder, newSortOrder)));
+      // Make room in target unit
+      await tx
+        .update(assessments)
+        .set({ sortOrder: sql<number>`${assessments.sortOrder} + 1`, updatedAt: new Date() })
+        .where(and(eq(assessments.unitId, toUnitId), gte(assessments.sortOrder, newSortOrder)));
 
-  // Move the assessment
-  await db
-    .update(assessments)
-    .set({ unitId: toUnitId, sortOrder: newSortOrder, updatedAt: new Date() })
-    .where(eq(assessments.id, assessmentId));
+      // Move the assessment
+      await tx
+        .update(assessments)
+        .set({ unitId: toUnitId, sortOrder: newSortOrder, updatedAt: new Date() })
+        .where(eq(assessments.id, assessmentId));
+    });
+  } catch {
+    return Response.json({ error: "Failed to move assessment" }, { status: 500 });
+  }
 
   await logEdit({
     courseId: fromUnit.courseId,
