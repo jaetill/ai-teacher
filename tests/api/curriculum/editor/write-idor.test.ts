@@ -38,6 +38,10 @@ vi.mock("drizzle-orm", () => ({
 import { getServerSession } from "next-auth";
 import { POST as postReorderLessons } from "../../../../src/app/api/curriculum/editor/reorder-lessons/route";
 import { POST as postAttachMaterial } from "../../../../src/app/api/curriculum/editor/attach-material/route";
+import { POST as postDetachMaterial } from "../../../../src/app/api/curriculum/editor/detach-material/route";
+import { POST as postRetypeContent } from "../../../../src/app/api/curriculum/editor/retype-content/route";
+import { POST as postUpdateItem } from "../../../../src/app/api/curriculum/editor/update-item/route";
+import { POST as postUpdateMaterial } from "../../../../src/app/api/curriculum/editor/update-material/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
 
@@ -187,6 +191,176 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       );
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("POST /api/curriculum/editor/detach-material", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/detach-material", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "unit"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "unit",
+            attachableId: "u1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+  });
+
+  describe("POST /api/curriculum/editor/retype-content", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/retype-content", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (lesson → assessment)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([{ id: "l1", unitId: "u1", title: "Lesson 1", sortOrder: 1, source: null }]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+  });
+
+  describe("POST /api/curriculum/editor/update-item", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/update-item", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postUpdateItem(
+        makeRequest({ entityType: "lesson", entityId: "l1", fields: { title: "New" } }),
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (lesson entity)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          { id: "l1", unitId: "u1", title: "Old Title", sortOrder: 1, durationMinutes: null },
+        ]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateItem(
+        makeRequest({ entityType: "lesson", entityId: "l1", fields: { title: "New Title" } }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+  });
+
+  describe("POST /api/curriculum/editor/update-material", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/update-material", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (unit attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "unit"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "unit",
+            attachableId: "u1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // units query (topUnit) → courseId resolved directly
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
     });
   });
 });
