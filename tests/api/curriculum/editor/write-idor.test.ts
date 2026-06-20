@@ -42,6 +42,8 @@ import { POST as postDetachMaterial } from "../../../../src/app/api/curriculum/e
 import { POST as postRetypeContent } from "../../../../src/app/api/curriculum/editor/retype-content/route";
 import { POST as postUpdateItem } from "../../../../src/app/api/curriculum/editor/update-item/route";
 import { POST as postUpdateMaterial } from "../../../../src/app/api/curriculum/editor/update-material/route";
+import { POST as postMoveLesson } from "../../../../src/app/api/curriculum/editor/move-lesson/route";
+import { POST as postMoveAssessment } from "../../../../src/app/api/curriculum/editor/move-assessment/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
 
@@ -357,6 +359,120 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       mockDbSelect.mockReturnValueOnce(makeChain([]));
 
       const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+  });
+
+  describe("POST /api/curriculum/editor/move-lesson", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/move-lesson", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    const PAYLOAD = { lessonId: "l1", fromUnitId: "u1", toUnitId: "u2", newSortOrder: 1 };
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the source course", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lesson query → found, unitId matches fromUnitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit query → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership check → empty = not owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 403 when session user does not own the destination course", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lesson query → found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit query → courseId owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
+      // source ownership check → found (owned by B)
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      // toUnit query → courseId owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // destination ownership check → empty = not owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+  });
+
+  describe("POST /api/curriculum/editor/move-assessment", () => {
+    function makeRequest(body: unknown) {
+      return new Request("http://localhost/api/curriculum/editor/move-assessment", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+
+    const PAYLOAD = { assessmentId: "a1", fromUnitId: "u1", toUnitId: "u2", newSortOrder: 1 };
+
+    it("returns 401 when unauthenticated", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the source course", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessment query → found, unitId matches fromUnitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "a1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit query → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership check → empty = not owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 403 when session user does not own the destination course", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessment query → found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "a1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit query → courseId owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
+      // source ownership check → found (owned by B)
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      // toUnit query → courseId owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // destination ownership check → empty = not owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
 
       expect(res.status).toBe(403);
       const body = await res.json();
