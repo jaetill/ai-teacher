@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────────
-const { mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete } = vi.hoisted(() => ({
-  mockDbSelect: vi.fn(),
-  mockDbInsert: vi.fn(),
-  mockDbUpdate: vi.fn(),
-  mockDbDelete: vi.fn(),
-}));
+const { mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete, mockDbTransaction } = vi.hoisted(
+  () => ({
+    mockDbSelect: vi.fn(),
+    mockDbInsert: vi.fn(),
+    mockDbUpdate: vi.fn(),
+    mockDbDelete: vi.fn(),
+    mockDbTransaction: vi.fn(),
+  }),
+);
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
@@ -16,6 +19,7 @@ vi.mock("@/db", () => ({
     insert: mockDbInsert,
     update: mockDbUpdate,
     delete: mockDbDelete,
+    transaction: mockDbTransaction,
   },
 }));
 vi.mock("@/db/schema", () => ({
@@ -571,6 +575,65 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(404);
       const body = await res.json();
       expect(body.error).toBe("Assessment not found");
+    });
+
+    it("wraps all three sort-order writes in a single transaction", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // assessment found, unitId matches fromUnitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "a1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      // toUnit → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // dest ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<void>) => {
+        return await cb({ update: txUpdate });
+      });
+
+      // logEdit insert
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(200);
+      expect(mockDbTransaction).toHaveBeenCalledOnce();
+      // All three writes go through tx, not db directly
+      expect(txUpdate).toHaveBeenCalledTimes(3);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 and does not leave partial writes when the transaction rejects", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // assessment found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "a1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      // toUnit → courseId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // dest ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      // Transaction rejects (simulates third write failure triggering a rollback)
+      mockDbTransaction.mockRejectedValueOnce(new Error("DB write failed"));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe("Failed to move assessment");
+      // logEdit is not reached — no insert after a failed transaction
+      expect(mockDbInsert).not.toHaveBeenCalled();
     });
   });
 });
