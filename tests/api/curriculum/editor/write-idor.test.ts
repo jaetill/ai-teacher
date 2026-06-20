@@ -32,6 +32,9 @@ vi.mock("drizzle-orm", () => ({
   asc: vi.fn(),
   and: vi.fn(),
   inArray: vi.fn(),
+  sql: vi.fn(),
+  gt: vi.fn(),
+  gte: vi.fn(),
 }));
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
@@ -420,6 +423,71 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 404 when the lesson does not exist", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when the source unit does not exist", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when the destination unit does not exist", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
+      // source ownership → owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      // toUnit not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 200 with { ok: true } and uses parameterised sql for sort-order deltas", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
+      // source ownership → owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      // toUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
+      // dest ownership → owned by B
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      mockDbUpdate.mockReturnValue(makeChain(undefined));
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const { sql: sqlMock } = await import("drizzle-orm");
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true });
+      // 3 UPDATE statements: gap-close, make-room, move
+      expect(mockDbUpdate).toHaveBeenCalledTimes(3);
+      // sql template tag called twice (sort-order delta expressions) — confirms column reference, not string concat
+      expect(sqlMock).toHaveBeenCalledTimes(2);
     });
   });
 
