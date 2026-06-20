@@ -1,13 +1,21 @@
 // POST /api/curriculum/editor/move-lesson
 // Moves a lesson from one unit to another and adjusts sort orders.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { lessons, units } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { logEdit } from "../log-edit";
+import { assertCourseOwnership } from "../assert-ownership";
 import type { MoveLessonPayload } from "@/types/curriculum-editor";
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body: MoveLessonPayload = await req.json();
   const { lessonId, fromUnitId, toUnitId, newSortOrder } = body;
 
@@ -32,17 +40,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unit not found" }, { status: 404 });
   }
 
+  const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
+  if (forbidden) return forbidden;
+
   // Close the gap in the source unit
-  await db
-    .execute(
-      `UPDATE lessons SET sort_order = sort_order - 1, updated_at = now() WHERE unit_id = '${fromUnitId}' AND sort_order > ${lesson.sortOrder}`
-    );
+  await db.execute(
+    sql`UPDATE lessons SET sort_order = sort_order - 1, updated_at = now() WHERE unit_id = ${fromUnitId} AND sort_order > ${lesson.sortOrder}`
+  );
 
   // Make room in the target unit
-  await db
-    .execute(
-      `UPDATE lessons SET sort_order = sort_order + 1, updated_at = now() WHERE unit_id = '${toUnitId}' AND sort_order >= ${newSortOrder}`
-    );
+  await db.execute(
+    sql`UPDATE lessons SET sort_order = sort_order + 1, updated_at = now() WHERE unit_id = ${toUnitId} AND sort_order >= ${newSortOrder}`
+  );
 
   // Move the lesson
   await db
