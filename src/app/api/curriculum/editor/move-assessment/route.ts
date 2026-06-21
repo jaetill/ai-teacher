@@ -79,7 +79,8 @@ export async function POST(req: Request) {
         .set({ unitId: toUnitId, sortOrder: newSortOrder, updatedAt: new Date() })
         .where(eq(assessments.id, assessmentId));
     });
-  } catch {
+  } catch (err) {
+    console.error("[move-assessment] transaction failed", err);
     return Response.json({ error: "Failed to move assessment" }, { status: 500 });
   }
 
