@@ -29,6 +29,12 @@ export async function POST(
 
   const { id } = await params;
 
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(id)) {
+    return Response.json({ error: "Invalid unit id" }, { status: 400 });
+  }
+
   // ── Load unit, lessons, and standards ───
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
   if (!unit) {
