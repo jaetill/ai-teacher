@@ -58,6 +58,19 @@ describe("POST /api/units/[id]/infer-standards", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 400 for a malformed (non-UUID) unit id", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
+
+    const res = await POST(
+      new Request("http://localhost/api/units/not-a-uuid/infer-standards", { method: "POST" }),
+      makeParams("not-a-uuid"),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid unit id");
+  });
+
   it("returns 401 when unauthenticated", async () => {
     mockGetServerSession.mockResolvedValueOnce(null);
 
@@ -83,14 +96,15 @@ describe("POST /api/units/[id]/infer-standards", () => {
   it("returns 403 when authenticated user does not own the unit", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
 
+    const unitId = "00000000-0000-0000-0000-000000000001";
     // unit owned by a different user
     mockDbSelect.mockReturnValueOnce(
-      makeChain([{ id: "unit-1", title: "Owned Unit", userId: "google-sub-bob" }]),
+      makeChain([{ id: unitId, title: "Owned Unit", userId: "google-sub-bob" }]),
     );
 
     const res = await POST(
-      new Request("http://localhost/api/units/unit-1/infer-standards", { method: "POST" }),
-      makeParams("unit-1"),
+      new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
+      makeParams(unitId),
     );
 
     expect(res.status).toBe(403);
@@ -101,16 +115,17 @@ describe("POST /api/units/[id]/infer-standards", () => {
   it("allows any authenticated user when unit.userId is null (legacy row)", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
 
+    const unitId = "00000000-0000-0000-0000-000000000001";
     // unit has no owner (pre-auth row)
     mockDbSelect.mockReturnValueOnce(
-      makeChain([{ id: "unit-1", title: "Legacy Unit", userId: null }]),
+      makeChain([{ id: unitId, title: "Legacy Unit", userId: null }]),
     );
     // lessons and standards queries return empty → 400, not 403
     mockDbSelect.mockReturnValue(makeChain([]));
 
     const res = await POST(
-      new Request("http://localhost/api/units/unit-1/infer-standards", { method: "POST" }),
-      makeParams("unit-1"),
+      new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
+      makeParams(unitId),
     );
 
     expect(res.status).not.toBe(403);
