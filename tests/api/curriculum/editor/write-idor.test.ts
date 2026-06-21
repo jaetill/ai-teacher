@@ -526,6 +526,18 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(401);
     });
 
+    it("returns 403 when assessmentId belongs to a different unit than fromUnitId (cross-unit IDOR)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+      // assessment found, but unitId is u99 (victim's unit) — not the attacker's u1
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "a1", unitId: "u99", sortOrder: 2 }]));
+
+      const res = await postMoveAssessment(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
     it("returns 403 when session user does not own the source course", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION_B);
 
