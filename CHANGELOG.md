@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/jaetill/ai-teacher/compare/v1.0.1...v1.0.2) (2026-06-21)
+
+
+### Bug Fixes
+
+* **move-assessment:** log transaction error instead of swallowing it ([#338](https://github.com/jaetill/ai-teacher/issues/338)) ([f31f301](https://github.com/jaetill/ai-teacher/commit/f31f301aba5511f2f0cdcad9e5f81efac2e70046)), closes [#335](https://github.com/jaetill/ai-teacher/issues/335)
+* **security:** validate UUID format on infer-standards path param (closes [#325](https://github.com/jaetill/ai-teacher/issues/325)) ([#339](https://github.com/jaetill/ai-teacher/issues/339)) ([393f0ed](https://github.com/jaetill/ai-teacher/commit/393f0edcdcc85a9e95777ddd0789015850a18d58))
+
 ## [1.0.1](https://github.com/jaetill/ai-teacher/compare/v1.0.0...v1.0.1) (2026-06-20)
 
 
