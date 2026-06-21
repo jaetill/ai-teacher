@@ -479,32 +479,63 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(404);
     });
 
-    it("returns 200 with { ok: true } and uses parameterised sql for sort-order deltas", async () => {
-      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+    it("wraps all three sort-order writes in a single transaction", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
       // lesson found
       mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
       // fromUnit found
-      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
-      // source ownership → owned by B
-      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
       // toUnit found
-      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-B" }]));
-      // dest ownership → owned by B
-      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-B" }]));
-      mockDbUpdate.mockReturnValue(makeChain(undefined));
-      mockDbInsert.mockReturnValue(makeChain(undefined));
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // dest ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
 
-      const { sql: sqlMock } = await import("drizzle-orm");
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<void>) => {
+        return await cb({ update: txUpdate });
+      });
+
+      // logEdit insert
+      mockDbInsert.mockReturnValue(makeChain(undefined));
 
       const res = await postMoveLesson(makeRequest(PAYLOAD));
 
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual({ ok: true });
-      // 3 UPDATE statements: gap-close, make-room, move
-      expect(mockDbUpdate).toHaveBeenCalledTimes(3);
-      // sql template tag called twice (sort-order delta expressions) — confirms column reference, not string concat
-      expect(sqlMock).toHaveBeenCalledTimes(2);
+      expect(mockDbTransaction).toHaveBeenCalledOnce();
+      // All three writes go through tx, not db directly
+      expect(txUpdate).toHaveBeenCalledTimes(3);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 and does not leave partial writes when the transaction rejects", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      // toUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // dest ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      // Transaction rejects (simulates a write failure triggering rollback)
+      mockDbTransaction.mockRejectedValueOnce(new Error("DB write failed"));
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe("Failed to move lesson");
+      // logEdit is not reached — no insert after a failed transaction
+      expect(mockDbInsert).not.toHaveBeenCalled();
     });
   });
 
