@@ -56,6 +56,22 @@ export async function POST(request: Request) {
     });
   }
 
+  if ((situation?.length ?? 0) > 10_000) {
+    return new Response("situation too long (max 10 000 chars)", {
+      status: 413,
+    });
+  }
+  if ((studentName?.length ?? 0) > 100) {
+    return new Response("studentName too long (max 100 chars)", {
+      status: 413,
+    });
+  }
+  if ((recipientName?.length ?? 0) > 100) {
+    return new Response("recipientName too long (max 100 chars)", {
+      status: 413,
+    });
+  }
+
   const userMessage = `Please draft an email with the following details:
 
 **To:** ${recipient === "parent" ? "Parent/Guardian" : "School Administrator"}${recipientName ? ` (${recipientName})` : ""}
