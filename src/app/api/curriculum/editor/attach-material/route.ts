@@ -29,12 +29,14 @@ export async function POST(req: Request) {
     const [lesson] = await db.select({ unitId: lessons.unitId }).from(lessons).where(eq(lessons.id, attachableId)).limit(1);
     if (!lesson) return Response.json({ error: "Lesson not found" }, { status: 404 });
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, lesson.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
   } else {
     const [assessment] = await db.select({ unitId: assessments.unitId }).from(assessments).where(eq(assessments.id, attachableId)).limit(1);
     if (!assessment) return Response.json({ error: "Assessment not found" }, { status: 404 });
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
   }
 
   const forbidden = await assertCourseOwnership(courseId, session.user?.email);
