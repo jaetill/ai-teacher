@@ -35,39 +35,51 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    // Insert as assessment
-    const [newAssessment] = await db.insert(assessments).values({
-      unitId: lesson.unitId,
-      title: lesson.title,
-      assessmentType: "formative",
-      sortOrder: lesson.sortOrder,
-      source: lesson.source,
-    }).returning({ id: assessments.id });
+    let newAssessmentId: string;
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [newAssessment] = await tx.insert(assessments).values({
+          unitId: lesson.unitId,
+          title: lesson.title,
+          assessmentType: "formative",
+          sortOrder: lesson.sortOrder,
+          source: lesson.source,
+        }).returning({ id: assessments.id });
 
-    // Update material attachments to point to new assessment
-    await db
-      .update(materialAttachments)
-      .set({ attachableType: "assessment", attachableId: newAssessment.id })
-      .where(
-        and(
-          eq(materialAttachments.attachableType, "lesson"),
-          eq(materialAttachments.attachableId, entityId)
-        )
-      );
+        await tx
+          .update(materialAttachments)
+          .set({ attachableType: "assessment", attachableId: newAssessment.id })
+          .where(
+            and(
+              eq(materialAttachments.attachableType, "lesson"),
+              eq(materialAttachments.attachableId, entityId)
+            )
+          );
 
-    // Delete the lesson
-    await db.delete(lessons).where(eq(lessons.id, entityId));
+        await tx.delete(lessons).where(eq(lessons.id, entityId));
 
-    await logEdit({
-      courseId: unit.courseId,
-      action: "retype_content",
-      entityType: "lesson",
-      entityId,
-      previousValue: { type: "lesson", title: lesson.title },
-      newValue: { type: "assessment", id: newAssessment.id, assessmentType: "formative" },
-    });
+        return newAssessment.id;
+      });
+      newAssessmentId = result;
+    } catch (err) {
+      console.error("[retype-content] transaction failed", err);
+      return Response.json({ error: "Failed to retype content" }, { status: 500 });
+    }
 
-    return Response.json({ ok: true, newId: newAssessment.id });
+    try {
+      await logEdit({
+        courseId: unit.courseId,
+        action: "retype_content",
+        entityType: "lesson",
+        entityId,
+        previousValue: { type: "lesson", title: lesson.title },
+        newValue: { type: "assessment", id: newAssessmentId, assessmentType: "formative" },
+      });
+    } catch (err) {
+      console.error("[retype-content] logEdit failed:", err);
+    }
+
+    return Response.json({ ok: true, newId: newAssessmentId });
   }
 
   if (entityType === "assessment" && newType === "lesson") {
@@ -81,38 +93,50 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    // Insert as lesson
-    const [newLesson] = await db.insert(lessons).values({
-      unitId: assessment.unitId,
-      title: assessment.title,
-      sortOrder: assessment.sortOrder,
-      source: assessment.source,
-    }).returning({ id: lessons.id });
+    let newLessonId: string;
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [newLesson] = await tx.insert(lessons).values({
+          unitId: assessment.unitId,
+          title: assessment.title,
+          sortOrder: assessment.sortOrder,
+          source: assessment.source,
+        }).returning({ id: lessons.id });
 
-    // Update material attachments
-    await db
-      .update(materialAttachments)
-      .set({ attachableType: "lesson", attachableId: newLesson.id })
-      .where(
-        and(
-          eq(materialAttachments.attachableType, "assessment"),
-          eq(materialAttachments.attachableId, entityId)
-        )
-      );
+        await tx
+          .update(materialAttachments)
+          .set({ attachableType: "lesson", attachableId: newLesson.id })
+          .where(
+            and(
+              eq(materialAttachments.attachableType, "assessment"),
+              eq(materialAttachments.attachableId, entityId)
+            )
+          );
 
-    // Delete the assessment
-    await db.delete(assessments).where(eq(assessments.id, entityId));
+        await tx.delete(assessments).where(eq(assessments.id, entityId));
 
-    await logEdit({
-      courseId: unit.courseId,
-      action: "retype_content",
-      entityType: "assessment",
-      entityId,
-      previousValue: { type: "assessment", title: assessment.title, assessmentType: assessment.assessmentType },
-      newValue: { type: "lesson", id: newLesson.id },
-    });
+        return newLesson.id;
+      });
+      newLessonId = result;
+    } catch (err) {
+      console.error("[retype-content] transaction failed", err);
+      return Response.json({ error: "Failed to retype content" }, { status: 500 });
+    }
 
-    return Response.json({ ok: true, newId: newLesson.id });
+    try {
+      await logEdit({
+        courseId: unit.courseId,
+        action: "retype_content",
+        entityType: "assessment",
+        entityId,
+        previousValue: { type: "assessment", title: assessment.title, assessmentType: assessment.assessmentType },
+        newValue: { type: "lesson", id: newLessonId },
+      });
+    } catch (err) {
+      console.error("[retype-content] logEdit failed:", err);
+    }
+
+    return Response.json({ ok: true, newId: newLessonId });
   }
 
   return Response.json({ error: "Invalid conversion" }, { status: 400 });
