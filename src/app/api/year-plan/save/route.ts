@@ -36,6 +36,10 @@ export async function POST(req: Request) {
     rawPlan?: string;
   };
 
+  if (body.rawPlan && body.rawPlan.length > 50_000) {
+    return Response.json({ error: "rawPlan too large" }, { status: 400 });
+  }
+
   // ── Find or create course ───
   const existing = await db
     .select({ id: courses.id })
