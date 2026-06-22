@@ -556,6 +556,68 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 403 when session user does not own the course (lesson attachable, topUnit absent)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (not a unit-direct attachable)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // lessons query → found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved via lesson's unit
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 403 when session user does not own the course (assessment attachable, topUnit absent)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "assessment"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "assessment",
+            attachableId: "as1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (not a unit-direct attachable)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // assessments query → found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved via assessment's unit
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
   });
 
   describe("POST /api/curriculum/editor/move-lesson", () => {
