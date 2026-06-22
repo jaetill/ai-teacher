@@ -79,7 +79,8 @@ export async function POST(req: Request) {
         .set({ unitId: toUnitId, sortOrder: newSortOrder, updatedAt: new Date() })
         .where(eq(lessons.id, lessonId));
     });
-  } catch {
+  } catch (err) {
+    console.error("[move-lesson] transaction failed", err);
     return Response.json({ error: "Failed to move lesson" }, { status: 500 });
   }
 

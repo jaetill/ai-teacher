@@ -526,8 +526,11 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       // dest ownership → owned by A
       mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
 
+      const dbError = new Error("DB write failed");
       // Transaction rejects (simulates a write failure triggering rollback)
-      mockDbTransaction.mockRejectedValueOnce(new Error("DB write failed"));
+      mockDbTransaction.mockRejectedValueOnce(dbError);
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const res = await postMoveLesson(makeRequest(PAYLOAD));
 
@@ -536,6 +539,10 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(body.error).toBe("Failed to move lesson");
       // logEdit is not reached — no insert after a failed transaction
       expect(mockDbInsert).not.toHaveBeenCalled();
+      // error is logged so it appears in Sentry / server logs
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[move-lesson] transaction failed", dbError);
+
+      consoleErrorSpy.mockRestore();
     });
   });
 
