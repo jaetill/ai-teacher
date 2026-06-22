@@ -201,6 +201,40 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
 
       expect(res.status).toBe(404);
     });
+
+    it("returns 404 when unit is not found (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u-deleted" }]));
+      // units query → orphaned FK, unit deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "lesson", attachableId: "l1" }),
+      );
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
+    });
+
+    it("returns 404 when unit is not found (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u-deleted" }]));
+      // units query → orphaned FK, unit deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "assessment", attachableId: "a1" }),
+      );
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
+    });
   });
 
   describe("POST /api/curriculum/editor/detach-material", () => {
@@ -245,6 +279,108 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 404 when unit is not found (unit attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "unit"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "unit",
+            attachableId: "u-deleted",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // units query → not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
+    });
+
+    it("returns 404 when the referenced lesson is not found (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l-deleted",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // lessons query → deleted between attachment lookup and now
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Lesson not found");
+    });
+
+    it("returns 404 when unit is not found (lesson attachable, orphaned FK)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // lessons query → found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u-deleted" }]));
+      // units query → orphaned FK, unit deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
+    });
+
+    it("returns 404 when the referenced assessment is not found (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "assessment"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "assessment",
+            attachableId: "as-deleted",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // assessments query → deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Assessment not found");
+    });
   });
 
   describe("POST /api/curriculum/editor/retype-content", () => {
@@ -284,6 +420,55 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 404 when unit is not found (lesson → assessment)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          { id: "l1", unitId: "u-deleted", title: "Lesson 1", sortOrder: 1, source: null },
+        ]),
+      );
+      // units query → unit was deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
+    });
+
+    it("returns 404 when unit is not found (assessment → lesson)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "as1",
+            unitId: "u-deleted",
+            title: "Assessment 1",
+            sortOrder: 1,
+            source: null,
+            assessmentType: "formative",
+          },
+        ]),
+      );
+      // units query → unit was deleted
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Unit not found");
     });
   });
 

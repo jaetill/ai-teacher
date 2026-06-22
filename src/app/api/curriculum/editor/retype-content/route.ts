@@ -30,8 +30,9 @@ export async function POST(req: Request) {
     if (!lesson) return Response.json({ error: "Lesson not found" }, { status: 404 });
 
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, lesson.unitId)).limit(1);
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
 
-    const forbidden = await assertCourseOwnership(unit?.courseId, session.user?.email);
+    const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
     // Insert as assessment
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     await db.delete(lessons).where(eq(lessons.id, entityId));
 
     await logEdit({
-      courseId: unit!.courseId,
+      courseId: unit.courseId,
       action: "retype_content",
       entityType: "lesson",
       entityId,
@@ -75,8 +76,9 @@ export async function POST(req: Request) {
     if (!assessment) return Response.json({ error: "Assessment not found" }, { status: 404 });
 
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment.unitId)).limit(1);
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
 
-    const forbidden = await assertCourseOwnership(unit?.courseId, session.user?.email);
+    const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
     // Insert as lesson
@@ -102,7 +104,7 @@ export async function POST(req: Request) {
     await db.delete(assessments).where(eq(assessments.id, entityId));
 
     await logEdit({
-      courseId: unit!.courseId,
+      courseId: unit.courseId,
       action: "retype_content",
       entityType: "assessment",
       entityId,

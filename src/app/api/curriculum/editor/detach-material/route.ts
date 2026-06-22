@@ -34,15 +34,20 @@ export async function POST(req: Request) {
   let courseId: string;
   if (attachment.attachableType === "unit") {
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, attachment.attachableId)).limit(1);
-    courseId = unit!.courseId;
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
   } else if (attachment.attachableType === "lesson") {
     const [lesson] = await db.select({ unitId: lessons.unitId }).from(lessons).where(eq(lessons.id, attachment.attachableId)).limit(1);
-    const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, lesson!.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!lesson) return Response.json({ error: "Lesson not found" }, { status: 404 });
+    const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, lesson.unitId)).limit(1);
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
   } else {
     const [assessment] = await db.select({ unitId: assessments.unitId }).from(assessments).where(eq(assessments.id, attachment.attachableId)).limit(1);
-    const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment!.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!assessment) return Response.json({ error: "Assessment not found" }, { status: 404 });
+    const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, assessment.unitId)).limit(1);
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
   }
 
   const forbidden = await assertCourseOwnership(courseId, session.user?.email);
