@@ -201,6 +201,90 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
 
       expect(res.status).toBe(404);
     });
+
+    it("returns 401 when unauthenticated (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "lesson", attachableId: "l1" }),
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → lesson found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "unit-of-A" }]));
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "lesson", attachableId: "l1" }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 404 when lesson does not exist (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // lessons query → not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "lesson", attachableId: "missing" }),
+      );
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 401 when unauthenticated (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "assessment", attachableId: "as1" }),
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → assessment found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "unit-of-A" }]));
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "assessment", attachableId: "as1" }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 404 when assessment does not exist (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postAttachMaterial(
+        makeRequest({ materialId: "m1", attachableType: "assessment", attachableId: "missing" }),
+      );
+
+      expect(res.status).toBe(404);
+    });
   });
 
   describe("POST /api/curriculum/editor/detach-material", () => {
