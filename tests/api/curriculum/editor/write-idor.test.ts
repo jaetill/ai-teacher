@@ -280,6 +280,64 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(body.error).toBe("Forbidden");
     });
 
+    it("returns 403 when session user does not own the course (lesson attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // lessons query → found, returns unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 403 when session user does not own the course (assessment attachable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "assessment"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "assessment",
+            attachableId: "as1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // assessments query → found, returns unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
     it("returns 404 when unit is not found (unit attachable)", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION_B);
 
