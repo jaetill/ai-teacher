@@ -19,15 +19,15 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Issue number to implement (for manual dispatch / fleet promoter)'
+        description: "Issue number to implement (for manual dispatch / fleet promoter)"
         required: false
         type: string
       mode:
-        description: 'cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)'
+        description: "cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)"
         required: false
         type: string
       bundle_issues:
-        description: 'Comma-separated deferred-until-adjacent nit issue numbers the promoter selected to ride along (same-file, ADR-0029)'
+        description: "Comma-separated deferred-until-adjacent nit issue numbers the promoter selected to ride along (same-file, ADR-0029)"
         required: false
         type: string
 
@@ -36,6 +36,7 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  workflows: write
 
 jobs:
   run:
