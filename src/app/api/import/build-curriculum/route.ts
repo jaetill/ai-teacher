@@ -33,6 +33,12 @@ export async function POST(req: Request) {
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return new Response("Session missing email", { status: 401 });
+  }
+
   try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
