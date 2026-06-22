@@ -83,14 +83,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "Failed to move lesson" }, { status: 500 });
   }
 
-  await logEdit({
-    courseId: fromUnit.courseId,
-    action: "move_lesson",
-    entityType: "lesson",
-    entityId: lessonId,
-    previousValue: { unitId: fromUnitId, sortOrder: lesson.sortOrder },
-    newValue: { unitId: toUnitId, sortOrder: newSortOrder },
-  });
+  try {
+    await logEdit({
+      courseId: fromUnit.courseId,
+      action: "move_lesson",
+      entityType: "lesson",
+      entityId: lessonId,
+      previousValue: { unitId: fromUnitId, sortOrder: lesson.sortOrder },
+      newValue: { unitId: toUnitId, sortOrder: newSortOrder },
+    });
+  } catch (err) {
+    console.error("[move-lesson] logEdit failed:", err);
+  }
 
   return Response.json({ ok: true });
 }

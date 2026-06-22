@@ -722,6 +722,41 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       // logEdit is not reached — no insert after a failed transaction
       expect(mockDbInsert).not.toHaveBeenCalled();
     });
+
+    it("returns 200 even when logEdit throws after the transaction commits", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "l1", unitId: "u1", sortOrder: 2 }]));
+      // fromUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // source ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      // toUnit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // dest ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementationOnce(async (cb: (tx: unknown) => Promise<void>) => {
+        return await cb({ update: txUpdate });
+      });
+
+      // logEdit insert rejects after the transaction commits (simulates audit DB outage)
+      const logEditError = new Error("audit DB outage");
+      mockDbInsert.mockImplementationOnce(() => ({ values: () => Promise.reject(logEditError) }));
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postMoveLesson(makeRequest(PAYLOAD));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true });
+      // logEdit failure is logged but does not fail the request
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[move-lesson] logEdit failed:", logEditError);
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe("POST /api/curriculum/editor/move-assessment", () => {
