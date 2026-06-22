@@ -214,6 +214,36 @@ describe("POST /api/import/build-curriculum", () => {
       expect(mockDbSelect).toHaveBeenCalledTimes(6);
     });
 
+    it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
+      mockGetServerSession.mockResolvedValue({ user: { id: "user-alice", name: "Teacher" } });
+
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+
+      const unitChain = makeChain([CREATED_UNIT]);
+      const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
+      unitChain.values = unitValuesSpy;
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // courses
+        .mockReturnValueOnce(unitChain) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValueOnce(makeChain([])) // lessonStandards
+        .mockReturnValueOnce(makeChain([])); // materialAttachments
+
+      await POST(makeRequest());
+
+      expect(unitValuesSpy).toHaveBeenCalledOnce();
+      expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ userId: "user-alice" });
+    });
+
     it("returns 500 gracefully when both insert and fallback SELECT return nothing", async () => {
       setupMocks({
         courseInsertReturn: [], // insert returns nothing

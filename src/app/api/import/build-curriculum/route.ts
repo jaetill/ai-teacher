@@ -241,6 +241,7 @@ ${standardsList}`,
       essentialQuestions: parsed.unit.essentialQuestions || null,
       anchorTexts: parsed.unit.anchorTexts || null,
       contentWarnings: parsed.unit.contentWarnings || null,
+      userId: session.user?.id,
       source: "ai",
     })
     .returning({ id: units.id });
