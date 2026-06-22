@@ -154,6 +154,26 @@ export async function POST(request: Request) {
     return new Response("messages are required", { status: 400 });
   }
 
+  const MAX_CONTEXT_CHARS = 8_000;
+  const MAX_MESSAGES = 50;
+  const MAX_MESSAGE_CONTENT_CHARS = 10_000;
+
+  if (context && context.length > MAX_CONTEXT_CHARS) {
+    return new Response(`context too large (max ${MAX_CONTEXT_CHARS} chars)`, { status: 413 });
+  }
+  if (messages.length > MAX_MESSAGES) {
+    return new Response(`too many messages (max ${MAX_MESSAGES})`, { status: 413 });
+  }
+  for (const msg of messages) {
+    const contentLen =
+      typeof msg.content === "string"
+        ? msg.content.length
+        : JSON.stringify(msg.content).length;
+    if (contentLen > MAX_MESSAGE_CONTENT_CHARS) {
+      return new Response(`message content too large (max ${MAX_MESSAGE_CONTENT_CHARS} chars)`, { status: 413 });
+    }
+  }
+
   const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (conversationId && !UUID_RE.test(conversationId)) {
