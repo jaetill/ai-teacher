@@ -1,37 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// ── Hoisted mocks ────────────────────────────────────────────────────────────
+const { mockDbSelect, mockDbInsert, mockDbUpdate, mockStreamFn } = vi.hoisted(() => ({
+  mockDbSelect: vi.fn(),
+  mockDbInsert: vi.fn(),
+  mockDbUpdate: vi.fn(),
+  mockStreamFn: vi.fn().mockReturnValue({ [Symbol.asyncIterator]: async function* () {} }),
+}));
+
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@anthropic-ai/sdk", () => {
-  const mockStream = {
-    [Symbol.asyncIterator]: async function* () {},
-  };
-  return {
-    default: class {
-      messages = {
-        stream: vi.fn().mockReturnValue(mockStream),
-      };
-    },
-  };
-});
+vi.mock("@anthropic-ai/sdk", () => ({
+  default: class {
+    messages = { stream: mockStreamFn };
+  },
+}));
 vi.mock("@/db", () => ({
   db: {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue([]),
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    }),
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "550e8400-e29b-41d4-a716-446655440000" }]),
-      }),
-    }),
-    update: vi.fn().mockReturnValue({
-      set: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    }),
+    select: mockDbSelect,
+    insert: mockDbInsert,
+    update: mockDbUpdate,
   },
 }));
 vi.mock("@/db/schema", () => ({
@@ -59,6 +47,25 @@ const mockSession = vi.mocked(getServerSession);
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const VALID_MESSAGES = [{ role: "user", content: "Hello" }];
 
+// ── Chain helper (same pattern as write-idor.test.ts) ────────────────────────
+function makeChain(value: unknown) {
+  const p = Promise.resolve(value);
+  const chain: Record<string, unknown> = {};
+  const self = () => chain;
+  chain.from = self;
+  chain.where = self;
+  chain.orderBy = self;
+  chain.limit = self;
+  chain.values = self;
+  chain.onConflictDoNothing = self;
+  chain.returning = self;
+  chain.set = self;
+  chain.then = (r: (v: unknown) => unknown, j?: (e: unknown) => unknown) => p.then(r, j);
+  chain.catch = (j: (e: unknown) => unknown) => p.catch(j);
+  chain.finally = (fn: () => void) => p.finally(fn);
+  return chain;
+}
+
 function makeRequest(body: object) {
   return new Request("http://localhost/api/copilot", {
     method: "POST",
@@ -67,16 +74,21 @@ function makeRequest(body: object) {
   });
 }
 
-function authedSession() {
+function authedSession(email = "teacher@example.com") {
   mockSession.mockResolvedValueOnce({
-    user: { email: "teacher@example.com" },
+    user: { email },
     expires: "",
   });
 }
 
+// ── UUID validation tests ────────────────────────────────────────────────────
 describe("POST /api/copilot — conversationId UUID validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: all DB ops succeed with empty results
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
   });
 
   it("returns 401 when there is no session", async () => {
@@ -101,7 +113,10 @@ describe("POST /api/copilot — conversationId UUID validation", () => {
     authedSession();
 
     const res = await POST(
-      makeRequest({ messages: VALID_MESSAGES, conversationId: "../../../etc/passwd" }),
+      makeRequest({
+        messages: VALID_MESSAGES,
+        conversationId: "../../../etc/passwd",
+      }),
     );
 
     expect(res.status).toBe(400);
@@ -142,7 +157,7 @@ describe("POST /api/copilot — conversationId UUID validation", () => {
 
     const res = await POST(makeRequest({ messages: VALID_MESSAGES, conversationId: VALID_UUID }));
 
-    // Should not be a 400 from UUID validation (may be another error from mocks, but not 400)
+    // Should not be a 400 from UUID validation (may be another status from mocks, but not 400)
     expect(res.status).not.toBe(400);
   });
 
@@ -152,5 +167,57 @@ describe("POST /api/copilot — conversationId UUID validation", () => {
     const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
 
     expect(res.status).not.toBe(400);
+  });
+});
+
+// ── Cross-tenant curriculum context isolation ────────────────────────────────
+describe("POST /api/copilot — curriculum context owner isolation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("system prompt contains only the requesting teacher's courses, not another teacher's", async () => {
+    authedSession("teacher-a@school.com");
+
+    // courses query (owner-filtered) → teacher A's course only
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([
+        {
+          id: "course-a-uuid",
+          title: "Grade 6 ELA",
+          grade: 6,
+          teacherNotes: null,
+        },
+      ]),
+    );
+    // units query for teacher A's courseId → empty (no units seeded)
+    mockDbSelect.mockReturnValue(makeChain([]));
+
+    await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(mockStreamFn).toHaveBeenCalledOnce();
+    const { system } = mockStreamFn.mock.calls[0][0] as { system: string };
+
+    // Teacher A's course is in the AI context
+    expect(system).toContain("Grade 6 ELA");
+
+    // Teacher B's hypothetical course is absent — the owner filter prevented it
+    expect(system).not.toContain("teacher-b");
+    expect(system).not.toContain("Grade 8 History");
+  });
+
+  it("owner email is passed to the courses where clause", async () => {
+    authedSession("teacher-a@school.com");
+
+    mockDbSelect.mockReturnValue(makeChain([]));
+
+    await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    const { eq } = await import("drizzle-orm");
+    // eq(courses.ownerEmail, email) — courses.ownerEmail is undefined in the stub schema,
+    // but the second arg must be the session user's email, proving the filter is applied.
+    expect(vi.mocked(eq)).toHaveBeenCalledWith(undefined, "teacher-a@school.com");
   });
 });

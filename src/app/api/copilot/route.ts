@@ -35,25 +35,49 @@ Be concise and practical. Produce ready-to-use outputs when asked. When generati
 
 You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.`;
 
-async function buildCurriculumContext(): Promise<string> {
-  const allCourses = await db.select().from(courses).orderBy(asc(courses.grade));
+async function buildCurriculumContext(ownerEmail: string): Promise<string> {
+  const allCourses = await db
+    .select()
+    .from(courses)
+    .where(eq(courses.ownerEmail, ownerEmail))
+    .orderBy(asc(courses.grade));
   if (allCourses.length === 0) return "";
 
-  const allUnits = await db.select().from(units).orderBy(asc(units.sortOrder));
-  const allLessons = await db
-    .select({ id: lessons.id, unitId: lessons.unitId, title: lessons.title, sortOrder: lessons.sortOrder, objectives: lessons.objectives })
-    .from(lessons)
-    .orderBy(asc(lessons.sortOrder));
+  const courseIds = allCourses.map((c) => c.id);
+
+  const allUnits = await db
+    .select()
+    .from(units)
+    .where(inArray(units.courseId, courseIds))
+    .orderBy(asc(units.sortOrder));
+
+  const unitIds = allUnits.map((u) => u.id);
+
+  const allLessons = unitIds.length > 0
+    ? await db
+        .select({ id: lessons.id, unitId: lessons.unitId, title: lessons.title, sortOrder: lessons.sortOrder, objectives: lessons.objectives })
+        .from(lessons)
+        .where(inArray(lessons.unitId, unitIds))
+        .orderBy(asc(lessons.sortOrder))
+    : [];
 
   // Unit-level standards
-  const allUnitStds = await db
-    .select({ unitId: unitStandards.unitId, standardId: unitStandards.standardId, emphasis: unitStandards.emphasis })
-    .from(unitStandards);
+  const allUnitStds = unitIds.length > 0
+    ? await db
+        .select({ unitId: unitStandards.unitId, standardId: unitStandards.standardId, emphasis: unitStandards.emphasis })
+        .from(unitStandards)
+        .where(inArray(unitStandards.unitId, unitIds))
+    : [];
+
+  const lessonIds = allLessons.map((l) => l.id);
 
   // Lesson-level standards
-  const allLessonStds = await db
-    .select({ lessonId: lessonStandards.lessonId, standardId: lessonStandards.standardId, coverageType: lessonStandards.coverageType })
-    .from(lessonStandards);
+  const allLessonStds = lessonIds.length > 0
+    ? await db
+        .select({ lessonId: lessonStandards.lessonId, standardId: lessonStandards.standardId, coverageType: lessonStandards.coverageType })
+        .from(lessonStandards)
+        .where(inArray(lessonStandards.lessonId, lessonIds))
+    : [];
 
   // Standards descriptions
   const stdIds = new Set([
@@ -173,7 +197,7 @@ export async function POST(request: Request) {
   });
 
   // ── Build system prompt with curriculum context ───
-  const curriculumContext = await buildCurriculumContext();
+  const curriculumContext = await buildCurriculumContext(session.user?.email ?? "");
   const system = context
     ? `${BASE_SYSTEM_PROMPT}${curriculumContext}\n\n── Additional context ───\n${context}`
     : `${BASE_SYSTEM_PROMPT}${curriculumContext}`;
