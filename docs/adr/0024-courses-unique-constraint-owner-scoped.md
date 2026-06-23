@@ -74,7 +74,7 @@ Chosen option: **Option A — owner-scoped unique constraint with partial NULL i
 ## Implementation notes
 
 - **Migration:** `drizzle/0008_courses_unique_add_owner_email.sql` — three statements: DROP old constraint, ADD owner-scoped constraint, CREATE partial unique index.
-- **Schema:** `src/db/schema/courses.ts` — Drizzle `unique()` declaration updated to include `ownerEmail`. (The partial index is not representable in Drizzle's schema DSL; it lives only in the raw migration SQL.)
+- **Schema:** `src/db/schema/courses.ts` — Drizzle `unique()` declaration updated to include `ownerEmail`; partial index declared via `uniqueIndex().where(sql\`owner_email IS NULL\`)`.
 - **Tests:** `tests/db/migration-0008.test.ts` — file-content assertions verifying the migration SQL contains the DROP, ADD, and partial index statements.
 - **Follow-up — fix INSERT routes:** Issues #206 and #207 track routes that omit `ownerEmail` on INSERT. Once those are fixed, the partial NULL index becomes a safety net rather than the primary guard.
 - **Follow-up — identity convergence:** When a `users` table is introduced (per ADR-0021, ADR-0023), the constraint should migrate from `owner_email` to `owner_id uuid`.
