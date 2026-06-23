@@ -253,6 +253,19 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(res.status).toBe(401);
     });
 
+    it("returns 404 when materialAttachmentId is not found", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → not found
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "missing-id" }));
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBe("Attachment not found");
+    });
+
     it("returns 403 when session user does not own the course", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION_B);
 
