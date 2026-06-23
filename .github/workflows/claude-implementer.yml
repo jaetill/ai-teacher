@@ -11,6 +11,13 @@ name: claude-implementer
 # the workflow_dispatch parameters through as inputs. The promoter dispatches
 # this workflow by name (`gh workflow run claude-implementer.yml`) uniformly
 # across the fleet.
+#
+# Permission design (closes #374):
+#   workflows: write is intentionally absent at workflow level and from the
+#   event-triggered job. It is granted only to run-dispatch, where the caller is
+#   a repo collaborator — not an external issue/comment, which is a known
+#   prompt-injection surface (#34, #146). The dispatch-only scope means a
+#   successful prompt injection via issues/comments cannot modify CI pipelines.
 on:
   issues:
     types: [opened, labeled]
@@ -19,26 +26,47 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Issue number to implement (for manual dispatch / fleet promoter)'
+        description: "Issue number to implement (for manual dispatch / fleet promoter)"
         required: false
         type: string
       mode:
-        description: 'cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)'
+        description: "cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)"
         required: false
         type: string
       bundle_issues:
-        description: 'Comma-separated deferred-until-adjacent nit issue numbers the promoter selected to ride along (same-file, ADR-0029)'
+        description: "Comma-separated deferred-until-adjacent nit issue numbers the promoter selected to ride along (same-file, ADR-0029)"
         required: false
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  id-token: write
-
 jobs:
-  run:
+  # issues / issue_comment path — external-user surface, no workflows: write
+  run-event-triggered:
+    if: github.event_name != 'workflow_dispatch'
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    uses: jaetill/agentic-dev-environment/.github/workflows/claude-implementer-reusable.yml@main
+    with:
+      issue_number: ${{ inputs.issue_number }}
+      mode: ${{ inputs.mode }}
+      bundle_issues: ${{ inputs.bundle_issues }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      IMPLEMENTER_PAT: ${{ secrets.IMPLEMENTER_PAT }}
+      FLEET_APP_ID: ${{ secrets.FLEET_APP_ID }}
+      FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+
+  # workflow_dispatch path — gated to repo collaborators, safe to grant workflows: write
+  run-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      workflows: write
     uses: jaetill/agentic-dev-environment/.github/workflows/claude-implementer-reusable.yml@main
     with:
       issue_number: ${{ inputs.issue_number }}
