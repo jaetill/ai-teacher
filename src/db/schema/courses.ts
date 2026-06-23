@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -6,6 +7,7 @@ import {
   timestamp,
   index,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { schoolYears } from "./calendar";
 
@@ -35,5 +37,8 @@ export const courses = pgTable(
       table.schoolYearId,
       table.ownerEmail
     ),
+    uniqueIndex("uq_courses_null_owner")
+      .on(table.grade, table.subject, table.schoolYearId)
+      .where(sql`owner_email IS NULL`),
   ]
 );
