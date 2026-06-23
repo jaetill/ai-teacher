@@ -46,6 +46,14 @@ export async function POST(request: Request) {
     });
   }
 
+  const MAX_BYTES = 50_000;
+  if (
+    (content?.length ?? 0) + (studentNeed?.length ?? 0) + (outputRequest?.length ?? 0) >
+    MAX_BYTES
+  ) {
+    return new Response("Request payload too large", { status: 413 });
+  }
+
   const userMessage = `Please adapt the following for a specific student.
 
 **Original Content:**
