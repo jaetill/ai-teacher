@@ -570,6 +570,57 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 403 when session user does not own the course (assessment entity)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          { id: "a1", unitId: "u1", title: "Old", sortOrder: 1, assessmentType: "formative" },
+        ]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateItem(
+        makeRequest({ entityType: "assessment", entityId: "a1", fields: { title: "New" } }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
+    it("returns 403 when session user does not own the course (unit entity)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // units query → courseId is on the unit row directly
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "u1",
+            courseId: "course-owned-by-A",
+            title: "Old",
+            sortOrder: 1,
+            durationWeeks: null,
+            quarter: null,
+          },
+        ]),
+      );
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postUpdateItem(
+        makeRequest({ entityType: "unit", entityId: "u1", fields: { title: "New" } }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
   });
 
   describe("POST /api/curriculum/editor/update-material", () => {
