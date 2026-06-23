@@ -221,3 +221,60 @@ describe("POST /api/copilot — curriculum context owner isolation", () => {
     expect(vi.mocked(eq)).toHaveBeenCalledWith(undefined, "teacher-a@school.com");
   });
 });
+
+// ── Input size cap tests (regression guard for #356 / #373) ─────────────────
+describe("POST /api/copilot — input size caps (quota-exhaustion prevention)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("returns 413 when context exceeds MAX_CONTEXT_CHARS (8 000)", async () => {
+    authedSession();
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES, context: "x".repeat(8_001) }));
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toContain("context too large");
+  });
+
+  it("returns 413 when messages array exceeds MAX_MESSAGES (50)", async () => {
+    authedSession();
+
+    const tooManyMessages = Array.from({ length: 51 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "msg",
+    }));
+
+    const res = await POST(makeRequest({ messages: tooManyMessages }));
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toContain("too many messages");
+  });
+
+  it("returns 413 when a single message content exceeds MAX_MESSAGE_CONTENT_CHARS (10 000)", async () => {
+    authedSession();
+
+    const res = await POST(
+      makeRequest({ messages: [{ role: "user", content: "y".repeat(10_001) }] }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toContain("message content too large");
+  });
+
+  it("proceeds normally when all inputs are within limits", async () => {
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "Hello" }],
+        context: "short context",
+      }),
+    );
+
+    expect(res.status).not.toBe(413);
+  });
+});
