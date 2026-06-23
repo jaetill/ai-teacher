@@ -676,6 +676,132 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 200 when unit attachable and ownership passes", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // materialAttachments query → found, attachableType "unit"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "unit",
+            attachableId: "u1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → courseId resolved directly
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      mockDbUpdate.mockReturnValue(makeChain(undefined));
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true });
+    });
+
+    it("returns 200 when lesson attachable, two-hop resolves courseId, ownership passes", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (attachable is a lesson, not a unit)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // lessons query → found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved via lesson's unit
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      mockDbUpdate.mockReturnValue(makeChain(undefined));
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true });
+    });
+
+    it("returns 200 when assessment attachable, two-hop resolves courseId, ownership passes", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // materialAttachments query → found, attachableType "assessment"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "assessment",
+            attachableId: "as1",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (attachable is an assessment, not a unit)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // assessments query → found, resolves unitId
+      mockDbSelect.mockReturnValueOnce(makeChain([{ unitId: "u1" }]));
+      // units query → courseId resolved via assessment's unit
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+      mockDbUpdate.mockReturnValue(makeChain(undefined));
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true });
+    });
+
+    it("returns 403 when lesson not found (lesson attachable, courseId unresolvable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "lesson"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "lesson",
+            attachableId: "l-deleted",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (not a unit-direct attachable)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // lessons query → lesson not found, courseId stays undefined
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // assertCourseOwnership(undefined, ...) short-circuits to 403 without a courses DB query
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
   });
 
   describe("POST /api/curriculum/editor/move-lesson", () => {
