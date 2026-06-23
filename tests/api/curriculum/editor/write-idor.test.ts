@@ -1283,6 +1283,34 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("returns 403 when assessment not found (assessment attachable, courseId unresolvable)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // materialAttachments query → found, attachableType "assessment"
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            attachableType: "assessment",
+            attachableId: "as-deleted",
+            materialId: "m1",
+            role: "supporting",
+          },
+        ]),
+      );
+      // topUnit query → empty (not a unit-direct attachable)
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // assessments query → assessment not found, courseId stays undefined
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+      // assertCourseOwnership(undefined, ...) short-circuits to 403 without a courses DB query
+
+      const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
   });
 
   describe("POST /api/curriculum/editor/move-lesson", () => {
