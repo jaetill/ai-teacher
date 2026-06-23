@@ -528,6 +528,46 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Unit not found");
     });
+
+    it("returns 401 when unauthenticated (assessment → lesson)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(null);
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when session user does not own the course (assessment → lesson)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "as1",
+            unitId: "u1",
+            title: "Assessment 1",
+            sortOrder: 1,
+            source: null,
+            assessmentType: "formative",
+          },
+        ]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
   });
 
   describe("POST /api/curriculum/editor/update-item", () => {
