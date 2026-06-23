@@ -480,6 +480,36 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(body.error).toBe("Forbidden");
     });
 
+    it("returns 403 when session user does not own the course (assessment → lesson)", async () => {
+      mockGetServerSession.mockResolvedValueOnce(SESSION_B);
+
+      // assessments query → found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "a1",
+            unitId: "u1",
+            title: "A1",
+            sortOrder: 1,
+            assessmentType: "formative",
+            source: null,
+          },
+        ]),
+      );
+      // units query → courseId resolved
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership check → empty = forbidden
+      mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "a1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.error).toBe("Forbidden");
+    });
+
     it("returns 404 when unit is not found (lesson → assessment)", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION_B);
 
