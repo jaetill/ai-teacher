@@ -70,6 +70,16 @@ describe("GET /api/curriculum/editor/data", () => {
     expect(body.error).toBe("Not authenticated");
   });
 
+  it("returns 401 when session has no email", async () => {
+    mockSession.mockResolvedValueOnce({ user: {}, expires: "" });
+
+    const res = await GET(makeRequest(VALID_UUID));
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Not authenticated");
+  });
+
   it("returns 400 when courseId is missing", async () => {
     mockSession.mockResolvedValueOnce(SESSION);
 
@@ -106,6 +116,17 @@ describe("GET /api/curriculum/editor/data", () => {
     const res = await GET(makeRequest("550e8400-e29b-41d4-a716-44665544000"));
 
     expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when owner-scope predicate excludes the course (IDOR guard)", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(VALID_UUID));
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe("Course not found");
   });
 
   describe("NULL-owner guard (issue #263)", () => {
