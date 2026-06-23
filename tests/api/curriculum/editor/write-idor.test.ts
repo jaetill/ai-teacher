@@ -611,6 +611,255 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
+
+    it("wraps INSERT, UPDATE, DELETE in a single transaction (lesson → assessment)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([{ id: "l1", unitId: "u1", title: "Lesson 1", sortOrder: 1, source: null }]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txInsert = vi.fn().mockReturnValue(makeChain([{ id: "new-as-id" }]));
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      const txDelete = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<string>) => {
+        return await cb({ insert: txInsert, update: txUpdate, delete: txDelete });
+      });
+
+      // logEdit insert
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true, newId: "new-as-id" });
+      expect(mockDbTransaction).toHaveBeenCalledOnce();
+      expect(txInsert).toHaveBeenCalledOnce();
+      expect(txUpdate).toHaveBeenCalledOnce();
+      expect(txDelete).toHaveBeenCalledOnce();
+      // only logEdit uses db.insert directly — the conversion writes go through tx
+      expect(mockDbInsert).toHaveBeenCalledOnce();
+    });
+
+    it("returns 500 and does not leave partial writes when the transaction rejects (lesson → assessment)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([{ id: "l1", unitId: "u1", title: "Lesson 1", sortOrder: 1, source: null }]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const dbError = new Error("DB write failed");
+      mockDbTransaction.mockRejectedValueOnce(dbError);
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe("Failed to retype content");
+      // logEdit is not reached — no insert after a failed transaction
+      expect(mockDbInsert).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[retype-content] transaction failed", dbError);
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("returns 200 even when logEdit throws after the transaction commits (lesson → assessment)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // lesson found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([{ id: "l1", unitId: "u1", title: "Lesson 1", sortOrder: 1, source: null }]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txInsert = vi.fn().mockReturnValue(makeChain([{ id: "new-as-id" }]));
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      const txDelete = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementationOnce(async (cb: (tx: unknown) => Promise<string>) => {
+        return await cb({ insert: txInsert, update: txUpdate, delete: txDelete });
+      });
+
+      const logEditError = new Error("audit DB outage");
+      mockDbInsert.mockImplementationOnce(() => ({ values: () => Promise.reject(logEditError) }));
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "lesson", entityId: "l1", newType: "assessment" }),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true, newId: "new-as-id" });
+      // logEdit failure is logged but does not fail the request
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[retype-content] logEdit failed:",
+        logEditError,
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("wraps INSERT, UPDATE, DELETE in a single transaction (assessment → lesson)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // assessment found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "as1",
+            unitId: "u1",
+            title: "Assessment 1",
+            sortOrder: 1,
+            source: null,
+            assessmentType: "formative",
+          },
+        ]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txInsert = vi.fn().mockReturnValue(makeChain([{ id: "new-lesson-id" }]));
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      const txDelete = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<string>) => {
+        return await cb({ insert: txInsert, update: txUpdate, delete: txDelete });
+      });
+
+      // logEdit insert
+      mockDbInsert.mockReturnValue(makeChain(undefined));
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true, newId: "new-lesson-id" });
+      expect(mockDbTransaction).toHaveBeenCalledOnce();
+      expect(txInsert).toHaveBeenCalledOnce();
+      expect(txUpdate).toHaveBeenCalledOnce();
+      expect(txDelete).toHaveBeenCalledOnce();
+      // only logEdit uses db.insert directly — the conversion writes go through tx
+      expect(mockDbInsert).toHaveBeenCalledOnce();
+    });
+
+    it("returns 500 and does not leave partial writes when the transaction rejects (assessment → lesson)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // assessment found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "as1",
+            unitId: "u1",
+            title: "Assessment 1",
+            sortOrder: 1,
+            source: null,
+            assessmentType: "formative",
+          },
+        ]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const dbError = new Error("DB write failed");
+      mockDbTransaction.mockRejectedValueOnce(dbError);
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body.error).toBe("Failed to retype content");
+      // logEdit is not reached — no insert after a failed transaction
+      expect(mockDbInsert).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[retype-content] transaction failed", dbError);
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("returns 200 even when logEdit throws after the transaction commits (assessment → lesson)", async () => {
+      const SESSION_A = { user: { email: "userA@school.edu" }, expires: "" };
+      mockGetServerSession.mockResolvedValueOnce(SESSION_A);
+
+      // assessment found
+      mockDbSelect.mockReturnValueOnce(
+        makeChain([
+          {
+            id: "as1",
+            unitId: "u1",
+            title: "Assessment 1",
+            sortOrder: 1,
+            source: null,
+            assessmentType: "formative",
+          },
+        ]),
+      );
+      // unit found
+      mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-owned-by-A" }]));
+      // ownership → owned by A
+      mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-owned-by-A" }]));
+
+      const txInsert = vi.fn().mockReturnValue(makeChain([{ id: "new-lesson-id" }]));
+      const txUpdate = vi.fn().mockReturnValue(makeChain(undefined));
+      const txDelete = vi.fn().mockReturnValue(makeChain(undefined));
+      mockDbTransaction.mockImplementationOnce(async (cb: (tx: unknown) => Promise<string>) => {
+        return await cb({ insert: txInsert, update: txUpdate, delete: txDelete });
+      });
+
+      const logEditError = new Error("audit DB outage");
+      mockDbInsert.mockImplementationOnce(() => ({ values: () => Promise.reject(logEditError) }));
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await postRetypeContent(
+        makeRequest({ entityType: "assessment", entityId: "as1", newType: "lesson" }),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ ok: true, newId: "new-lesson-id" });
+      // logEdit failure is logged but does not fail the request
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[retype-content] logEdit failed:",
+        logEditError,
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe("POST /api/curriculum/editor/update-item", () => {
