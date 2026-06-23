@@ -74,6 +74,27 @@ describe("POST /api/year-plan/save", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns 400 when rawPlan exceeds 50000 chars", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+
+    const res = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          grade: 7,
+          schoolYear: "2025-2026",
+          units: [],
+          rawPlan: "x".repeat(50_001),
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("rawPlan too large");
+  });
+
   it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
 
