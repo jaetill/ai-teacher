@@ -170,6 +170,68 @@ describe("POST /api/copilot — conversationId UUID validation", () => {
   });
 });
 
+// ── Quota-guard / input-size limits ─────────────────────────────────────────
+describe("POST /api/copilot — input-size guards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("returns 413 when context exceeds 8000 chars", async () => {
+    authedSession();
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES, context: "x".repeat(8001) }));
+
+    expect(res.status).toBe(413);
+  });
+
+  it("returns 413 when messages array exceeds 50 entries", async () => {
+    authedSession();
+
+    const tooMany = Array.from({ length: 51 }, () => ({
+      role: "user",
+      content: "hi",
+    }));
+    const res = await POST(makeRequest({ messages: tooMany }));
+
+    expect(res.status).toBe(413);
+  });
+
+  it("returns 413 when a single message content exceeds 10000 chars", async () => {
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "y".repeat(10001) }],
+      }),
+    );
+
+    expect(res.status).toBe(413);
+  });
+
+  it("does not reject context at exactly 8000 chars", async () => {
+    authedSession();
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES, context: "x".repeat(8000) }));
+
+    expect(res.status).not.toBe(413);
+  });
+
+  it("does not reject messages at exactly 50 entries", async () => {
+    authedSession();
+
+    const atLimit = Array.from({ length: 50 }, () => ({
+      role: "user",
+      content: "hi",
+    }));
+    const res = await POST(makeRequest({ messages: atLimit }));
+
+    expect(res.status).not.toBe(413);
+  });
+});
+
 // ── Cross-tenant curriculum context isolation ────────────────────────────────
 describe("POST /api/copilot — curriculum context owner isolation", () => {
   beforeEach(() => {
