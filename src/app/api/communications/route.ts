@@ -71,6 +71,9 @@ export async function POST(request: Request) {
       status: 413,
     });
   }
+  if ((tone?.length ?? 0) > 50) {
+    return new Response("tone too long (max 50 chars)", { status: 413 });
+  }
 
   const userMessage = `Please draft an email with the following details:
 
