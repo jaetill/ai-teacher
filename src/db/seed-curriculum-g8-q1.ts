@@ -18,6 +18,20 @@ import { eq } from "drizzle-orm";
 const sql = neon(process.env.DATABASE_URL!);
 const db = drizzle(sql);
 
+// owner_email is NOT NULL (migration 0008). Seeded data must be owner-scoped;
+// pass the owner's email via SEED_OWNER_EMAIL so no PII is hardcoded here.
+function requireSeedOwnerEmail(): string {
+  const value = process.env.SEED_OWNER_EMAIL;
+  if (!value) {
+    throw new Error(
+      "SEED_OWNER_EMAIL is required (owner_email is NOT NULL). " +
+        "Run with: SEED_OWNER_EMAIL=you@example.com npx tsx src/db/seed-curriculum-g8-q1.ts"
+    );
+  }
+  return value;
+}
+const SEED_OWNER_EMAIL = requireSeedOwnerEmail();
+
 async function seed() {
   // ── 1. Create or find Grade 8 ELA course ───
   const existingCourses = await db
@@ -36,6 +50,7 @@ async function seed() {
         title: "Grade 8 English Language Arts",
         grade: 8,
         subject: "ELA",
+        ownerEmail: SEED_OWNER_EMAIL,
         description:
           "8th grade English Language Arts covering literature, informational text, writing, language usage, communication, and research aligned to VA SOL 2024.",
         teacherNotes:

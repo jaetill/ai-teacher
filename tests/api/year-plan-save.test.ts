@@ -15,7 +15,7 @@ vi.mock("@/db/schema", () => ({
   unitStandards: {},
   standards: {},
 }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(), inArray: vi.fn() }));
+vi.mock("drizzle-orm", () => ({ eq: vi.fn(), inArray: vi.fn(), and: vi.fn() }));
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
@@ -75,7 +75,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("returns 400 when rawPlan exceeds 50000 chars", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -96,7 +98,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     // Existing course found — no courses insert needed
     mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));

@@ -21,7 +21,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { eq, inArray, asc, and } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -189,6 +189,8 @@ ${standardsList}`,
     .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
+  // #208: stamp the owner on creation so the course is never NULL-owned /
+  // world-readable. owner_email is NOT NULL as of migration 0008.
   let [course] = await db
     .insert(courses)
     .values({
@@ -196,15 +198,18 @@ ${standardsList}`,
       grade,
       subject: "ELA",
       schoolYearId: currentYear?.id ?? null,
+      ownerEmail,
     })
     .onConflictDoNothing()
     .returning({ id: courses.id });
 
   if (!course) {
+    // Conflict (or pre-existing course) — find THIS owner's course, not just
+    // any course of this grade, so we never build into another owner's data.
     [course] = await db
       .select({ id: courses.id })
       .from(courses)
-      .where(eq(courses.grade, grade))
+      .where(and(eq(courses.grade, grade), eq(courses.ownerEmail, ownerEmail)))
       .limit(1);
   }
 

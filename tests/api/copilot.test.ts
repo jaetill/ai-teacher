@@ -78,7 +78,19 @@ describe("POST /api/copilot", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Unauthorized");
+    expect(body.error).toBe("Not authenticated");
+  });
+
+  it("returns 401 when the session has no email (auth, not authz)", async () => {
+    // requireEmail() treats a session without an email as unauthenticated.
+    // This now short-circuits to 401 BEFORE any ownership check runs.
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: null, name: "Unknown" } });
+
+    const res = await POST(makeRequest({ messages: MESSAGES }));
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Not authenticated");
   });
 
   it("returns 400 when messages is empty", async () => {
@@ -94,7 +106,9 @@ describe("POST /api/copilot", () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "attacker@evil.com" }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -114,44 +128,25 @@ describe("POST /api/copilot", () => {
       expect(body.error).toBe("Forbidden");
     });
 
-    // Null bypass (issue #269): both ownerEmail and session email are null →
-    // null !== null is false, so a naive check would grant access.
-    it("returns 403 when ownerEmail is null (pre-migration row) and session email is also null", async () => {
-      mockGetServerSession.mockResolvedValueOnce({
-        user: { email: null, name: "Unknown" },
-      });
-      mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
-
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
-
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body.error).toBe("Forbidden");
-    });
-
-    it("returns 403 when ownerEmail is null (pre-migration row) and session has a real email", async () => {
+    // owner_email is NOT NULL (migration 0008), so a real pre-migration NULL row
+    // can no longer exist in the DB. But the identity check must still reject a
+    // (hypothetical) NULL-owner row defensively: null !== email → 403.
+    it("returns 403 when a conversation row has a null ownerEmail and the session has a real email", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.error).toBe("Forbidden");
     });
 
-    it("returns 403 when session email is null even if conversation has an owner", async () => {
-      mockGetServerSession.mockResolvedValueOnce({
-        user: { email: null, name: "Unknown" },
-      });
-      mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "teacher@school.edu" }]));
-
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
-
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body.error).toBe("Forbidden");
-    });
+    // Note: the previous "session email is null" cases now return 401 from
+    // requireEmail() before this ownership check runs (covered above), so they
+    // are no longer expressible as 403 here.
 
     it("proceeds when conversationId belongs to the authenticated user", async () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
@@ -162,7 +157,9 @@ describe("POST /api/copilot", () => {
       // User message insert
       mockDbInsert.mockReturnValue(makeChain([]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }),
+      );
 
       // Ownership check passed — should not be blocked
       expect(res.status).toBe(200);

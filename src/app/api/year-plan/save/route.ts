@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, unitStandards, standards } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
 
 type UnitInput = {
   title: string;
@@ -25,8 +25,9 @@ function parseStandardCodes(text: string): string[] {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const ownerEmail = session?.user?.email;
+  if (!ownerEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const body = (await req.json()) as {
@@ -40,11 +41,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "rawPlan too large" }, { status: 400 });
   }
 
-  // ── Find or create course ───
+  // ── Find or create course (owner-scoped) ───
+  // Scope the lookup AND stamp the owner on insert so we never reuse or create
+  // a NULL-owned / cross-owner course. owner_email is NOT NULL (migration 0008).
   const existing = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(eq(courses.grade, body.grade))
+    .where(and(eq(courses.grade, body.grade), eq(courses.ownerEmail, ownerEmail)))
     .limit(1);
 
   let courseId: string;
@@ -57,6 +60,7 @@ export async function POST(req: Request) {
         title: `Grade ${body.grade} English Language Arts`,
         grade: body.grade,
         subject: "ELA",
+        ownerEmail,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;

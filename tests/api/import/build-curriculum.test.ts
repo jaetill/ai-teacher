@@ -33,6 +33,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
+  and: vi.fn(),
 }));
 
 // ── Imports after mocks ─────────────────────────────────────────────────
@@ -171,7 +172,9 @@ function makeRequest() {
 describe("POST /api/import/build-curriculum", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetServerSession.mockResolvedValue({ user: { name: "Teacher" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { name: "Teacher", email: "teacher@example.com" },
+    });
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify(AI_RESPONSE) }],
     });
@@ -215,7 +218,9 @@ describe("POST /api/import/build-curriculum", () => {
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
-      mockGetServerSession.mockResolvedValue({ user: { id: "user-alice", name: "Teacher" } });
+      mockGetServerSession.mockResolvedValue({
+        user: { id: "user-alice", name: "Teacher", email: "teacher@example.com" },
+      });
 
       mockDbSelect.mockReset();
       mockDbSelect

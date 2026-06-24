@@ -129,30 +129,30 @@ describe("GET /api/curriculum/editor/data", () => {
     expect(body.error).toBe("Course not found");
   });
 
-  describe("NULL-owner guard (issue #263)", () => {
-    // Regression: if isNull() is ever re-added to the WHERE clause, the DB
-    // would return NULL-owner rows. The post-query ownership assertion must
-    // still reject them regardless of what the SQL returns.
-    it("returns 404 when DB returns a course with ownerEmail null (pre-migration row)", async () => {
+  describe("owner-scoping is enforced by the WHERE clause", () => {
+    // owner_email is NOT NULL (migration 0008) and the SELECT filters on
+    // eq(courses.ownerEmail, userEmail). The DB therefore never returns a
+    // NULL-owner or foreign-owner row to this route — exclusion manifests as an
+    // empty result, which yields 404 (covered by the IDOR-guard test above).
+    // The previous post-query re-check (!course.ownerEmail || ownerEmail !== ...)
+    // became dead under NOT NULL and was removed.
+
+    it("returns 200 and the course when the owner-scoped query returns the caller's row", async () => {
       mockSession.mockResolvedValueOnce(SESSION);
+      // 1st select: owner-scoped course lookup → the caller's own course.
       mockDbSelect.mockReturnValueOnce(
-        makeChain([{ id: VALID_UUID, ownerEmail: null, title: "ELA 8", grade: 8 }]),
+        makeChain([
+          { id: VALID_UUID, ownerEmail: "teacher@example.com", title: "ELA 8", grade: 8 },
+        ]),
       );
+      // Subsequent selects (units, lessons, assessments, material links) → empty.
+      mockDbSelect.mockReturnValue(makeChain([]));
 
       const res = await GET(makeRequest(VALID_UUID));
 
-      expect(res.status).toBe(404);
-    });
-
-    it("returns 404 when DB returns a course owned by a different user", async () => {
-      mockSession.mockResolvedValueOnce(SESSION);
-      mockDbSelect.mockReturnValueOnce(
-        makeChain([{ id: VALID_UUID, ownerEmail: "other@example.com", title: "ELA 8", grade: 8 }]),
-      );
-
-      const res = await GET(makeRequest(VALID_UUID));
-
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.course.id).toBe(VALID_UUID);
     });
   });
 });

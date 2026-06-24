@@ -1,22 +1,15 @@
 // GET /api/curriculum/editor/data?courseId=xxx
 // Returns all units, lessons, and assessments for a course in editor format.
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { courses, units, lessons, assessments, materialAttachments, materials } from "@/db/schema";
 import { eq, asc, inArray, and } from "drizzle-orm";
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
-  const userEmail = session.user?.email;
-  if (!userEmail) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  const auth = await requireEmail();
+  if (auth.response) return auth.response;
+  const userEmail = auth.email;
 
   const { searchParams } = new URL(req.url);
   const courseId = searchParams.get("courseId");
@@ -27,13 +20,16 @@ export async function GET(req: Request) {
     return Response.json({ error: "courseId required" }, { status: 400 });
   }
 
+  // owner_email is NOT NULL (migration 0008): the WHERE already enforces
+  // ownership, so a found row is necessarily the caller's. No null/identity
+  // re-check needed.
   const [course] = await db
     .select()
     .from(courses)
     .where(and(eq(courses.id, courseId), eq(courses.ownerEmail, userEmail)))
     .limit(1);
 
-  if (!course || !course.ownerEmail || course.ownerEmail !== userEmail) {
+  if (!course) {
     return Response.json({ error: "Course not found" }, { status: 404 });
   }
 

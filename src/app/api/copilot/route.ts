@@ -5,8 +5,7 @@
 // Returns: streaming text/plain
 // Headers: X-Conversation-Id (returned so client can persist across turns)
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
 import {
@@ -138,10 +137,9 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireEmail();
+  if (auth.response) return auth.response;
+  const ownerEmail = auth.email;
 
   const body = await request.json();
   const { messages, context, conversationId } = body as {
@@ -186,17 +184,19 @@ export async function POST(request: Request) {
     const [conv] = await db
       .insert(copilotConversations)
       .values({
-        ownerEmail: session.user?.email ?? null,
+        ownerEmail,
         systemContext: context ? { context } : undefined,
       })
       .returning({ id: copilotConversations.id });
     convId = conv.id;
   } else {
+    // owner_email is NOT NULL (migration 0008): a row either exists and belongs
+    // to someone, so the identity check is the only authorization gate needed.
     const [conv] = await db
       .select({ ownerEmail: copilotConversations.ownerEmail })
       .from(copilotConversations)
       .where(eq(copilotConversations.id, convId));
-    if (!conv || !conv.ownerEmail || !session.user?.email || conv.ownerEmail !== session.user.email) {
+    if (!conv || conv.ownerEmail !== ownerEmail) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
   }
@@ -217,7 +217,7 @@ export async function POST(request: Request) {
   });
 
   // ── Build system prompt with curriculum context ───
-  const curriculumContext = await buildCurriculumContext(session.user?.email ?? "");
+  const curriculumContext = await buildCurriculumContext(ownerEmail);
   const system = context
     ? `${BASE_SYSTEM_PROMPT}${curriculumContext}\n\n── Additional context ───\n${context}`
     : `${BASE_SYSTEM_PROMPT}${curriculumContext}`;

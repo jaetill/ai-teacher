@@ -30,7 +30,8 @@ export const copilotConversations = pgTable(
     // How useful was this conversation? (teacher can rate, or inferred from behavior)
     // 'used' = teacher copied/exported output, 'abandoned' = left mid-conversation
     outcome: text("outcome"), // 'used' | 'abandoned' | 'regenerated' | null
-    ownerEmail: text("owner_email"),
+    // NOT NULL since migration 0008 — every conversation is owner-scoped (see ADR-0024).
+    ownerEmail: text("owner_email").notNull(),
     messageCount: integer("message_count").notNull().default(0),
     // Structured context that was passed to the conversation
     systemContext: jsonb("system_context"),
