@@ -2,6 +2,8 @@
 // Returns all materials for the course's units, with their current attachment info.
 // Includes both unassigned materials and unit-level materials that could be reassigned.
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   materials,
@@ -10,14 +12,28 @@ import {
   driveFolders,
 } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
+import { assertCourseOwnership } from "../assert-ownership";
 
 export async function GET(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const userEmail = session.user?.email;
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const courseId = searchParams.get("courseId");
 
   if (!courseId) {
     return Response.json({ error: "courseId required" }, { status: 400 });
   }
+
+  const forbidden = await assertCourseOwnership(courseId, userEmail);
+  if (forbidden) return forbidden;
 
   // Get all units for this course to find their Drive folders
   const courseUnits = await db
