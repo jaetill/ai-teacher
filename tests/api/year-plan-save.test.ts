@@ -95,6 +95,30 @@ describe("POST /api/year-plan/save", () => {
     expect(body.error).toBe("rawPlan too large");
   });
 
+  it("sets ownerEmail on the course INSERT when no existing course is found", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+
+    // No existing course — triggers INSERT
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const courseChain = makeChain([{ id: "c1" }]);
+    const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+    courseChain.values = courseValuesSpy;
+    mockDbInsert.mockReturnValueOnce(courseChain);
+
+    // unit INSERT
+    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }]));
+
+    await POST(makeRequest());
+
+    expect(courseValuesSpy).toHaveBeenCalledOnce();
+    expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({
+      ownerEmail: "alice@example.com",
+    });
+  });
+
   it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
 
