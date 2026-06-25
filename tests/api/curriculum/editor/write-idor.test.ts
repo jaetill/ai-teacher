@@ -96,6 +96,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const res = await postReorderLessons(makeRequest({ unitId: "u1", lessonIds: [] }));
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course", async () => {
@@ -170,6 +172,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       );
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course (unit attachable)", async () => {
@@ -245,6 +249,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
         );
 
         expect(res.status).toBe(401);
+        const body = await res.json();
+        expect(body.error).toBe("Not authenticated");
       });
 
       it("returns 403 when session user does not own the course", async () => {
@@ -291,6 +297,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
         );
 
         expect(res.status).toBe(401);
+        const body = await res.json();
+        expect(body.error).toBe("Not authenticated");
       });
 
       it("returns 403 when session user does not own the course", async () => {
@@ -343,6 +351,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const res = await postDetachMaterial(makeRequest({ materialAttachmentId: "a1" }));
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 404 when materialAttachmentId is not found", async () => {
@@ -562,6 +572,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       );
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course (lesson → assessment)", async () => {
@@ -672,6 +684,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       );
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course (assessment → lesson)", async () => {
@@ -970,6 +984,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       );
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course (lesson entity)", async () => {
@@ -1067,6 +1083,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       const res = await postUpdateMaterial(makeRequest({ attachmentId: "a1", role: "primary" }));
 
       expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Not authenticated");
     });
 
     it("returns 403 when session user does not own the course (unit attachable)", async () => {
