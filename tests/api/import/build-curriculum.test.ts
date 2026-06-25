@@ -171,7 +171,9 @@ function makeRequest() {
 describe("POST /api/import/build-curriculum", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetServerSession.mockResolvedValue({ user: { name: "Teacher" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { email: "teacher@school.edu", name: "Teacher" },
+    });
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify(AI_RESPONSE) }],
     });
@@ -179,6 +181,14 @@ describe("POST /api/import/build-curriculum", () => {
 
   it("returns 401 when there is no session", async () => {
     mockGetServerSession.mockResolvedValue(null);
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when session has no email", async () => {
+    mockGetServerSession.mockResolvedValue({ user: {} });
 
     const res = await POST(makeRequest());
 
@@ -215,7 +225,9 @@ describe("POST /api/import/build-curriculum", () => {
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
-      mockGetServerSession.mockResolvedValue({ user: { id: "user-alice", name: "Teacher" } });
+      mockGetServerSession.mockResolvedValue({
+        user: { id: "user-alice", email: "alice@school.edu", name: "Teacher" },
+      });
 
       mockDbSelect.mockReset();
       mockDbSelect
@@ -242,6 +254,34 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(unitValuesSpy).toHaveBeenCalledOnce();
       expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ userId: "user-alice" });
+    });
+
+    it("stamps ownerEmail on course INSERT so IDOR cannot occur", async () => {
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+
+      const courseChain = makeChain([{ id: "c1" }]);
+      const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+      courseChain.values = courseValuesSpy;
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(courseChain) // courses
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValueOnce(makeChain([])) // lessonStandards
+        .mockReturnValueOnce(makeChain([])); // materialAttachments
+
+      await POST(makeRequest());
+
+      expect(courseValuesSpy).toHaveBeenCalledOnce();
+      expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher@school.edu" });
     });
 
     it("returns 500 gracefully when both insert and fallback SELECT return nothing", async () => {

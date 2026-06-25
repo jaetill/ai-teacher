@@ -196,6 +196,7 @@ ${standardsList}`,
       grade,
       subject: "ELA",
       schoolYearId: currentYear?.id ?? null,
+      ownerEmail,
     })
     .onConflictDoNothing()
     .returning({ id: courses.id });
