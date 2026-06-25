@@ -38,6 +38,16 @@ const VALID_BODY = {
   outputRequest: "Simplify vocabulary",
 };
 
+describe("POST /api/differentiation — session auth (401)", () => {
+  it("returns 401 when called without a session", async () => {
+    mockSession.mockResolvedValueOnce(null);
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toBe("Unauthorized");
+  });
+});
+
 describe("POST /api/differentiation — MAX_BYTES guard (413)", () => {
   it("returns 413 when combined field lengths exceed 50 000 chars", async () => {
     authedSession();
