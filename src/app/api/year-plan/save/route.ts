@@ -29,6 +29,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const email = session.user?.email;
+  if (!email) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const body = (await req.json()) as {
     grade: number;
     schoolYear: string;
@@ -57,6 +62,7 @@ export async function POST(req: Request) {
         title: `Grade ${body.grade} English Language Arts`,
         grade: body.grade,
         subject: "ELA",
+        ownerEmail: email,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;

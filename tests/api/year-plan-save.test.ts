@@ -74,8 +74,20 @@ describe("POST /api/year-plan/save", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns 401 when session has no email", async () => {
+    mockGetServerSession.mockResolvedValue({ user: {} });
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Not authenticated");
+  });
+
   it("returns 400 when rawPlan exceeds 50000 chars", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "teacher@school.edu" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -96,7 +108,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@school.edu" },
+    });
 
     // Existing course found — no courses insert needed
     mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
@@ -111,5 +125,26 @@ describe("POST /api/year-plan/save", () => {
 
     expect(unitValuesSpy).toHaveBeenCalledOnce();
     expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ userId: "user-alice" });
+  });
+
+  it("stamps ownerEmail on the course INSERT for a new course", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "user-1", email: "teacher@school.edu" } });
+
+    // No existing course
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    // Course INSERT spy
+    const courseChain = makeChain([{ id: "c-new" }]);
+    const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+    courseChain.values = courseValuesSpy;
+    mockDbInsert.mockReturnValueOnce(courseChain);
+
+    // Unit INSERT
+    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }]));
+
+    await POST(makeRequest());
+
+    expect(courseValuesSpy).toHaveBeenCalledOnce();
+    expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher@school.edu" });
   });
 });
