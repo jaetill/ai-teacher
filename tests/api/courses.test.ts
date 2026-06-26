@@ -96,6 +96,22 @@ describe("GET /api/courses", () => {
     expect(body.courses).toEqual([]);
   });
 
+  it("returns 200 with schoolYear null when no active school year exists", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      user: { email: "owner@school.edu" },
+    });
+
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([])); // schoolYears → empty → currentYear undefined
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([])); // courses → empty (units query short-circuited)
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.schoolYear).toBeNull();
+    expect(body.courses).toEqual([]);
+  });
+
   it("skips the units DB query when owner has no courses", async () => {
     mockGetServerSession.mockResolvedValueOnce({
       user: { email: "owner@school.edu" },
