@@ -112,14 +112,14 @@ export async function GET(
   const [curriculumFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, curriculumFolderKey))
+    .where(and(eq(driveFolders.folderKey, curriculumFolderKey), eq(driveFolders.ownerEmail, email)))
     .limit(1);
 
   const quarterFolderKey = `grade_${course.grade}_${quarter}`;
   const [quarterFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, quarterFolderKey))
+    .where(and(eq(driveFolders.folderKey, quarterFolderKey), eq(driveFolders.ownerEmail, email)))
     .limit(1);
 
   // ── Material attachments per lesson ───

@@ -14,7 +14,7 @@ import {
   driveFolders,
   courses,
 } from "@/db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { and, eq, asc, inArray } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -25,6 +25,10 @@ export async function POST(
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const userEmail = session.user?.email;
+  if (!userEmail) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -62,7 +66,7 @@ export async function POST(
   const folders = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, folderKeys));
+    .where(and(inArray(driveFolders.folderKey, folderKeys), eq(driveFolders.ownerEmail, userEmail)));
 
   const folderDriveIds = folders.map((f) => f.driveId);
 
