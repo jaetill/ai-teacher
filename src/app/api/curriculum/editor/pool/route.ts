@@ -12,7 +12,7 @@ import {
   driveFolders,
   courses,
 } from "@/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
 
 export async function GET(req: Request) {
@@ -62,15 +62,15 @@ export async function GET(req: Request) {
     ? quarters.map((q) => `grade_${grade}_${q}_Curriculum`)
     : [];
 
-  // Scope the driveFolders query to exact keys for this course's grade+quarter combination.
-  // Using inArray with exact keys (not a full table scan + substring filter) ensures we
-  // never return folder records owned by a different user's course in the same quarter.
+  // Scope the driveFolders query to exact keys for this course's grade+quarter combination,
+  // and further restrict by ownerEmail so a second teacher's same-grade folders are never
+  // returned even if the key strings collide.
   const relevantFolderDriveIds = exactFolderKeys.length > 0
     ? (
         await db
           .select({ driveId: driveFolders.driveId })
           .from(driveFolders)
-          .where(inArray(driveFolders.folderKey, exactFolderKeys))
+          .where(and(inArray(driveFolders.folderKey, exactFolderKeys), eq(driveFolders.ownerEmail, userEmail)))
       ).map((f) => f.driveId)
     : [];
 

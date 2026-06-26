@@ -4,6 +4,7 @@ export const driveFolders = pgTable(
   "drive_folders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    ownerEmail: text("owner_email"),
     folderKey: text("folder_key").notNull(), // e.g. "root", "grade_6_Q1_Lessons"
     driveId: text("drive_id").notNull(), // Google Drive folder ID
     name: text("name").notNull(), // Human-readable name shown in Drive
@@ -16,7 +17,7 @@ export const driveFolders = pgTable(
       .defaultNow(),
   },
   (table) => [
-    unique("uq_drive_folders_key").on(table.folderKey),
+    unique("uq_drive_folders_key").on(table.folderKey, table.ownerEmail),
     index("idx_drive_folders_drive_id").on(table.driveId),
     index("idx_drive_folders_parent_key").on(table.parentKey),
   ]

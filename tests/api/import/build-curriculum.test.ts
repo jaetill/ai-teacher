@@ -26,10 +26,11 @@ vi.mock("@/db/schema", () => ({
   lessonStandards: {},
   materials: {},
   materialAttachments: {},
-  driveFolders: {},
+  driveFolders: { folderKey: "folderKey", driveId: "driveId", ownerEmail: "ownerEmail" },
   schoolYears: {},
 }));
 vi.mock("drizzle-orm", () => ({
+  and: vi.fn(),
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
@@ -297,5 +298,26 @@ describe("POST /api/import/build-curriculum", () => {
       const body = await res.json();
       expect(body.error).toBeTruthy();
     });
+  });
+
+  it("scopes driveFolders query by ownerEmail to prevent cross-user folder leakage", async () => {
+    const { eq, inArray } = await import("drizzle-orm");
+    const mockEq = vi.mocked(eq);
+    const mockInArray = vi.mocked(inArray);
+
+    setupMocks({ courseInsertReturn: [{ id: "c1" }] });
+
+    await POST(makeRequest());
+
+    // inArray should have been called with the folderKeys array
+    const inArrayFolderCall = mockInArray.mock.calls.find(
+      ([, vals]) => Array.isArray(vals) && (vals as string[]).some((v) => v.includes("grade_")),
+    );
+    expect(inArrayFolderCall).toBeDefined();
+
+    // eq should have been called with driveFolders.ownerEmail and the session email
+    const ownerEmailCall = mockEq.mock.calls.find(([col]) => (col as unknown) === "ownerEmail");
+    expect(ownerEmailCall).toBeDefined();
+    expect(ownerEmailCall![1]).toBe("teacher@school.edu");
   });
 });

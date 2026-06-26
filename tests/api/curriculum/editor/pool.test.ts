@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDbSelect, mockInArray } = vi.hoisted(() => ({
+const { mockDbSelect, mockInArray, mockEq } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockInArray: vi.fn((col, vals) => ({ col, vals })),
+  mockEq: vi.fn((col, val) => ({ col, val })),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
@@ -13,11 +14,11 @@ vi.mock("@/db/schema", () => ({
   materials: {},
   materialAttachments: {},
   units: {},
-  driveFolders: { folderKey: "folderKey", driveId: "driveId" },
+  driveFolders: { folderKey: "folderKey", driveId: "driveId", ownerEmail: "ownerEmail" },
   courses: { grade: "grade" },
 }));
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn(),
+  eq: mockEq,
   inArray: mockInArray,
   sql: vi.fn(),
   and: vi.fn(),
@@ -138,6 +139,11 @@ describe("GET /api/curriculum/editor/pool", () => {
     // Must be exact grade-8-qualified keys — no "%" wildcard, no bare quarter substring
     expect(passedKeys).toEqual(["grade_8_Q1_Curriculum"]);
     expect(passedKeys.every((k: string) => !k.includes("%"))).toBe(true);
+
+    // ownerEmail column must also be filtered to prevent cross-user leakage
+    const ownerEmailCall = mockEq.mock.calls.find(([col]) => (col as unknown) === "ownerEmail");
+    expect(ownerEmailCall).toBeDefined();
+    expect(ownerEmailCall![1]).toBe(SESSION.user.email);
   });
 
   it("does not include another user's Q1 folder when grade differs", async () => {
