@@ -26,6 +26,11 @@ export async function GET(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const email = session.user?.email;
+  if (!email) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
@@ -37,8 +42,12 @@ export async function GET(
   const [course] = await db
     .select({ grade: courses.grade, title: courses.title })
     .from(courses)
-    .where(eq(courses.id, unit.courseId))
+    .where(and(eq(courses.id, unit.courseId), eq(courses.ownerEmail, email)))
     .limit(1);
+
+  if (!course) {
+    return Response.json({ error: "Unit not found" }, { status: 404 });
+  }
 
   const unitLessons = await db
     .select({
