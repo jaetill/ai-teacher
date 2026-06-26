@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDbSelect, mockInArray } = vi.hoisted(() => ({
+const { mockDbSelect, mockInArray, mockEq } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockInArray: vi.fn((col, vals) => ({ col, vals })),
+  mockEq: vi.fn((col, val) => ({ col, val })),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
@@ -13,14 +14,14 @@ vi.mock("@/db/schema", () => ({
   materials: {},
   materialAttachments: {},
   units: {},
-  driveFolders: { folderKey: "folderKey", driveId: "driveId" },
+  driveFolders: { folderKey: "folderKey", driveId: "driveId", ownerEmail: "ownerEmail" },
   courses: { grade: "grade" },
 }));
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn(),
+  eq: mockEq,
   inArray: mockInArray,
   sql: vi.fn(),
-  and: vi.fn(),
+  and: vi.fn((...args) => ({ args })),
 }));
 
 import { getServerSession } from "next-auth";
@@ -164,5 +165,31 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect(passedKeys).toEqual(["grade_6_Q1_Curriculum"]);
     // The grade-8 folder of a different user is never included in the query
     expect(passedKeys).not.toContain("grade_8_Q1_Curriculum");
+  });
+
+  it("includes owner-email filter on driveFolders query to prevent cross-teacher IDOR", async () => {
+    // Two teachers share grade 8 Q1 — same folderKey prefix. The driveFolders WHERE
+    // clause must include eq(ownerEmail, sessionEmail) so teacher B's row is never
+    // returned to teacher A even if both have a grade_8_Q1_Curriculum record.
+    mockSession.mockResolvedValueOnce(SESSION);
+    // assertCourseOwnership → course owned by this user
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // courseUnits → one Q1 unit
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // grade query → grade 8
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // driveFolders scoped query → one matching folder
+    mockDbSelect.mockReturnValueOnce(makeChain([{ driveId: "drive-folder-g8-q1" }]));
+    // materials in that folder → empty (triggers empty-materials short-circuit)
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    await GET(makeRequest(COURSE_ID));
+
+    // Verify eq was called with the ownerEmail column and the session user's email.
+    // This confirms the WHERE clause includes the per-teacher ownership filter.
+    const ownerEmailEqCall = mockEq.mock.calls.find(
+      ([col, val]) => col === "ownerEmail" && val === SESSION.user.email,
+    );
+    expect(ownerEmailEqCall).toBeDefined();
   });
 });

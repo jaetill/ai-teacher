@@ -26,13 +26,14 @@ vi.mock("@/db/schema", () => ({
   lessonStandards: {},
   materials: {},
   materialAttachments: {},
-  driveFolders: {},
+  driveFolders: { folderKey: "folderKey", driveId: "driveId", ownerEmail: "ownerEmail" },
   schoolYears: {},
 }));
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
+  and: vi.fn(),
 }));
 
 // ── Imports after mocks ─────────────────────────────────────────────────

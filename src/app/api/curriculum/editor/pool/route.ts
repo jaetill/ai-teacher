@@ -12,7 +12,7 @@ import {
   driveFolders,
   courses,
 } from "@/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
 
 export async function GET(req: Request) {
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
         await db
           .select({ driveId: driveFolders.driveId })
           .from(driveFolders)
-          .where(inArray(driveFolders.folderKey, exactFolderKeys))
+          .where(and(inArray(driveFolders.folderKey, exactFolderKeys), eq(driveFolders.ownerEmail, userEmail)))
       ).map((f) => f.driveId)
     : [];
 

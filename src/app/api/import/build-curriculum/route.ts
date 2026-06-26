@@ -21,7 +21,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
   const folders = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, folderKeys));
+    .where(and(inArray(driveFolders.folderKey, folderKeys), eq(driveFolders.ownerEmail, ownerEmail)));
 
   const folderDriveIds = folders.map((f) => f.driveId);
   const driveIdToCategory = new Map(

@@ -10,7 +10,7 @@ import { google } from "googleapis";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { buildFolderKey } from "@/lib/upload-utils";
 
 function getDriveClient(accessToken: string) {
@@ -82,6 +82,10 @@ export async function POST(req: Request) {
   if (!session?.accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const userEmail = session.user?.email;
+  if (!userEmail) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
 
   const body = (await req.json()) as {
     sourceFolderId: string;
@@ -109,7 +113,7 @@ export async function POST(req: Request) {
       const [folder] = await db
         .select({ driveId: driveFolders.driveId })
         .from(driveFolders)
-        .where(eq(driveFolders.folderKey, folderKey))
+        .where(and(eq(driveFolders.folderKey, folderKey), eq(driveFolders.ownerEmail, userEmail)))
         .limit(1);
 
       if (!folder) {
