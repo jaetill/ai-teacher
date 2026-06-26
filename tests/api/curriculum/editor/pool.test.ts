@@ -110,4 +110,98 @@ describe("GET /api/curriculum/editor/pool", () => {
     const body = await res.json();
     expect(body.materials).toEqual([]);
   });
+
+  it("returns populated materials list with attachment info when course has units and matching folders", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    // assertCourseOwnership → course owned by this user
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // courseUnits → one unit in Q1
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // allFolders → one folder whose key contains "Q1"
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ folderKey: "grade_5_Q1_Curriculum", driveId: "drive-folder-1" }]),
+    );
+    // courseMaterials via inArray on driveFolderId
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([
+        {
+          id: "mat-1",
+          title: "Material 1",
+          materialType: "worksheet",
+          driveWebUrl: "https://drive.google.com/mat1",
+          driveMimeType: "application/pdf",
+          driveFolderId: "drive-folder-1",
+        },
+      ]),
+    );
+    // attachments for mat-1
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([
+        {
+          id: "att-1",
+          materialId: "mat-1",
+          attachableType: "unit",
+          attachableId: "unit-1",
+          role: "main",
+        },
+      ]),
+    );
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    expect(body.materials[0]).toMatchObject({
+      id: "mat-1",
+      title: "Material 1",
+      materialType: "worksheet",
+      driveWebUrl: "https://drive.google.com/mat1",
+      driveMimeType: "application/pdf",
+      attachments: [{ id: "att-1", attachableType: "unit", attachableId: "unit-1", role: "main" }],
+    });
+  });
+
+  it("returns materials via attachment fallback when no Drive folders match course quarters", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    // assertCourseOwnership → course owned by this user
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // courseUnits → one unit in Q2
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-2", quarter: "Q2" }]));
+    // allFolders → folder key contains "Q1", not "Q2" → no match
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ folderKey: "grade_5_Q1_Curriculum", driveId: "drive-folder-1" }]),
+    );
+    // materialAttachments fallback query → mat-2 is attached to unit-2
+    mockDbSelect.mockReturnValueOnce(makeChain([{ materialId: "mat-2" }]));
+    // materials by materialIds
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([
+        {
+          id: "mat-2",
+          title: "Fallback Material",
+          materialType: "document",
+          driveWebUrl: "https://drive.google.com/mat2",
+          driveMimeType: "text/plain",
+          driveFolderId: null,
+        },
+      ]),
+    );
+    // final attachments query → none
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    expect(body.materials[0]).toMatchObject({
+      id: "mat-2",
+      title: "Fallback Material",
+      materialType: "document",
+      driveWebUrl: "https://drive.google.com/mat2",
+      driveMimeType: "text/plain",
+      attachments: [],
+    });
+  });
 });
