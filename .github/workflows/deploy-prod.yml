@@ -1,0 +1,35 @@
+name: Deploy to Production
+# Actions-driven Vercel production deploy (ADR-0043).
+# Replaces Vercel git auto-deploy for main. Vercel PR Previews are unchanged.
+#
+# Prerequisites (one-time setup after merging):
+#   1. Vercel dashboard → Project → Settings → Git → disable auto-deploy for main.
+#   2. GitHub → Settings → Environments → create "production" environment.
+#   3. Add environment secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Deploy to Vercel production
+        run: npx vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

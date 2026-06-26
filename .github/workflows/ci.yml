@@ -1,7 +1,6 @@
 name: CI
-# Gate-only CI for ai-teacher. Vercel owns deployment (auto-deploy on push
-# to main) — this workflow does NOT deploy. It adds the unit-test + lint +
-# typecheck gate that Vercel's build check doesn't cover.
+# Gate-only CI for ai-teacher. Deployment is handled by deploy-prod.yml
+# (ADR-0043) which triggers on successful completion of this workflow.
 
 on:
   pull_request:
