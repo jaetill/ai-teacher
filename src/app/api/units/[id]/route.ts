@@ -15,7 +15,7 @@ import {
   materials,
   materialAttachments,
 } from "@/db/schema";
-import { eq, asc, inArray, and } from "drizzle-orm";
+import { eq, asc, inArray, and, or, isNull } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -42,7 +42,7 @@ export async function GET(
   const [course] = await db
     .select({ grade: courses.grade, title: courses.title })
     .from(courses)
-    .where(and(eq(courses.id, unit.courseId), eq(courses.ownerEmail, email)))
+    .where(and(eq(courses.id, unit.courseId), or(eq(courses.ownerEmail, email), isNull(courses.ownerEmail))))
     .limit(1);
 
   if (!course) {

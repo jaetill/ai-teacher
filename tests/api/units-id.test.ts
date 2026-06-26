@@ -24,6 +24,8 @@ vi.mock("drizzle-orm", () => ({
   asc: vi.fn(),
   inArray: vi.fn(),
   and: vi.fn(),
+  or: vi.fn(),
+  isNull: vi.fn(),
 }));
 
 import { getServerSession } from "next-auth";
@@ -89,6 +91,33 @@ describe("GET /api/units/[id]", () => {
     expect(res.status).toBe(404);
     // Only two DB calls: unit lookup + ownership-scoped course lookup
     expect(mockDbSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 200 for a pre-migration course whose ownerEmail is NULL", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
+    // 1. unit
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ id: "u2", courseId: "c2", sortOrder: 1, quarter: "Q1" }]),
+    );
+    // 2. course with ownerEmail = null (pre-migration row) — still returned by the or(isNull) arm
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ grade: 7, title: "ELA 7" }]));
+    // 3. lessons (none)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 4. unitStandards
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 5. driveFolders – curriculum key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 6. driveFolders – quarter key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 7. unit-level materials
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await GET(new Request("http://localhost/api/units/u2"), makeParams("u2"));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.unit.id).toBe("u2");
+    expect(body.unit.grade).toBe(7);
   });
 
   it("returns 200 with unit payload for the authenticated owner", async () => {
