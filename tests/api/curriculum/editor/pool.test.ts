@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDbSelect } = vi.hoisted(() => ({
+const { mockDbSelect, mockInArray } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
+  mockInArray: vi.fn((col, vals) => ({ col, vals })),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
@@ -12,12 +13,12 @@ vi.mock("@/db/schema", () => ({
   materials: {},
   materialAttachments: {},
   units: {},
-  driveFolders: {},
-  courses: {},
+  driveFolders: { folderKey: "folderKey", driveId: "driveId" },
+  courses: { grade: "grade" },
 }));
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
-  inArray: vi.fn(),
+  inArray: mockInArray,
   sql: vi.fn(),
   and: vi.fn(),
 }));
@@ -109,5 +110,59 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.materials).toEqual([]);
+  });
+
+  it("scopes driveFolders query to exact grade+quarter keys (IDOR fix)", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    // assertCourseOwnership → course owned by this user
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // courseUnits → one Q1 unit
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // grade query → grade 8
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // driveFolders scoped query → one matching folder
+    mockDbSelect.mockReturnValueOnce(makeChain([{ driveId: "drive-folder-g8-q1" }]));
+    // materials in that folder → empty (triggers empty-materials short-circuit)
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    // Verify inArray was called with the exact grade-qualified key, not a wildcard
+    const inArrayCalls = mockInArray.mock.calls;
+    const folderKeyCall = inArrayCalls.find(
+      ([, vals]) => Array.isArray(vals) && vals.some((v: string) => v.includes("grade_")),
+    );
+    expect(folderKeyCall).toBeDefined();
+    const passedKeys: string[] = folderKeyCall![1];
+    // Must be exact grade-8-qualified keys — no "%" wildcard, no bare quarter substring
+    expect(passedKeys).toEqual(["grade_8_Q1_Curriculum"]);
+    expect(passedKeys.every((k: string) => !k.includes("%"))).toBe(true);
+  });
+
+  it("does not include another user's Q1 folder when grade differs", async () => {
+    // User owns a grade-6 course. Only grade_6_Q1_Curriculum should be queried —
+    // grade_8_Q1_Curriculum (another user's course) must not appear in the lookup.
+    mockSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-2", quarter: "Q1" }]));
+    // grade 6 course
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 6 }]));
+    // driveFolders: returns only the grade-6 folder
+    mockDbSelect.mockReturnValueOnce(makeChain([{ driveId: "drive-folder-g6-q1" }]));
+    // materials → empty
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    await GET(makeRequest(COURSE_ID));
+
+    const inArrayCalls = mockInArray.mock.calls;
+    const folderKeyCall = inArrayCalls.find(
+      ([, vals]) => Array.isArray(vals) && vals.some((v: string) => v.includes("grade_")),
+    );
+    expect(folderKeyCall).toBeDefined();
+    const passedKeys: string[] = folderKeyCall![1];
+    expect(passedKeys).toEqual(["grade_6_Q1_Curriculum"]);
+    // The grade-8 folder of a different user is never included in the query
+    expect(passedKeys).not.toContain("grade_8_Q1_Curriculum");
   });
 });

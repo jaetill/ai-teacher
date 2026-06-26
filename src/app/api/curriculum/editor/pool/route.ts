@@ -10,6 +10,7 @@ import {
   materialAttachments,
   units,
   driveFolders,
+  courses,
 } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
@@ -47,17 +48,31 @@ export async function GET(req: Request) {
 
   // Get Drive folder IDs for this course's quarters
   const quarters = [...new Set(courseUnits.map((u) => u.quarter).filter(Boolean))];
-  const folderKeys = quarters.map((q) => `grade_%_${q}_Curriculum`);
 
-  // Get all materials that were imported into Drive folders for this course
-  // We find them via the driveFolderId on materials matching the course's folders
-  const allFolders = await db.select().from(driveFolders);
-  const relevantFolderDriveIds = allFolders
-    .filter((f) => {
-      // Match folders that belong to this course's grade/quarters
-      return quarters.some((q) => f.folderKey.includes(q as string));
-    })
-    .map((f) => f.driveId);
+  // Fetch the course grade so we can build exact folder keys (prevents cross-user leakage
+  // via fuzzy quarter substring matching across other users' grade folders).
+  const [courseRow] = await db
+    .select({ grade: courses.grade })
+    .from(courses)
+    .where(eq(courses.id, courseId))
+    .limit(1);
+  const grade = courseRow?.grade;
+
+  const exactFolderKeys = grade != null
+    ? quarters.map((q) => `grade_${grade}_${q}_Curriculum`)
+    : [];
+
+  // Scope the driveFolders query to exact keys for this course's grade+quarter combination.
+  // Using inArray with exact keys (not a full table scan + substring filter) ensures we
+  // never return folder records owned by a different user's course in the same quarter.
+  const relevantFolderDriveIds = exactFolderKeys.length > 0
+    ? (
+        await db
+          .select({ driveId: driveFolders.driveId })
+          .from(driveFolders)
+          .where(inArray(driveFolders.folderKey, exactFolderKeys))
+      ).map((f) => f.driveId)
+    : [];
 
   // Get materials from these folders
   let courseMaterials;
