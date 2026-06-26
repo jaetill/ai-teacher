@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 ${standards}${context ? `\n\n**Additional Context:**\n${context}` : ""}`;
 
   const stream = client.messages.stream({
-    model: "claude-opus-4-6",
+    model: "claude-opus-4-8",
     max_tokens: 64000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,

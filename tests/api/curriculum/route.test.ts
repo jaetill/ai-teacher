@@ -68,7 +68,7 @@ describe("POST /api/curriculum", () => {
     expect(res.headers.get("Content-Type")).toMatch(/text\/plain/);
     expect(mockStreamFn).toHaveBeenCalledOnce();
     expect(mockStreamFn).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "claude-opus-4-6" }),
+      expect.objectContaining({ model: "claude-opus-4-8" }),
     );
   });
 });
