@@ -165,4 +165,111 @@ describe("GET /api/curriculum/editor/pool", () => {
     // The grade-8 folder of a different user is never included in the query
     expect(passedKeys).not.toContain("grade_8_Q1_Curriculum");
   });
+
+  it("returns populated materials list with attachment info when course has units and matching folders", async () => {
+    const MATERIAL = {
+      id: "mat-1",
+      title: "Reading: Chapter 1",
+      materialType: "reading",
+      driveWebUrl: "https://drive.google.com/file/d/abc123",
+      driveMimeType: "application/pdf",
+      driveFolderId: "drive-folder-1",
+      storageType: "google_drive",
+      driveFileId: "abc123",
+      description: null,
+      source: "human",
+      url: null,
+      inlineContent: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const ATTACHMENT = {
+      id: "att-1",
+      materialId: "mat-1",
+      attachableType: "unit",
+      attachableId: "unit-1",
+      role: "supporting",
+      sortOrder: 0,
+    };
+
+    mockSession.mockResolvedValueOnce(SESSION);
+    // 1. assertCourseOwnership
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // 2. courseUnits
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // 3. grade query
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // 4. driveFolders scoped to grade_8_Q1_Curriculum
+    mockDbSelect.mockReturnValueOnce(makeChain([{ driveId: "drive-folder-1" }]));
+    // 5. materials in that folder
+    mockDbSelect.mockReturnValueOnce(makeChain([MATERIAL]));
+    // 6. materialAttachments for those materials
+    mockDbSelect.mockReturnValueOnce(makeChain([ATTACHMENT]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    const mat = body.materials[0];
+    expect(mat.id).toBe("mat-1");
+    expect(mat.title).toBe("Reading: Chapter 1");
+    expect(mat.materialType).toBe("reading");
+    expect(mat.driveWebUrl).toBe("https://drive.google.com/file/d/abc123");
+    expect(mat.driveMimeType).toBe("application/pdf");
+    expect(mat.attachments).toHaveLength(1);
+    expect(mat.attachments[0]).toMatchObject({
+      id: "att-1",
+      attachableType: "unit",
+      attachableId: "unit-1",
+      role: "supporting",
+    });
+  });
+
+  it("falls back to materialAttachments query when no Drive folders match", async () => {
+    const FALLBACK_MATERIAL = {
+      id: "mat-fallback-1",
+      title: "Activity Sheet",
+      materialType: "activity",
+      driveWebUrl: "https://drive.google.com/file/d/xyz",
+      driveMimeType: "application/vnd.google-apps.document",
+      driveFolderId: null,
+      storageType: "google_drive",
+      driveFileId: "xyz",
+      description: null,
+      source: "human",
+      url: null,
+      inlineContent: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockSession.mockResolvedValueOnce(SESSION);
+    // 1. assertCourseOwnership
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // 2. courseUnits
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // 3. grade query
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // 4. driveFolders — empty, triggers fallback path
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    // 5. fallback: materialAttachments by unitIds
+    mockDbSelect.mockReturnValueOnce(makeChain([{ materialId: "mat-fallback-1" }]));
+    // 6. fallback: materials by those IDs
+    mockDbSelect.mockReturnValueOnce(makeChain([FALLBACK_MATERIAL]));
+    // 7. materialAttachments for those materials
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    const mat = body.materials[0];
+    expect(mat.id).toBe("mat-fallback-1");
+    expect(mat.title).toBe("Activity Sheet");
+    expect(mat.materialType).toBe("activity");
+    expect(mat.driveWebUrl).toBe("https://drive.google.com/file/d/xyz");
+    expect(mat.attachments).toEqual([]);
+  });
 });
