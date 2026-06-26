@@ -26,6 +26,11 @@ export async function GET(
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const email = session.user?.email;
+  if (!email) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
+  }
+
   const { id } = await params;
 
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
@@ -37,8 +42,12 @@ export async function GET(
   const [course] = await db
     .select({ grade: courses.grade, title: courses.title })
     .from(courses)
-    .where(eq(courses.id, unit.courseId))
+    .where(and(eq(courses.id, unit.courseId), eq(courses.ownerEmail, email)))
     .limit(1);
+
+  if (!course) {
+    return Response.json({ error: "Unit not found" }, { status: 404 });
+  }
 
   const unitLessons = await db
     .select({
@@ -99,14 +108,14 @@ export async function GET(
 
   // ── Drive folder links ───
   const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
-  const curriculumFolderKey = `grade_${course?.grade}_${quarter}_Curriculum`;
+  const curriculumFolderKey = `grade_${course.grade}_${quarter}_Curriculum`;
   const [curriculumFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
     .where(eq(driveFolders.folderKey, curriculumFolderKey))
     .limit(1);
 
-  const quarterFolderKey = `grade_${course?.grade}_${quarter}`;
+  const quarterFolderKey = `grade_${course.grade}_${quarter}`;
   const [quarterFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
@@ -177,8 +186,8 @@ export async function GET(
   return Response.json({
     unit: {
       ...unit,
-      grade: course?.grade,
-      courseTitle: course?.title,
+      grade: course.grade,
+      courseTitle: course.title,
       lessons: lessonsWithAll,
       standards: linkedStandards,
       materials: unitMaterials,
