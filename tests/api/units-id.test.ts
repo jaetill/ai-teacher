@@ -27,9 +27,11 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
 import { GET } from "../../src/app/api/units/[id]/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockEq = vi.mocked(eq);
 
 function makeParams(id: string) {
   return { params: Promise.resolve({ id }) };
@@ -89,6 +91,23 @@ describe("GET /api/units/[id]", () => {
     expect(res.status).toBe(404);
     // Only two DB calls: unit lookup + ownership-scoped course lookup
     expect(mockDbSelect).toHaveBeenCalledTimes(2);
+    // Ownership predicate must use the caller's email — removing eq(ownerEmail, email) breaks this
+    expect(mockEq.mock.calls.some(([, v]) => v === "other@school.edu")).toBe(true);
+  });
+
+  it("returns 404 when ownerEmail is NULL (strict ownership - no legacy bypass)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
+    // unit exists in DB
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1" }]),
+    );
+    // strict eq(courses.ownerEmail, email) never matches NULL → empty result
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
+
+    expect(res.status).toBe(404);
+    expect(mockEq.mock.calls.some(([, v]) => v === "owner@school.edu")).toBe(true);
   });
 
   it("returns 200 with unit payload for the authenticated owner", async () => {
@@ -117,5 +136,7 @@ describe("GET /api/units/[id]", () => {
     expect(body.unit.id).toBe("u1");
     expect(body.unit.grade).toBe(8);
     expect(body.unit.courseTitle).toBe("ELA 8");
+    // Ownership predicate must use the caller's email on the course lookup
+    expect(mockEq.mock.calls.some(([, v]) => v === "owner@school.edu")).toBe(true);
   });
 });
