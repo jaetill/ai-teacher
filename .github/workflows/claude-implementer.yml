@@ -19,18 +19,22 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Issue number to implement (for manual dispatch / fleet promoter)'
+        description: "Issue number to implement (for manual dispatch / fleet promoter)"
         required: false
         type: string
       mode:
-        description: 'cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)'
+        description: "cleanup-sweep = drain deferred nits only (fleet promoter spare-capacity, ADR-0020)"
         required: false
         type: string
       bundle_issues:
-        description: 'Comma-separated low/nit (severity:low,severity:nit) issue numbers the promoter selected to ride along (same-file, ADR-0029)'
+        description: "Comma-separated low/nit (severity:low,severity:nit) issue numbers the promoter selected to ride along (same-file, ADR-0029)"
         required: false
         type: string
 
+# SECURITY: workflows:write must NEVER be added here — this job triggers on
+# issue/issue_comment (external prompt-injection surface); adding it would let a
+# crafted issue body modify CI pipelines, inject malicious steps, or disable
+# branch protection. See #374, #34, #146.
 permissions:
   contents: write
   pull-requests: write
