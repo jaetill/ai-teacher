@@ -66,6 +66,14 @@ export async function POST(request: Request) {
     });
   }
 
+  if (
+    theme.length > 1_000 ||
+    standards.length > 10_000 ||
+    (context && context.length > 5_000)
+  ) {
+    return new Response("Input too large", { status: 413 });
+  }
+
   const userMessage = `Please create a complete unit plan with the following details:
 
 **Grade:** ${grade}
