@@ -112,23 +112,22 @@ describe("POST /api/units/[id]/infer-standards", () => {
     expect(body.error).toBe("Forbidden");
   });
 
-  it("allows any authenticated user when unit.userId is null (legacy row)", async () => {
+  it("returns 403 for a null-userId unit accessed by a non-owner", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
 
     const unitId = "00000000-0000-0000-0000-000000000001";
-    // unit has no owner (pre-auth row)
     mockDbSelect.mockReturnValueOnce(
       makeChain([{ id: unitId, title: "Legacy Unit", userId: null }]),
     );
-    // lessons and standards queries return empty → 400, not 403
-    mockDbSelect.mockReturnValue(makeChain([]));
 
     const res = await POST(
       new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
       makeParams(unitId),
     );
 
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
   });
 
   it("allows the unit owner to infer standards", async () => {
