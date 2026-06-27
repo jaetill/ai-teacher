@@ -20,4 +20,6 @@ jobs:
     uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@main
     with:
       release-type: node
-    secrets: inherit
+    secrets:
+      FLEET_APP_ID: ${{ secrets.FLEET_APP_ID }}
+      FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
