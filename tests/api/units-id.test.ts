@@ -15,7 +15,7 @@ vi.mock("@/db/schema", () => ({
   lessonStandards: {},
   standards: {},
   courses: {},
-  driveFolders: {},
+  driveFolders: { ownerEmail: "ownerEmail", folderKey: "folderKey", driveId: "driveId" },
   materials: {},
   materialAttachments: {},
 }));
@@ -138,5 +138,36 @@ describe("GET /api/units/[id]", () => {
     expect(body.unit.courseTitle).toBe("ELA 8");
     // Ownership predicate must use the caller's email on the course lookup
     expect(mockEq.mock.calls.some(([, v]) => v === "owner@school.edu")).toBe(true);
+  });
+
+  it("scopes driveFolders queries by ownerEmail (IDOR guard)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
+    // 1. unit
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1" }]),
+    );
+    // 2. course (ownership match)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ grade: 8, title: "ELA 8" }]));
+    // 3. lessons (none)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 4. unitStandards
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 5. driveFolders – curriculum key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 6. driveFolders – quarter key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 7. unit-level materials
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
+
+    expect(res.status).toBe(200);
+    // Both driveFolders lookups must be scoped by the session email —
+    // a silent removal of eq(driveFolders.ownerEmail, email) would break this assertion
+    // and reinstate the cross-user IDOR.
+    const eqCalls = mockEq.mock.calls as unknown as Array<[unknown, unknown]>;
+    const ownerEmailCalls = eqCalls.filter(([col]) => col === "ownerEmail");
+    expect(ownerEmailCalls.length).toBeGreaterThanOrEqual(2);
+    expect(ownerEmailCalls.every(([, val]) => val === "owner@school.edu")).toBe(true);
   });
 });
