@@ -85,6 +85,15 @@ describe("sentry server config – beforeSend", () => {
     expect(bc[0].message).toBe("user [REDACTED_EMAIL] clicked submit");
   });
 
+  it("redacts email from breadcrumbs in envelope shape { values: [] }", () => {
+    const event = {
+      breadcrumbs: { values: [{ message: "user admin@school.org logged in" }] },
+    };
+    const result = beforeSend(event)!;
+    const bc = result.breadcrumbs as { values: Array<{ message: string }> };
+    expect(bc.values[0].message).toBe("user [REDACTED_EMAIL] logged in");
+  });
+
   it("handles missing request gracefully", () => {
     const event = { message: "no request attached" };
     const result = beforeSend(event);
