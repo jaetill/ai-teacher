@@ -153,4 +153,13 @@ describe("sentry edge config – beforeSend", () => {
     }>;
     expect(bc[0].data.students[0].email).toBe("[REDACTED_EMAIL]");
   });
+
+  it("redacts email from breadcrumb data field", () => {
+    const event = {
+      breadcrumbs: [{ message: "save triggered", data: { user: { email: "admin@school.org" } } }],
+    };
+    const result = beforeSend(event)!;
+    const bc = result.breadcrumbs as Array<{ data: { user: { email: string } } }>;
+    expect(bc[0].data.user.email).toBe("[REDACTED_EMAIL]");
+  });
 });
