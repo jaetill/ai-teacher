@@ -226,6 +226,52 @@ describe("GET /api/curriculum/editor/pool", () => {
     });
   });
 
+  it("falls back to attachment-based lookup when course has no grade set", async () => {
+    const GRADE_NULL_MATERIAL = {
+      id: "mat-no-grade-1",
+      title: "Worksheet: No Grade",
+      materialType: "activity",
+      driveWebUrl: "https://drive.google.com/file/d/nograde",
+      driveMimeType: "application/pdf",
+      driveFolderId: null,
+      storageType: "google_drive",
+      driveFileId: "nograde",
+      description: null,
+      source: "human",
+      url: null,
+      inlineContent: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockSession.mockResolvedValueOnce(SESSION);
+    // 1. assertCourseOwnership
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // 2. courseUnits
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // 3. grade query → empty (no course row → grade is undefined → short-circuit skips driveFolders)
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    // no driveFolders query — skipped because exactFolderKeys = []
+    // 4. fallback: materialAttachments by unitIds
+    mockDbSelect.mockReturnValueOnce(makeChain([{ materialId: "mat-no-grade-1" }]));
+    // 5. fallback: materials by those IDs
+    mockDbSelect.mockReturnValueOnce(makeChain([GRADE_NULL_MATERIAL]));
+    // 6. final materialAttachments for these materials
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    expect(body.materials[0].id).toBe("mat-no-grade-1");
+    // The driveFolders short-circuit means inArray is never called with grade-qualified keys
+    const gradeFolderCall = mockInArray.mock.calls.find(
+      ([, vals]) => Array.isArray(vals) && vals.some((v: string) => v.includes("grade_")),
+    );
+    expect(gradeFolderCall).toBeUndefined();
+  });
+
   it("falls back to materialAttachments query when no Drive folders match", async () => {
     const FALLBACK_MATERIAL = {
       id: "mat-fallback-1",
