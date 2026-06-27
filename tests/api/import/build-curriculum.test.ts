@@ -30,6 +30,7 @@ vi.mock("@/db/schema", () => ({
   schoolYears: {},
 }));
 vi.mock("drizzle-orm", () => ({
+  and: vi.fn(),
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("drizzle-orm", () => ({
 
 // ── Imports after mocks ─────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
+import { and } from "drizzle-orm";
 import { POST } from "../../../src/app/api/import/build-curriculum/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
@@ -282,6 +284,19 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(courseValuesSpy).toHaveBeenCalledOnce();
       expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher@school.edu" });
+    });
+
+    it("scopes the fallback course SELECT by ownerEmail so two teachers with the same grade don't collide", async () => {
+      setupMocks({
+        courseInsertReturn: [],
+        courseFallbackReturn: [{ id: "c1" }],
+      });
+
+      await POST(makeRequest());
+
+      // The fallback SELECT must combine grade AND ownerEmail via `and()` so
+      // teacher B cannot land on teacher A's course row.
+      expect(vi.mocked(and)).toHaveBeenCalled();
     });
 
     it("returns 500 gracefully when both insert and fallback SELECT return nothing", async () => {

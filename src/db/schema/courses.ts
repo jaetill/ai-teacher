@@ -29,10 +29,11 @@ export const courses = pgTable(
   },
   (table) => [
     index("idx_courses_grade").on(table.grade),
-    unique("uq_courses_grade_subject_year").on(
+    unique("uq_courses_grade_subject_year_owner").on(
       table.grade,
       table.subject,
-      table.schoolYearId
+      table.schoolYearId,
+      table.ownerEmail
     ),
   ]
 );
