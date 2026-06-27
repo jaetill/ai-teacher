@@ -43,6 +43,8 @@ describe("POST /api/communications — tone length guard", () => {
     mockSession.mockResolvedValueOnce(null);
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toBe("Unauthorized");
   });
 
   it("returns 413 when tone exceeds 50 chars", async () => {
