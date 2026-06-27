@@ -10,8 +10,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # ceiling for the reusable's publish job; generate job downgrades to read
-  id-token: write # required: reusable generate job uses OIDC for claude-code-action
+  # contents:write is the ceiling required for the reusable's deterministic publish
+  # job (no LLM). The reusable itself declares `permissions: {}` at workflow level
+  # and then grants each job only what it needs:
+  #   generate  → contents:read + id-token:write (LLM, read-only)
+  #   publish   → contents:write (deterministic shell, no LLM)
+  # Audited at the pinned SHA in the `uses:` line below; caller ceiling is frozen
+  # to that reviewed version so the scope cannot silently expand upstream.
+  # (Security finding #193 closed — SHA pin + per-job override confirms scope.)
+  contents: write
+  id-token: write # OIDC: reusable generate job uses claude-code-action
   # issues: write intentionally absent — ADR-0045 retired digest issues;
   # the reusable publishes findings via git commit to reports/dep-watch, not GitHub Issues.
 
