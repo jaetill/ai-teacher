@@ -131,6 +131,25 @@ describe("POST /api/units/[id]/infer-standards", () => {
     expect(res.status).not.toBe(403);
   });
 
+  it("returns 200 (not 403) when session.user.id is undefined and unit.userId is set", async () => {
+    // Regression for #140: absent token.sub must not block the authenticated user.
+    mockGetServerSession.mockResolvedValueOnce({ user: {} }); // no id field
+
+    const unitId = "00000000-0000-0000-0000-000000000003";
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ id: unitId, title: "Owned Unit", userId: "google-sub-alice" }]),
+    );
+    // empty lessons/standards → 400, past the ownership gate
+    mockDbSelect.mockReturnValue(makeChain([]));
+
+    const res = await POST(
+      new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
+      makeParams(unitId),
+    );
+
+    expect(res.status).not.toBe(403);
+  });
+
   it("allows the unit owner to infer standards", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
 

@@ -41,8 +41,9 @@ export async function POST(
     return Response.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  // null userId = legacy row; any authenticated user may proceed (migration path)
-  if (unit.userId && unit.userId !== session.user?.id) {
+  // null userId = legacy row; any authenticated user may proceed (migration path).
+  // Guard session.user?.id too: absent token.sub must not return 403 to the owner.
+  if (unit.userId && session.user?.id && unit.userId !== session.user.id) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
