@@ -68,6 +68,21 @@ export async function POST(request: Request) {
     });
   }
 
+  if (![6, 7, 8].includes(grade)) {
+    return new Response("grade must be 6, 7, or 8", { status: 400 });
+  }
+
+  const MAX_STANDARDS = 5_000;
+  const MAX_CURRICULUM = 20_000;
+  const MAX_NOTES = 5_000;
+  if (
+    standards.length > MAX_STANDARDS ||
+    (existingCurriculum && existingCurriculum.length > MAX_CURRICULUM) ||
+    (notes && notes.length > MAX_NOTES)
+  ) {
+    return new Response("Input exceeds maximum allowed length", { status: 413 });
+  }
+
   let userMessage = `Please create a year plan:
 
 **Grade:** ${grade}
