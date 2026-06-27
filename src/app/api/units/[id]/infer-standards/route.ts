@@ -41,8 +41,7 @@ export async function POST(
     return Response.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  // null userId = legacy row; any authenticated user may proceed (migration path)
-  if (unit.userId && unit.userId !== session.user?.id) {
+  if (!unit.userId || unit.userId !== session.user?.id) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
