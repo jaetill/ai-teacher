@@ -24,6 +24,7 @@ vi.mock("drizzle-orm", () => ({
   asc: vi.fn(),
   inArray: vi.fn(),
   and: vi.fn(),
+  getTableColumns: vi.fn().mockReturnValue({}),
 }));
 
 import { getServerSession } from "next-auth";
@@ -79,29 +80,21 @@ describe("GET /api/units/[id]", () => {
 
   it("returns 404 when the unit belongs to a course owned by a different user (IDOR regression)", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { email: "other@school.edu" } });
-    // unit exists in DB
-    mockDbSelect.mockReturnValueOnce(
-      makeSelectChain([{ id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1" }]),
-    );
-    // course ownership check: email doesn't match → empty result
+    // single JOIN with ownership predicate: email doesn't match → empty result
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
 
     const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
 
     expect(res.status).toBe(404);
-    // Only two DB calls: unit lookup + ownership-scoped course lookup
-    expect(mockDbSelect).toHaveBeenCalledTimes(2);
+    // Single JOIN query merges unit lookup and ownership check into one DB call
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
     // Ownership predicate must use the caller's email — removing eq(ownerEmail, email) breaks this
     expect(mockEq.mock.calls.some(([, v]) => v === "other@school.edu")).toBe(true);
   });
 
   it("returns 404 when ownerEmail is NULL (strict ownership - no legacy bypass)", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
-    // unit exists in DB
-    mockDbSelect.mockReturnValueOnce(
-      makeSelectChain([{ id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1" }]),
-    );
-    // strict eq(courses.ownerEmail, email) never matches NULL → empty result
+    // single JOIN: strict eq(courses.ownerEmail, email) never matches NULL → empty result
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
 
     const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
@@ -112,21 +105,21 @@ describe("GET /api/units/[id]", () => {
 
   it("returns 200 with unit payload for the authenticated owner", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
-    // 1. unit
+    // 1. units JOIN courses (ownership match) — single query
     mockDbSelect.mockReturnValueOnce(
-      makeSelectChain([{ id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1" }]),
+      makeSelectChain([
+        { id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1", grade: 8, courseTitle: "ELA 8" },
+      ]),
     );
-    // 2. course (ownership match)
-    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ grade: 8, title: "ELA 8" }]));
-    // 3. lessons (none)
+    // 2. lessons (none)
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
-    // 4. unitStandards
+    // 3. unitStandards
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
-    // 5. driveFolders – curriculum key
+    // 4. driveFolders – curriculum key
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
-    // 6. driveFolders – quarter key
+    // 5. driveFolders – quarter key
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
-    // 7. unit-level materials
+    // 6. unit-level materials
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
 
     const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
