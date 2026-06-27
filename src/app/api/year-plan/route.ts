@@ -68,6 +68,15 @@ export async function POST(request: Request) {
     });
   }
 
+  if (
+    schoolYear.length > 50 ||
+    standards.length > 10_000 ||
+    (existingCurriculum && existingCurriculum.length > 20_000) ||
+    (notes && notes.length > 5_000)
+  ) {
+    return new Response("Input too large", { status: 413 });
+  }
+
   let userMessage = `Please create a year plan:
 
 **Grade:** ${grade}
