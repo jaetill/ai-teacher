@@ -43,6 +43,10 @@ permissions:
 
 jobs:
   run:
+    # Bot-guard (ADR-0020 / ADR-0003): only human actors may trigger via label
+    # or comment events. workflow_dispatch is always allowed (fleet promoter +
+    # manual human dispatch are the intended callers on that path).
+    if: github.event_name == 'workflow_dispatch' || github.event.sender.type != 'Bot'
     uses: jaetill/agentic-dev-environment/.github/workflows/claude-implementer-reusable.yml@main
     with:
       issue_number: ${{ inputs.issue_number }}
