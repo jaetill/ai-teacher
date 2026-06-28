@@ -5,37 +5,46 @@
 //   GITHUB_TOKEN        - PAT with issues:write on jaetill/ai-teacher
 //   GITHUB_REPO_OWNER   - defaults to "jaetill"
 //   GITHUB_REPO_NAME    - defaults to "ai-teacher"
+//   KV_REST_API_URL     - Vercel KV endpoint (required for distributed rate limiting)
+//   KV_REST_API_TOKEN   - Vercel KV token
 
 import { NextRequest } from "next/server";
 import { Octokit } from "@octokit/rest";
+import { kv } from "@vercel/kv";
 
 const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "jaetill";
 const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
 
 const ALLOWED_TYPES = new Set(["bug", "feature", "other"]);
-const WINDOW_MS = 60 * 60 * 1000;
+const WINDOW_SECONDS = 60 * 60; // 1 hour
 const LIMIT = 10;
 
-// In-memory rate limit per warm instance.
-const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>();
-
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now();
-  const existing = rateLimitBuckets.get(ip);
-  if (!existing || now - existing.windowStart >= WINDOW_MS) {
-    if (rateLimitBuckets.size >= 10_000) {
-      for (const [k, e] of rateLimitBuckets.entries()) {
-        if (now - e.windowStart >= WINDOW_MS) rateLimitBuckets.delete(k);
-      }
-    }
-    rateLimitBuckets.set(ip, { count: 1, windowStart: now });
+// Distributed rate limit using Vercel KV (Redis INCR + EXPIRE).
+// Each Vercel instance shares the same KV store, so the limit applies globally
+// regardless of how many cold-start instances are running (fixes ADR-0012 §4 gap).
+// Fails open if KV is not configured so dev/CI environments are not blocked.
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+    console.warn("feedback.rate_limit: KV not configured; per-instance fallback active");
     return { allowed: true };
   }
-  if (existing.count >= LIMIT) {
-    return { allowed: false, retryAfter: Math.ceil((WINDOW_MS - (now - existing.windowStart)) / 1000) };
+  const key = `rl:fb:${ip}`;
+  try {
+    const count = await kv.incr(key);
+    if (count === 1) {
+      // First request in this window — stamp the TTL so the key expires automatically.
+      await kv.expire(key, WINDOW_SECONDS);
+    }
+    if (count > LIMIT) {
+      const ttl = await kv.ttl(key);
+      return { allowed: false, retryAfter: Math.max(ttl, 0) };
+    }
+    return { allowed: true };
+  } catch (err) {
+    // Fail open on transient KV errors rather than blocking legitimate users.
+    console.error("feedback.rate_limit: KV error", err);
+    return { allowed: true };
   }
-  existing.count += 1;
-  return { allowed: true };
 }
 
 function escapeMarkdown(str: string): string {
@@ -71,7 +80,7 @@ function validate(input: FeedbackBody): string | null {
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
-  const rl = checkRateLimit(ip);
+  const rl = await checkRateLimit(ip);
   if (!rl.allowed) {
     return Response.json(
       { error: "rate_limited", retry_after_seconds: rl.retryAfter },
