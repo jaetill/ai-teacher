@@ -64,6 +64,23 @@ export async function POST(req: Request) {
     return Response.json({ error: "rawPlan too large" }, { status: 400 });
   }
 
+  // Validate each unit's required fields before any DB work (#540). The units
+  // come from an AI-generated plan / the client, so their shape isn't trusted.
+  for (const u of body.units) {
+    if (!u || typeof u.title !== "string" || u.title.trim().length === 0) {
+      return Response.json(
+        { error: "each unit requires a non-empty title" },
+        { status: 400 },
+      );
+    }
+    if (typeof u.weeks !== "number" || !Number.isFinite(u.weeks)) {
+      return Response.json(
+        { error: "each unit requires a numeric weeks value" },
+        { status: 400 },
+      );
+    }
+  }
+
   // ── Find or create course ───
   const existing = await db
     .select({ id: courses.id })
