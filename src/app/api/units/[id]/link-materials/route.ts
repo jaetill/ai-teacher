@@ -26,7 +26,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  if (!session) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
   const ownerEmail = session.user?.email;

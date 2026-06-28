@@ -9,6 +9,7 @@ const { mockDbSelect, mockDbInsert, mockDbUpdate, mockFindOrCreateFolder } = vi.
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
+vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({
   db: { select: mockDbSelect, insert: mockDbInsert, update: mockDbUpdate },
@@ -23,13 +24,25 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/lib/drive", () => ({ findOrCreateFolder: mockFindOrCreateFolder }));
 
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { eq, or, isNull } from "drizzle-orm";
 import { POST } from "../../../src/app/api/drive/setup/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockGetToken = vi.mocked(getToken);
 const mockEq = vi.mocked(eq);
 const mockOr = vi.mocked(or);
 const mockIsNull = vi.mocked(isNull);
+
+function makeRequest() {
+  return new Request("http://localhost/api/drive/setup", { method: "POST" });
+}
+
+// Convenience: a signed-in caller with a Drive token + email.
+function authed(email = "teacher@school.edu") {
+  mockGetToken.mockResolvedValue({ accessToken: "tok" });
+  mockGetServerSession.mockResolvedValue({ user: { email } });
+}
 
 function makeSelectChain(resolvedValue: unknown) {
   const p = Promise.resolve(resolvedValue);
@@ -63,20 +76,20 @@ describe("POST /api/drive/setup", () => {
     mockFindOrCreateFolder.mockResolvedValue({ id: "folder-id" });
   });
 
-  it("returns 401 when there is no session", async () => {
-    mockGetServerSession.mockResolvedValueOnce(null);
+  it("returns 401 when there is no access token", async () => {
+    mockGetToken.mockResolvedValueOnce(null);
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error).toBe("Not authenticated");
   });
 
-  it("returns 401 when session has no accessToken", async () => {
-    mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
+  it("returns 401 when the JWT carries no accessToken", async () => {
+    mockGetToken.mockResolvedValueOnce({});
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -84,9 +97,10 @@ describe("POST /api/drive/setup", () => {
   });
 
   it("returns 401 when session has no email claim", async () => {
-    mockGetServerSession.mockResolvedValueOnce({ accessToken: "tok", user: {} });
+    mockGetToken.mockResolvedValueOnce({ accessToken: "tok" });
+    mockGetServerSession.mockResolvedValueOnce({ user: {} });
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -94,8 +108,8 @@ describe("POST /api/drive/setup", () => {
   });
 
   it("scopes the driveFolders lookup to the caller's email (IDOR regression — insert path)", async () => {
+    mockGetToken.mockResolvedValueOnce({ accessToken: "tok" });
     mockGetServerSession.mockResolvedValueOnce({
-      accessToken: "tok",
       user: { email: "teacher-a@school.edu" },
     });
     // All selects return [] → insert path for every folder
@@ -108,7 +122,7 @@ describe("POST /api/drive/setup", () => {
       }),
     }));
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(200);
     // eq() must be called with the caller's email in the WHERE predicate
@@ -126,8 +140,8 @@ describe("POST /api/drive/setup", () => {
   });
 
   it("scopes the UPDATE to the caller's email and sets ownerEmail on the row (update path)", async () => {
+    mockGetToken.mockResolvedValueOnce({ accessToken: "tok" });
     mockGetServerSession.mockResolvedValueOnce({
-      accessToken: "tok",
       user: { email: "teacher-a@school.edu" },
     });
     // All selects return a row → update path for every folder
@@ -143,7 +157,7 @@ describe("POST /api/drive/setup", () => {
       return chain;
     });
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(200);
     // UPDATE must also scope by ownerEmail
@@ -158,8 +172,8 @@ describe("POST /api/drive/setup", () => {
   });
 
   it("returns the folder map on success", async () => {
+    mockGetToken.mockResolvedValueOnce({ accessToken: "tok" });
     mockGetServerSession.mockResolvedValueOnce({
-      accessToken: "tok",
       user: { email: "teacher@school.edu" },
     });
     mockDbSelect.mockImplementation(() => makeSelectChain([]));
@@ -167,7 +181,7 @@ describe("POST /api/drive/setup", () => {
       values: vi.fn().mockResolvedValue(undefined),
     }));
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(200);
     const body = await res.json();

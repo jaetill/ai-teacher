@@ -6,6 +6,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth-helpers";
 import { findOrCreateFolder } from "@/lib/drive";
 import { db } from "@/db";
 import { driveFolders } from "@/db/schema";
@@ -17,16 +18,16 @@ const UNIT_SUBFOLDERS = ["Curriculum", "Lessons", "Activities", "Assessments", "
 
 type FolderEntry = { key: string; driveId: string; name: string; parentKey: string | null };
 
-export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+export async function POST(req: Request) {
+  const token = await getAccessToken(req);
+  if (!token) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const token = session.accessToken;
   // Require a real email: a null-email session must not fall through to the
   // isNull() branch below, which would let it read/overwrite legacy NULL-owner
   // folder rows and bypass the owner-scoping this PR establishes.
-  const ownerEmail = session.user?.email;
+  const session = await getServerSession(authOptions);
+  const ownerEmail = session?.user?.email;
   if (!ownerEmail) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }

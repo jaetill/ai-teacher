@@ -54,7 +54,7 @@ describe("authOptions.callbacks.session", () => {
     expect((result.user as { id?: string }).id).toBe("user-sub-123");
   });
 
-  it("sets session.accessToken from token.accessToken", async () => {
+  it("does NOT expose accessToken on the client session (#507)", async () => {
     const session = makeSession({ email: "teacher@school.edu" });
     const token = makeToken("user-sub-123", "my-access-token");
 
@@ -66,7 +66,9 @@ describe("authOptions.callbacks.session", () => {
       trigger: "update",
     });
 
-    expect((result as Session & { accessToken: string }).accessToken).toBe("my-access-token");
+    // The Drive OAuth token must stay server-side (read via getAccessToken),
+    // never serialized onto the session that reaches the client.
+    expect((result as Session & { accessToken?: string }).accessToken).toBeUndefined();
   });
 
   it("does not set user.id when session.user is absent", async () => {

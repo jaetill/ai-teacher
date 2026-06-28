@@ -4,6 +4,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
@@ -18,11 +19,12 @@ type FileInput = {
 };
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessToken(req);
+  if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const ownerEmail = session.user?.email;
+  const session = await getServerSession(authOptions);
+  const ownerEmail = session?.user?.email;
   if (!ownerEmail) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
   // ── List existing files in each Drive folder ───
   const driveFilesByFolder = new Map<string, Set<string>>(); // driveId → Set of filenames
   for (const driveId of new Set(folderKeyMap.values())) {
-    const existing = await listFilesInFolder(session.accessToken, driveId);
+    const existing = await listFilesInFolder(accessToken, driveId);
     driveFilesByFolder.set(
       driveId,
       new Set(existing.map((f) => f.name?.toLowerCase() ?? ""))

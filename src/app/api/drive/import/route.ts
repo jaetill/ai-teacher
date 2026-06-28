@@ -8,6 +8,7 @@
 import { getServerSession } from "next-auth";
 import { google } from "googleapis";
 import { authOptions } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
@@ -20,8 +21,8 @@ function getDriveClient(accessToken: string) {
 }
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessToken(req);
+  if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
     return Response.json({ error: "folderId required" }, { status: 400 });
   }
 
-  const drive = getDriveClient(session.accessToken);
+  const drive = getDriveClient(accessToken);
 
   // List all files in the shared folder (recursive into subfolders)
   const allFiles: Array<{ id: string; name: string; mimeType: string; parents: string[] }> = [];
@@ -78,11 +79,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessToken(req);
+  if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const ownerEmail = session.user?.email;
+  const session = await getServerSession(authOptions);
+  const ownerEmail = session?.user?.email;
   if (!ownerEmail) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
@@ -99,7 +101,7 @@ export async function POST(req: Request) {
     }>;
   };
 
-  const drive = getDriveClient(session.accessToken);
+  const drive = getDriveClient(accessToken);
   const results: Array<{ name: string; status: string; driveWebUrl?: string }> = [];
 
   for (const file of body.files) {
