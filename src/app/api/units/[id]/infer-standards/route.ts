@@ -26,6 +26,9 @@ export async function POST(
   if (!session) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
+  if (!session.user?.id) {
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
 
   const { id } = await params;
 
