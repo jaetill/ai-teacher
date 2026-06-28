@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDbSelect, mockInArray } = vi.hoisted(() => ({
+const { mockDbSelect, mockInArray, mockEq } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockInArray: vi.fn((col, vals) => ({ col, vals })),
+  mockEq: vi.fn((col, val) => ({ col, val })),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
@@ -13,11 +14,11 @@ vi.mock("@/db/schema", () => ({
   materials: {},
   materialAttachments: {},
   units: {},
-  driveFolders: { folderKey: "folderKey", driveId: "driveId" },
+  driveFolders: { folderKey: "folderKey", driveId: "driveId", ownerEmail: "ownerEmail" },
   courses: { grade: "grade" },
 }));
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn(),
+  eq: mockEq,
   inArray: mockInArray,
   sql: vi.fn(),
   and: vi.fn(),
@@ -164,6 +165,30 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect(passedKeys).toEqual(["grade_6_Q1_Curriculum"]);
     // The grade-8 folder of a different user is never included in the query
     expect(passedKeys).not.toContain("grade_8_Q1_Curriculum");
+  });
+
+  it("scopes driveFolders query by ownerEmail to prevent cross-user IDOR", async () => {
+    // Two teachers with the same grade+quarter would share the same folderKey without ownerEmail scoping.
+    // Assert that eq() is called with driveFolders.ownerEmail and the session email.
+    mockSession.mockResolvedValueOnce(SESSION);
+    // 1. assertCourseOwnership
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // 2. courseUnits
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // 3. grade
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // 4. driveFolders → empty (triggers fallback, but ownerEmail predicate was still passed)
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    // 5. fallback: materialAttachments → empty
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    await GET(makeRequest(COURSE_ID));
+
+    // eq must have been called with (driveFolders.ownerEmail sentinel, session email)
+    const ownerEmailCall = mockEq.mock.calls.find(
+      ([col, val]) => col === "ownerEmail" && val === SESSION.user.email,
+    );
+    expect(ownerEmailCall).toBeDefined();
   });
 
   it("returns populated materials list with attachment info when course has units and matching folders", async () => {

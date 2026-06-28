@@ -8,6 +8,7 @@ export const driveFolders = pgTable(
     driveId: text("drive_id").notNull(), // Google Drive folder ID
     name: text("name").notNull(), // Human-readable name shown in Drive
     parentKey: text("parent_key"), // folder_key of the parent (null for root)
+    ownerEmail: text("owner_email"), // Google account email of the teacher who owns this folder
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

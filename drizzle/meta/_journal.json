@@ -57,6 +57,13 @@
       "when": 1750377600000,
       "tag": "0007_add_user_id_to_units",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1751116800000,
+      "tag": "0008_add_owner_email_to_drive_folders",
+      "breakpoints": true
     }
   ]
 }
