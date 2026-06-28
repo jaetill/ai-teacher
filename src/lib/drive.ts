@@ -7,6 +7,15 @@ export function getDriveClient(accessToken: string) {
   return google.drive({ version: "v3", auth });
 }
 
+// Escape a value before embedding it in a Drive API query string literal
+// (the `q` parameter). Per Google's query syntax, string literals are wrapped
+// in single quotes and a backslash escapes both `\` and `'`. Without this, a
+// name/id containing a single quote breaks the query or lets a caller inject
+// additional query clauses. Escape backslash FIRST, then the single quote.
+export function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 // ── Folder operations ───
 
 export async function createFolder(
@@ -35,10 +44,10 @@ export async function findOrCreateFolder(
 
   // Search for existing folder
   const parentClause = parentId
-    ? ` and '${parentId}' in parents`
+    ? ` and '${escapeDriveQueryValue(parentId)}' in parents`
     : "";
   const res = await drive.files.list({
-    q: `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentClause}`,
+    q: `name = '${escapeDriveQueryValue(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentClause}`,
     fields: "files(id, name, webViewLink)",
     pageSize: 1,
   });
@@ -98,7 +107,7 @@ export async function uploadFile(
 export async function listFilesInFolder(accessToken: string, folderId: string) {
   const drive = getDriveClient(accessToken);
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false`,
+    q: `'${escapeDriveQueryValue(folderId)}' in parents and trashed = false`,
     fields: "files(id, name, mimeType, modifiedTime, webViewLink)",
     pageSize: 200,
   });
