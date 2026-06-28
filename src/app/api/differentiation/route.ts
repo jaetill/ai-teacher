@@ -46,6 +46,10 @@ export async function POST(request: Request) {
     });
   }
 
+  if (grade !== undefined && typeof grade !== "number") {
+    return new Response("grade must be a number", { status: 400 });
+  }
+
   const MAX_BYTES = 50_000;
   if (
     (content?.length ?? 0) + (studentNeed?.length ?? 0) + (outputRequest?.length ?? 0) >
