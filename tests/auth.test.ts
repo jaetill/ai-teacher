@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { authOptions } from "@/lib/auth";
 import GoogleProvider from "next-auth/providers/google";
+import type { Session } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 
 describe("authOptions Google OAuth scope", () => {
   const provider = authOptions.providers[0] as ReturnType<typeof GoogleProvider>;
@@ -20,5 +22,81 @@ describe("authOptions Google OAuth scope", () => {
     // Ensure the bare /auth/drive scope is absent (not just a substring of drive.readonly or drive.file)
     const scopes = scope.split(" ");
     expect(scopes).not.toContain("https://www.googleapis.com/auth/drive");
+  });
+});
+
+describe("authOptions.callbacks.session", () => {
+  const sessionCallback = authOptions.callbacks!.session!;
+
+  function makeSession(user?: Partial<Session["user"]>): Session {
+    return {
+      expires: "2099-01-01",
+      user: user as Session["user"],
+    } as Session;
+  }
+
+  function makeToken(sub?: string, accessToken?: string): JWT {
+    return { sub, accessToken } as JWT;
+  }
+
+  it("sets session.user.id to token.sub when both are present", async () => {
+    const session = makeSession({ email: "teacher@school.edu" });
+    const token = makeToken("user-sub-123", "access-tok");
+
+    const result = await sessionCallback({
+      session,
+      token,
+      user: {} as never,
+      newSession: null,
+      trigger: "update",
+    });
+
+    expect((result.user as { id?: string }).id).toBe("user-sub-123");
+  });
+
+  it("sets session.accessToken from token.accessToken", async () => {
+    const session = makeSession({ email: "teacher@school.edu" });
+    const token = makeToken("user-sub-123", "my-access-token");
+
+    const result = await sessionCallback({
+      session,
+      token,
+      user: {} as never,
+      newSession: null,
+      trigger: "update",
+    });
+
+    expect((result as Session & { accessToken: string }).accessToken).toBe("my-access-token");
+  });
+
+  it("does not set user.id when session.user is absent", async () => {
+    const session = makeSession(undefined);
+    const token = makeToken("user-sub-123", "access-tok");
+
+    // Should not throw and should return without user.id set
+    const result = await sessionCallback({
+      session,
+      token,
+      user: {} as never,
+      newSession: null,
+      trigger: "update",
+    });
+
+    expect(result.user).toBeUndefined();
+  });
+
+  it("does not set user.id when token.sub is absent", async () => {
+    const session = makeSession({ email: "teacher@school.edu" });
+    const token = makeToken(undefined, "access-tok");
+
+    const result = await sessionCallback({
+      session,
+      token,
+      user: {} as never,
+      newSession: null,
+      trigger: "update",
+    });
+
+    expect((result.user as { id?: string }).id).toBeUndefined();
   });
 });
