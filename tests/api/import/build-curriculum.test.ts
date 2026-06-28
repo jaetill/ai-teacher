@@ -179,20 +179,34 @@ describe("POST /api/import/build-curriculum", () => {
     });
   });
 
-  it("returns 401 when there is no session", async () => {
+  it("returns 401 JSON when there is no session", async () => {
     mockGetServerSession.mockResolvedValue(null);
 
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
   });
 
-  it("returns 401 when session has no email", async () => {
+  it("returns 401 JSON when session has no email", async () => {
     mockGetServerSession.mockResolvedValue({ user: {} });
 
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+  });
+
+  it("returns structured 500 JSON when getServerSession throws", async () => {
+    mockGetServerSession.mockRejectedValue(new Error("JWT decode failure"));
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
   });
 
   describe("course upsert race paths", () => {

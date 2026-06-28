@@ -29,17 +29,17 @@ const client = new Anthropic();
 export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
+  try {
   const session = await getServerSession(authOptions);
   if (!session) {
-    return new Response("Unauthorized", { status: 401 });
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerEmail = session.user?.email;
   if (!ownerEmail) {
-    return new Response("Session missing email", { status: 401 });
+    return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  try {
   const { grade, quarter } = (await req.json()) as {
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
