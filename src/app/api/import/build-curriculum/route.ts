@@ -21,7 +21,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc, and, isNull } from "drizzle-orm";
+import { eq, inArray, asc, and, isNull, or } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { normalizeMaterialRole } from "@/lib/material-roles";
 
@@ -61,10 +61,21 @@ export async function POST(req: Request) {
   const categories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
   const folderKeys = categories.map((c) => `grade_${grade}_${quarter}_${c}`);
 
+  // Scope folder lookup by owner (#121): drive_folders.folder_key is unique only
+  // per owner now, so another user's same grade/quarter folders must not leak in.
+  // Open-null policy (ADR-0044) keeps legacy NULL-owner rows visible.
   const folders = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, folderKeys));
+    .where(
+      and(
+        inArray(driveFolders.folderKey, folderKeys),
+        or(
+          eq(driveFolders.ownerEmail, ownerEmail),
+          isNull(driveFolders.ownerEmail)
+        )
+      )
+    );
 
   const folderDriveIds = folders.map((f) => f.driveId);
   const driveIdToCategory = new Map(

@@ -17,6 +17,7 @@ import {
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
+import { normalizeMaterialRole } from "@/lib/material-roles";
 
 const client = new Anthropic();
 
@@ -193,7 +194,7 @@ ${materialList}`,
             materialId,
             attachableType: "unit",
             attachableId: id,
-            role: link.role || "supporting",
+            role: normalizeMaterialRole(link.role),
             sortOrder: 0,
           })
           .onConflictDoNothing();
@@ -207,7 +208,7 @@ ${materialList}`,
             materialId,
             attachableType: "lesson",
             attachableId: lessonId,
-            role: link.role || "supporting",
+            role: normalizeMaterialRole(link.role),
             sortOrder: 0,
           })
           .onConflictDoNothing();

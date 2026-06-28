@@ -21,6 +21,8 @@ vi.mock("drizzle-orm", () => ({
   inArray: mockInArray,
   sql: vi.fn(),
   and: vi.fn(),
+  or: vi.fn(),
+  isNull: vi.fn(),
 }));
 
 import { getServerSession } from "next-auth";
