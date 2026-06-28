@@ -15,13 +15,15 @@ vi.mock("@/db/schema", () => ({
   unitStandards: {},
   standards: {},
 }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(), inArray: vi.fn() }));
+vi.mock("drizzle-orm", () => ({ and: vi.fn(), eq: vi.fn(), inArray: vi.fn() }));
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
 import { POST } from "../../src/app/api/year-plan/save/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockEq = vi.mocked(eq);
 
 function makeChain(value: unknown) {
   const p = Promise.resolve(value);
@@ -74,8 +76,37 @@ describe("POST /api/year-plan/save", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 400 when units is missing from the body", async () => {
+  it("returns 401 when session has no email claim", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Session missing email");
+  });
+
+  it("scopes the course lookup by ownerEmail so user B cannot inherit user A's course (IDOR regression)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+    mockEq.mockClear();
+
+    // Existing course found — no INSERT needed
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1", title: "Unit 1" }]));
+
+    await POST(makeRequest());
+
+    // eq must have been called with the session email so the SELECT is owner-scoped
+    const secondArgs = mockEq.mock.calls.map((c) => c[1]);
+    expect(secondArgs).toContain("alice@example.com");
+  });
+
+  it("returns 400 when units is missing from the body", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -91,7 +122,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("returns 400 when units is null", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -107,7 +140,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("returns 400 when units is an empty array", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -123,7 +158,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("returns 400 when rawPlan exceeds 50000 chars", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     const res = await POST(
       new Request("http://localhost/api/year-plan/save", {
@@ -177,7 +214,9 @@ describe("POST /api/year-plan/save", () => {
   });
 
   it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
-    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
 
     // Existing course found — no courses insert needed
     mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
