@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { listFilesInFolder } from "@/lib/drive";
 import { buildFolderKey } from "@/lib/upload-utils";
 
@@ -19,7 +19,8 @@ type FileInput = {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const ownerEmail = session?.user?.email ?? null;
+  if (!session?.accessToken || !ownerEmail) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
   const folderRows = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, uniqueKeys));
+    .where(and(inArray(driveFolders.folderKey, uniqueKeys), eq(driveFolders.ownerEmail, ownerEmail)));
 
   for (const row of folderRows) {
     folderKeyMap.set(row.folderKey, row.driveId);
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
     ? await db
         .select({ title: materials.title, driveFolderId: materials.driveFolderId })
         .from(materials)
-        .where(inArray(materials.driveFolderId, driveIds))
+        .where(and(inArray(materials.driveFolderId, driveIds), eq(materials.ownerEmail, ownerEmail)))
     : [];
   const dbMaterialsByFolder = new Map<string, Set<string>>();
   for (const m of dbMaterials) {

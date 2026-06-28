@@ -10,7 +10,7 @@ import { google } from "googleapis";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { buildFolderKey } from "@/lib/upload-utils";
 
 function getDriveClient(accessToken: string) {
@@ -79,7 +79,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const ownerEmail = session?.user?.email ?? null;
+  if (!session?.accessToken || !ownerEmail) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
 
   for (const file of body.files) {
     try {
-      // Look up target folder
+      // Look up target folder scoped to the authenticated user
       const folderKey =
         file.destination === "YearPlan"
           ? buildFolderKey(file.grade, "YearPlan")
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
       const [folder] = await db
         .select({ driveId: driveFolders.driveId })
         .from(driveFolders)
-        .where(eq(driveFolders.folderKey, folderKey))
+        .where(and(eq(driveFolders.folderKey, folderKey), eq(driveFolders.ownerEmail, ownerEmail)))
         .limit(1);
 
       if (!folder) {
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
         fields: "id, name, mimeType, webViewLink",
       });
 
-      // Save to materials DB
+      // Save to materials DB with owner scoping
       await db.insert(materials).values({
         title: file.name,
         materialType: file.materialType || "other",
@@ -136,6 +137,7 @@ export async function POST(req: Request) {
         driveMimeType: copied.data.mimeType!,
         driveWebUrl: copied.data.webViewLink!,
         driveFolderId: folder.driveId,
+        ownerEmail,
         source: "human",
       });
 
