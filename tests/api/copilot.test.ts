@@ -55,6 +55,22 @@ function makeChain(value: unknown) {
   return chain;
 }
 
+// Variant with a spy on .values() to assert what arguments were passed.
+function makeSpiedChain(value: unknown) {
+  const p = Promise.resolve(value);
+  const chain: Record<string, unknown> = {};
+  const self = () => chain;
+  chain.from = self;
+  chain.where = self;
+  chain.orderBy = self;
+  chain.values = vi.fn(() => chain);
+  chain.returning = self;
+  chain.then = (r: (v: unknown) => unknown, j?: (e: unknown) => unknown) => p.then(r, j);
+  chain.catch = (j: (e: unknown) => unknown) => p.catch(j);
+  chain.finally = (fn: () => void) => p.finally(fn);
+  return chain;
+}
+
 function makeRequest(body: unknown) {
   return new Request("http://localhost/api/copilot", {
     method: "POST",
@@ -94,7 +110,9 @@ describe("POST /api/copilot", () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "attacker@evil.com" }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -122,7 +140,9 @@ describe("POST /api/copilot", () => {
       });
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -133,7 +153,9 @@ describe("POST /api/copilot", () => {
       mockGetServerSession.mockResolvedValueOnce(SESSION);
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: null }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "33333333-3333-4333-8333-333333333333" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -146,7 +168,9 @@ describe("POST /api/copilot", () => {
       });
       mockDbSelect.mockReturnValueOnce(makeChain([{ ownerEmail: "teacher@school.edu" }]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }),
+      );
 
       expect(res.status).toBe(403);
       const body = await res.json();
@@ -162,11 +186,38 @@ describe("POST /api/copilot", () => {
       // User message insert
       mockDbInsert.mockReturnValue(makeChain([]));
 
-      const res = await POST(makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }));
+      const res = await POST(
+        makeRequest({ messages: MESSAGES, conversationId: "11111111-1111-4111-8111-111111111111" }),
+      );
 
       // Ownership check passed — should not be blocked
       expect(res.status).toBe(200);
       expect(res.headers.get("X-Conversation-Id")).toBe("11111111-1111-4111-8111-111111111111");
     });
+  });
+});
+
+// ── New-conversation insert — ownerEmail population (issue #270) ─────────────
+describe("POST /api/copilot — new-conversation insert ownerEmail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stores ownerEmail from session when creating a new conversation", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+
+    // First insert is for copilotConversations — use a spied chain to capture .values() arg
+    const convInsertChain = makeSpiedChain([{ id: "new-conv-id" }]);
+    mockDbInsert.mockReturnValueOnce(convInsertChain);
+    // Subsequent inserts (copilotMessages, etc.) and selects (buildCurriculumContext)
+    mockDbInsert.mockReturnValue(makeChain([]));
+    mockDbSelect.mockReturnValue(makeChain([]));
+
+    await POST(makeRequest({ messages: MESSAGES }));
+
+    const valuesSpy = convInsertChain.values as ReturnType<typeof vi.fn>;
+    expect(valuesSpy).toHaveBeenCalledOnce();
+    const insertedValues = valuesSpy.mock.calls[0][0] as { ownerEmail: string | null };
+    expect(insertedValues.ownerEmail).toBe(SESSION.user.email);
   });
 });
