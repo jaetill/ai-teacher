@@ -29,6 +29,26 @@ vi.mock("next/server", () => {
   return { NextRequest: MockNextRequest };
 });
 
+// Mock the DB so the Postgres-backed rate limiter (ADR-0046) runs in-process.
+// Simulates the atomic upsert: per key, return a monotonically increasing count
+// within the window (reset between tests via beforeEach).
+const { rlCounts, mockInsert } = vi.hoisted(() => {
+  const rlCounts = new Map<string, number>();
+  const mockInsert = vi.fn(() => ({
+    values: (v: { key: string }) => ({
+      onConflictDoUpdate: () => ({
+        returning: async () => {
+          const n = (rlCounts.get(v.key) ?? 0) + 1;
+          rlCounts.set(v.key, n);
+          return [{ count: n, windowStart: new Date() }];
+        },
+      }),
+    }),
+  }));
+  return { rlCounts, mockInsert };
+});
+vi.mock("@/db", () => ({ db: { insert: mockInsert } }));
+
 import { POST } from "../../src/app/api/feedback/route";
 import { NextRequest } from "next/server";
 
@@ -49,6 +69,7 @@ function makeRequest(body: unknown, options: { ip?: string; xff?: string } = { i
 describe("POST /api/feedback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    rlCounts.clear();
     process.env.GITHUB_TOKEN = "test-token";
   });
 
