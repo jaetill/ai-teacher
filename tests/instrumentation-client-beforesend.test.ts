@@ -71,4 +71,13 @@ describe("instrumentation-client – beforeSend", () => {
     expect(() => beforeSend(event)).not.toThrow();
     expect(beforeSend(event)).not.toBeNull();
   });
+
+  it("does not call Sentry.init when DSN is absent", async () => {
+    initMock.mockReset();
+    vi.resetModules();
+    delete process.env.NEXT_PUBLIC_SENTRY_DSN;
+    await import("../instrumentation-client");
+    expect(initMock).not.toHaveBeenCalled();
+    process.env.NEXT_PUBLIC_SENTRY_DSN = "https://fake@o0.ingest.sentry.io/0";
+  });
 });
