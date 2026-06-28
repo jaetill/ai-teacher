@@ -31,6 +31,19 @@ export async function POST(req: Request) {
 
   const { files } = (await req.json()) as { files: FileInput[] };
 
+  // Bound the array — each file drives folder-key building and Drive lookups;
+  // an unbounded files[] is an authenticated resource-exhaustion vector (#536).
+  if (!Array.isArray(files) || files.length === 0) {
+    return Response.json({ error: "files is required" }, { status: 400 });
+  }
+  const MAX_FILES = 200;
+  if (files.length > MAX_FILES) {
+    return Response.json(
+      { error: `Too many files (max ${MAX_FILES})` },
+      { status: 400 }
+    );
+  }
+
   // ── Build unique folder keys and look them up ───
   const folderKeyMap = new Map<string, string>(); // folderKey → driveId
   const fileFolderKeys = files.map((f) =>
