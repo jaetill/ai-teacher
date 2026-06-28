@@ -41,7 +41,7 @@ export async function POST(
     return Response.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  if (!unit.userId || unit.userId !== session.user?.id) {
+  if (!unit.userId || (session.user?.id && unit.userId !== session.user.id)) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
