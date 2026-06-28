@@ -38,6 +38,13 @@ export async function POST(req: Request) {
     rawPlan?: string;
   };
 
+  if (!body.grade || !body.schoolYear || !Array.isArray(body.units) || body.units.length === 0) {
+    return Response.json(
+      { error: "grade, schoolYear, and units are required" },
+      { status: 400 },
+    );
+  }
+
   if (body.rawPlan && body.rawPlan.length > 50_000) {
     return Response.json({ error: "rawPlan too large" }, { status: 400 });
   }

@@ -74,6 +74,54 @@ describe("POST /api/year-plan/save", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns 400 when units is missing from the body", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+
+    const res = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ grade: 6, schoolYear: "2026" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("grade, schoolYear, and units are required");
+  });
+
+  it("returns 400 when units is null", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+
+    const res = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ grade: 6, schoolYear: "2026", units: null }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("grade, schoolYear, and units are required");
+  });
+
+  it("returns 400 when units is an empty array", async () => {
+    mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
+
+    const res = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ grade: 6, schoolYear: "2026", units: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("grade, schoolYear, and units are required");
+  });
+
   it("returns 400 when rawPlan exceeds 50000 chars", async () => {
     mockGetServerSession.mockResolvedValue({ user: { id: "user-alice" } });
 
@@ -84,7 +132,16 @@ describe("POST /api/year-plan/save", () => {
         body: JSON.stringify({
           grade: 7,
           schoolYear: "2025-2026",
-          units: [],
+          units: [
+            {
+              title: "Unit 1",
+              weeks: 4,
+              standards: "none",
+              summary: "A summary",
+              anchorTexts: "A book",
+              flags: "None",
+            },
+          ],
           rawPlan: "x".repeat(50_001),
         }),
       }),
