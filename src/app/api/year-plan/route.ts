@@ -72,6 +72,17 @@ export async function POST(request: Request) {
     return new Response("grade must be 6, 7, or 8", { status: 400 });
   }
 
+  // The size cap below measures .length on these fields; a non-string value
+  // would make .length undefined and skip the cap, bypassing the quota (#477).
+  if (
+    typeof schoolYear !== "string" ||
+    typeof standards !== "string" ||
+    (existingCurriculum !== undefined && typeof existingCurriculum !== "string") ||
+    (notes !== undefined && typeof notes !== "string")
+  ) {
+    return new Response("text fields must be strings", { status: 400 });
+  }
+
   if (
     schoolYear.length > 50 ||
     standards.length > 10_000 ||

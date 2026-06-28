@@ -66,6 +66,13 @@ export async function POST(request: Request) {
     });
   }
 
+  // grade/weeks are numbers; a non-number (e.g. a huge string) would pass the
+  // truthy check above and skip the size cap below (which only measures the
+  // string fields), bypassing the quota and being interpolated into the prompt (#477).
+  if (typeof grade !== "number" || typeof weeks !== "number") {
+    return new Response("grade and weeks must be numbers", { status: 400 });
+  }
+
   if (
     theme.length > 1_000 ||
     standards.length > 10_000 ||

@@ -40,9 +40,11 @@ vi.mock("drizzle-orm", () => ({
 
 // ── Imports after mocks ─────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
 import { POST } from "../../../src/app/api/import/build-curriculum/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockEq = vi.mocked(eq);
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -224,6 +226,17 @@ describe("POST /api/import/build-curriculum", () => {
       // Fallback SELECT should NOT have been called — only 5 selects total
       // (folders, materials, standards, schoolYears, existingUnits)
       expect(mockDbSelect).toHaveBeenCalledTimes(5);
+    });
+
+    it("scopes DB lookups by the session ownerEmail (#142)", async () => {
+      setupMocks({ courseInsertReturn: [{ id: "c1" }] });
+
+      await POST(makeRequest());
+
+      // The driveFolders folder lookup and the course query both filter by the
+      // caller's email — eq() must have been invoked with the session email.
+      const eqSecondArgs = mockEq.mock.calls.map((c) => c[1]);
+      expect(eqSecondArgs).toContain("teacher@school.edu");
     });
 
     it("falls back to SELECT and succeeds when the insert loses a concurrent race", async () => {
