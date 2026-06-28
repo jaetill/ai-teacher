@@ -24,6 +24,8 @@ vi.mock("drizzle-orm", () => ({
   asc: vi.fn(),
   inArray: vi.fn(),
   and: vi.fn(),
+  or: vi.fn(),
+  isNull: vi.fn(),
   getTableColumns: vi.fn().mockReturnValue({}),
 }));
 

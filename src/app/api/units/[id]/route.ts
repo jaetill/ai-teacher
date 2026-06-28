@@ -15,7 +15,7 @@ import {
   materials,
   materialAttachments,
 } from "@/db/schema";
-import { eq, asc, inArray, and, getTableColumns } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, isNull, or } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -105,18 +105,20 @@ export async function GET(
 
   // ── Drive folder links ───
   const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
+  const ownerPredicate = or(eq(driveFolders.ownerEmail, email), isNull(driveFolders.ownerEmail));
+
   const curriculumFolderKey = `grade_${grade}_${quarter}_Curriculum`;
   const [curriculumFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, curriculumFolderKey))
+    .where(and(eq(driveFolders.folderKey, curriculumFolderKey), ownerPredicate))
     .limit(1);
 
   const quarterFolderKey = `grade_${grade}_${quarter}`;
   const [quarterFolder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, quarterFolderKey))
+    .where(and(eq(driveFolders.folderKey, quarterFolderKey), ownerPredicate))
     .limit(1);
 
   // ── Material attachments per lesson ───

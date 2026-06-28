@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { uploadFile } from "@/lib/drive";
 import { buildFolderKey, getMimeType } from "@/lib/upload-utils";
 import { Readable } from "stream";
@@ -15,6 +15,10 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
   const formData = await req.formData();
@@ -38,7 +42,12 @@ export async function POST(req: Request) {
   const [folder] = await db
     .select({ driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(eq(driveFolders.folderKey, folderKey))
+    .where(
+      and(
+        eq(driveFolders.folderKey, folderKey),
+        or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail)),
+      )
+    )
     .limit(1);
 
   if (!folder) {
