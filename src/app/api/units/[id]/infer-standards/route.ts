@@ -18,6 +18,13 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
 
+const VALID_COVERAGE_TYPES = new Set([
+  "introduces",
+  "teaches",
+  "reinforces",
+  "assesses",
+]);
+
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -140,6 +147,7 @@ ${lessonsList}`,
 
     for (const s of m.standards) {
       if (!validStandardIds.has(s.id)) continue;
+      if (!VALID_COVERAGE_TYPES.has(s.coverageType)) continue;
       await db
         .insert(lessonStandards)
         .values({

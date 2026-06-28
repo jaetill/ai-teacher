@@ -298,4 +298,58 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.error).toBeTruthy();
     });
   });
+
+  describe("coverageType allowlist", () => {
+    // Normal AI_RESPONSE has 1 lesson with 1 standard and 1 material.
+    // Insert call order: courses(1) + units(1) + unitStandards(1) + lessons(1)
+    //   + lessonStandards(1) + materialAttachments(1) = 6 total.
+    // When coverageType is invalid, lessonStandards is skipped → 5 inserts.
+
+    function setupCoverageTypeTest(coverageType: string) {
+      const response = {
+        ...AI_RESPONSE,
+        lessons: [{ ...AI_RESPONSE.lessons[0], standards: [{ id: "5.RL.1", coverageType }] }],
+      };
+      mockMessagesCreate.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(response) }],
+      });
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // courses
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValue(makeChain([])); // lessonStandards + materialAttachments
+    }
+
+    it("skips lessonStandards rows whose AI-returned coverageType is not in the allowlist", async () => {
+      setupCoverageTypeTest("hacked");
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      // courses + units + unitStandards + lessons + materialAttachments = 5 (lessonStandards skipped)
+      expect(mockDbInsert).toHaveBeenCalledTimes(5);
+    });
+
+    it.each(["introduces", "teaches", "reinforces", "assesses"])(
+      "accepts valid coverageType %s",
+      async (ct) => {
+        setupCoverageTypeTest(ct);
+
+        const res = await POST(makeRequest());
+
+        expect(res.status).toBe(200);
+        // courses + units + unitStandards + lessons + lessonStandards + materialAttachments = 6
+        expect(mockDbInsert).toHaveBeenCalledTimes(6);
+      },
+    );
+  });
 });
