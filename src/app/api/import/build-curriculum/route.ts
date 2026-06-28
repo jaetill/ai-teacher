@@ -23,6 +23,7 @@ import {
 } from "@/db/schema";
 import { eq, inArray, asc, and, isNull } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { normalizeMaterialRole } from "@/lib/material-roles";
 
 const client = new Anthropic();
 
@@ -331,7 +332,7 @@ ${standardsList}`,
           materialId,
           attachableType: "lesson",
           attachableId: createdLesson.id,
-          role: mat.role || "supporting",
+          role: normalizeMaterialRole(mat.role),
           sortOrder: 0,
         })
         .onConflictDoNothing();
@@ -349,9 +350,11 @@ ${standardsList}`,
     materialCount: quarterMaterials.length,
   });
   } catch (err) {
+    // Log the full error server-side, but never return err.message to the
+    // client — it can leak DB internals, query fragments, or upstream details.
     console.error("build-curriculum error:", err);
     return Response.json(
-      { error: err instanceof Error ? err.message : "Internal server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
