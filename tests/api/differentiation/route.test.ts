@@ -45,6 +45,7 @@ describe("POST /api/differentiation — session auth (401)", () => {
     expect(res.status).toBe(401);
     const json = await res.json();
     expect(json.error).toBe("Unauthorized");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 });
 
