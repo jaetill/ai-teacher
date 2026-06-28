@@ -130,24 +130,16 @@ describe("POST /api/units/[id]/infer-standards", () => {
     expect(body.error).toBe("Forbidden");
   });
 
-  it("allows the unit owner to infer standards", async () => {
-    mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
+  it("returns 401 when session.user.id is absent", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: {} });
 
     const unitId = "00000000-0000-0000-0000-000000000002";
-    // unit owned by alice — same as session user
-    mockDbSelect.mockReturnValueOnce(
-      makeChain([{ id: unitId, title: "Alice's Unit", userId: "google-sub-alice" }]),
-    );
-    // empty lessons/standards → 400 (past the auth gates, not blocked by ownership check)
-    mockDbSelect.mockReturnValue(makeChain([]));
-
     const res = await POST(
       new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
       makeParams(unitId),
     );
 
-    expect(res.status).not.toBe(403);
-    expect(res.status).not.toBe(401);
+    expect(res.status).toBe(401);
   });
 
   it("skips lessonStandards rows whose AI-returned coverageType is not in the allowlist", async () => {
