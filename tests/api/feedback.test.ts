@@ -12,6 +12,7 @@ vi.mock("@octokit/rest", () => {
 // Mock next/server's NextRequest with a minimal implementation.
 vi.mock("next/server", () => {
   class MockNextRequest {
+    ip?: string;
     private _body: unknown;
     headers: Map<string, string>;
     constructor(
@@ -31,12 +32,18 @@ vi.mock("next/server", () => {
 import { POST } from "../../src/app/api/feedback/route";
 import { NextRequest } from "next/server";
 
-function makeRequest(body: unknown, ip = "1.2.3.4") {
-  return new NextRequest("http://localhost/api/feedback", {
+function makeRequest(body: unknown, options: { ip?: string; xff?: string } = { ip: "1.2.3.4" }) {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (options.xff !== undefined) headers["x-forwarded-for"] = options.xff;
+  const req = new NextRequest("http://localhost/api/feedback", {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json", "x-forwarded-for": ip },
+    headers,
   });
+  if (options.ip !== undefined) {
+    (req as unknown as { ip: string }).ip = options.ip;
+  }
+  return req;
 }
 
 describe("POST /api/feedback", () => {
@@ -87,5 +94,34 @@ describe("POST /api/feedback", () => {
     const res = await POST(req as unknown as import("next/server").NextRequest);
 
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when no IP can be determined (no request.ip, no X-Forwarded-For)", async () => {
+    const req = makeRequest({ type: "bug", description: "Something broke on the login page." }, {});
+    const res = await POST(req as unknown as import("next/server").NextRequest);
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("bad_request");
+  });
+
+  it("prevents XFF spoofing — changing the leftmost XFF value does not create a new rate-limit bucket", async () => {
+    const body = { type: "bug", description: "Rate-limit XFF spoofing test description here." };
+    // 10 requests with different spoofed leading IPs but the same Vercel-appended real IP
+    for (let i = 0; i < 10; i++) {
+      const res = await POST(
+        makeRequest(body, {
+          xff: `192.0.2.${i}, 203.0.113.7`,
+        }) as unknown as import("next/server").NextRequest,
+      );
+      expect(res.status).toBe(201);
+    }
+    // 11th request with yet another spoofed leading IP — must still hit the same bucket
+    const res = await POST(
+      makeRequest(body, {
+        xff: "198.51.100.99, 203.0.113.7",
+      }) as unknown as import("next/server").NextRequest,
+    );
+    expect(res.status).toBe(429);
   });
 });
