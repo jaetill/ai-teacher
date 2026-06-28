@@ -102,3 +102,27 @@ describe("authOptions.callbacks.session", () => {
     expect((result.user as { id?: string }).id).toBeUndefined();
   });
 });
+
+describe("authOptions.callbacks.jwt (#508)", () => {
+  const jwtCallback = authOptions.callbacks!.jwt!;
+  type JwtArgs = Parameters<typeof jwtCallback>[0];
+
+  it("copies access + refresh tokens from the account onto the JWT on sign-in", async () => {
+    const token = { sub: "user-1" } as JWT;
+    const account = { access_token: "at-123", refresh_token: "rt-456" };
+    const result = (await jwtCallback({ token, account } as unknown as JwtArgs)) as JWT & {
+      accessToken?: string;
+      refreshToken?: string;
+    };
+    expect(result.accessToken).toBe("at-123");
+    expect(result.refreshToken).toBe("rt-456");
+  });
+
+  it("leaves the JWT unchanged on later calls when no account is present", async () => {
+    const token = { sub: "user-1", accessToken: "existing" } as JWT & { accessToken?: string };
+    const result = (await jwtCallback({ token, account: null } as unknown as JwtArgs)) as JWT & {
+      accessToken?: string;
+    };
+    expect(result.accessToken).toBe("existing");
+  });
+});

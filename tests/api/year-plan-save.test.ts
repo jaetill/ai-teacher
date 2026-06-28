@@ -234,4 +234,63 @@ describe("POST /api/year-plan/save", () => {
     expect(unitValuesSpy).toHaveBeenCalledOnce();
     expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ userId: "user-alice" });
   });
+
+  it("returns { courseId, units } with the created unit on success (#514)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
+    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.courseId).toBe("c1");
+    expect(body.units).toEqual([{ id: "u1", title: "Unit 1" }]);
+  });
+
+  it("links parsed standard codes to the unit via unitStandards (#515)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+    // 1. existing course lookup, 2. standards lookup (codes matched)
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "c1" }]))
+      .mockReturnValueOnce(makeChain([{ id: "8.RL.1.A" }]));
+
+    const stdChain = makeChain([]);
+    const stdValuesSpy = vi.fn().mockReturnValue(stdChain);
+    stdChain.values = stdValuesSpy;
+    mockDbInsert
+      .mockReturnValueOnce(makeChain([{ id: "u1" }])) // unit insert
+      .mockReturnValueOnce(stdChain); // unitStandards insert
+
+    const req = new Request("http://localhost/api/year-plan/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        grade: 8,
+        schoolYear: "2025-2026",
+        units: [
+          {
+            title: "Unit 1",
+            weeks: 4,
+            standards: "Covers 8.RL.1.A in depth",
+            summary: "A summary",
+            anchorTexts: "A book",
+            flags: "None",
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(stdValuesSpy).toHaveBeenCalledOnce();
+    expect(stdValuesSpy.mock.calls[0][0]).toEqual([
+      { unitId: "u1", standardId: "8.RL.1.A", emphasis: "primary" },
+    ]);
+  });
 });
