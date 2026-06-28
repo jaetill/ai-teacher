@@ -71,6 +71,19 @@ describe("POST /api/year-plan", () => {
   });
 });
 
+describe("POST /api/year-plan — numeric field guards (400)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStreamFn.mockReturnValue({ [Symbol.asyncIterator]: async function* () {} });
+    authedSession();
+  });
+
+  it("returns 400 when grade is sent as a long string", async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, grade: "A".repeat(50_000) }));
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/year-plan — size guards (413)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -60,6 +60,13 @@ export async function POST(request: Request) {
     context?: string;
   };
 
+  if (typeof grade !== "number" || !Number.isFinite(grade)) {
+    return new Response("grade must be a number", { status: 400 });
+  }
+  if (typeof weeks !== "number" || !Number.isFinite(weeks)) {
+    return new Response("weeks must be a number", { status: 400 });
+  }
+
   if (!grade || !theme || !weeks || !standards) {
     return new Response("grade, theme, weeks, and standards are required", {
       status: 400,

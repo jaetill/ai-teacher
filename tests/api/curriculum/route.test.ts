@@ -73,6 +73,24 @@ describe("POST /api/curriculum", () => {
   });
 });
 
+describe("POST /api/curriculum — numeric field guards (400)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStreamFn.mockReturnValue({ [Symbol.asyncIterator]: async function* () {} });
+    mockSession.mockResolvedValueOnce({ user: { email: "teacher@example.com" }, expires: "" });
+  });
+
+  it("returns 400 when grade is sent as a long string", async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, grade: "A".repeat(50_000) }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when weeks is sent as a long string", async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, weeks: "A".repeat(50_000) }));
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/curriculum — size guards (413)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

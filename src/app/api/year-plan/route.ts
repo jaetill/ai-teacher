@@ -62,6 +62,10 @@ export async function POST(request: Request) {
       notes?: string;
     };
 
+  if (typeof grade !== "number" || !Number.isFinite(grade)) {
+    return new Response("grade must be a number", { status: 400 });
+  }
+
   if (!grade || !schoolYear || !standards) {
     return new Response("grade, schoolYear, and standards are required", {
       status: 400,
