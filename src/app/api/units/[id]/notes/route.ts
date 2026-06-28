@@ -37,7 +37,11 @@ export async function POST(
   const forbidden = await assertCourseOwnership(unit.courseId, userEmail);
   if (forbidden) return forbidden;
 
-  const { notes } = (await req.json()) as { notes: string };
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body.notes !== "string") {
+    return Response.json({ error: "notes is required" }, { status: 400 });
+  }
+  const { notes } = body as { notes: string };
 
   const [updated] = await db
     .update(units)

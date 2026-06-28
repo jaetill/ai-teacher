@@ -94,6 +94,38 @@ describe("POST /api/units/[id]/notes", () => {
     expect(body.error).toBe("Forbidden");
   });
 
+  it("returns 400 when notes field is missing from request body", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
+    mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-1" }]));
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-1" }]));
+
+    const req = new Request("http://localhost/api/units/u1/notes", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const res = await POST(req, makeParams("u1"));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("notes is required");
+  });
+
+  it("returns 400 when request body is malformed JSON", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
+    mockDbSelect.mockReturnValueOnce(makeChain([{ courseId: "course-1" }]));
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "course-1" }]));
+
+    const req = new Request("http://localhost/api/units/u1/notes", {
+      method: "POST",
+      body: "not-json",
+    });
+    const res = await POST(req, makeParams("u1"));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("notes is required");
+  });
+
   it("returns 200 and saves notes for the authenticated owner", async () => {
     mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
     // unit lookup → found
