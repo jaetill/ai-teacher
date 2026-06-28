@@ -71,6 +71,33 @@ describe("POST /api/year-plan", () => {
   });
 });
 
+describe("POST /api/year-plan — grade validation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStreamFn.mockReturnValue({ [Symbol.asyncIterator]: async function* () {} });
+    authedSession();
+  });
+
+  it("returns 400 for grade 5 (below range)", async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, grade: 5 }));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/grade must be 6, 7, or 8/i);
+  });
+
+  it("returns 400 for grade 9 (above range)", async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, grade: 9 }));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 200 for each valid grade (6, 7, 8)", async () => {
+    for (const grade of [6, 7, 8]) {
+      authedSession();
+      const res = await POST(makeRequest({ ...VALID_BODY, grade }));
+      expect(res.status).toBe(200);
+    }
+  });
+});
+
 describe("POST /api/year-plan — size guards (413)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
