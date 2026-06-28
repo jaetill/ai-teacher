@@ -3,8 +3,7 @@
 // Accepts filenames and uses Claude to classify each into
 // grade, destination (quarter or year plan), category, and material type.
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth-helpers";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -36,8 +35,8 @@ Return ONLY a JSON array with one object per filename:
 No markdown fencing, no explanation — just the JSON array.`;
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessToken(req);
+  if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 

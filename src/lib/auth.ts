@@ -24,7 +24,11 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken as string;
+      // Deliberately NOT exposing the Google access/refresh token on the session:
+      // the session is serialized to the client (readable via /api/auth/session
+      // and any client JS), so putting the Drive-scoped OAuth token there gives
+      // an XSS an easy exfiltration target (#507). Server code that needs the
+      // token reads it from the JWT via getAccessToken() (src/lib/auth-helpers).
       if (session.user) session.user.id = token.sub;
       return session;
     },

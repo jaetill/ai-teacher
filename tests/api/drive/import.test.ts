@@ -9,6 +9,7 @@ const { mockDbSelect, mockDbInsert, mockDriveFilesList, mockDriveFilesCopy } = v
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
+vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect, insert: mockDbInsert } }));
 vi.mock("@/db/schema", () => ({ driveFolders: {}, materials: {} }));
@@ -35,10 +36,12 @@ vi.mock("@/lib/upload-utils", () => ({
 }));
 
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { eq, or, isNull } from "drizzle-orm";
 import { GET, POST } from "../../../src/app/api/drive/import/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockGetToken = vi.mocked(getToken);
 const mockEq = vi.mocked(eq);
 const mockOr = vi.mocked(or);
 const mockIsNull = vi.mocked(isNull);
@@ -80,10 +83,11 @@ function makePostRequest(body: object = makePostBody()) {
 describe("GET /api/drive/import", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetToken.mockResolvedValue({ accessToken: "tok" });
   });
 
-  it("returns 401 when there is no session", async () => {
-    mockGetServerSession.mockResolvedValueOnce(null);
+  it("returns 401 when there is no access token", async () => {
+    mockGetToken.mockResolvedValueOnce(null);
     const req = new Request("http://localhost/api/drive/import?folderId=folder-1");
 
     const res = await GET(req);
@@ -93,8 +97,8 @@ describe("GET /api/drive/import", () => {
     expect(body.error).toBe("Not authenticated");
   });
 
-  it("returns 401 when session has no accessToken", async () => {
-    mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
+  it("returns 401 when the JWT carries no accessToken", async () => {
+    mockGetToken.mockResolvedValueOnce({});
     const req = new Request("http://localhost/api/drive/import?folderId=folder-1");
 
     const res = await GET(req);
@@ -105,10 +109,6 @@ describe("GET /api/drive/import", () => {
   });
 
   it("returns 400 when folderId is missing", async () => {
-    mockGetServerSession.mockResolvedValueOnce({
-      accessToken: "tok",
-      user: { email: "teacher@school.edu" },
-    });
     const req = new Request("http://localhost/api/drive/import");
 
     const res = await GET(req);
@@ -119,10 +119,6 @@ describe("GET /api/drive/import", () => {
   });
 
   it("returns file list when Drive folder is scanned successfully", async () => {
-    mockGetServerSession.mockResolvedValueOnce({
-      accessToken: "tok",
-      user: { email: "teacher@school.edu" },
-    });
     mockDriveFilesList.mockResolvedValueOnce({
       data: {
         files: [
@@ -146,10 +142,11 @@ describe("GET /api/drive/import", () => {
 describe("POST /api/drive/import", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetToken.mockResolvedValue({ accessToken: "tok" });
   });
 
-  it("returns 401 when there is no session", async () => {
-    mockGetServerSession.mockResolvedValueOnce(null);
+  it("returns 401 when there is no access token", async () => {
+    mockGetToken.mockResolvedValueOnce(null);
 
     const res = await POST(makePostRequest());
 

@@ -7,6 +7,7 @@ const { mockDbSelect, mockListFilesInFolder } = vi.hoisted(() => ({
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
+vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect } }));
 vi.mock("@/db/schema", () => ({ driveFolders: {}, materials: {} }));
@@ -23,10 +24,12 @@ vi.mock("@/lib/upload-utils", () => ({
 }));
 
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { eq, or, isNull } from "drizzle-orm";
 import { POST } from "../../../src/app/api/upload/check-duplicates/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockGetToken = vi.mocked(getToken);
 const mockEq = vi.mocked(eq);
 const mockOr = vi.mocked(or);
 const mockIsNull = vi.mocked(isNull);
@@ -56,10 +59,11 @@ describe("POST /api/upload/check-duplicates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListFilesInFolder.mockResolvedValue([]);
+    mockGetToken.mockResolvedValue({ accessToken: "tok" });
   });
 
-  it("returns 401 when there is no session", async () => {
-    mockGetServerSession.mockResolvedValueOnce(null);
+  it("returns 401 when there is no access token", async () => {
+    mockGetToken.mockResolvedValueOnce(null);
 
     const res = await POST(makeRequest());
 
@@ -68,8 +72,8 @@ describe("POST /api/upload/check-duplicates", () => {
     expect(body.error).toBe("Not authenticated");
   });
 
-  it("returns 401 when session has no accessToken", async () => {
-    mockGetServerSession.mockResolvedValueOnce({ user: { email: "teacher@school.edu" } });
+  it("returns 401 when the JWT carries no accessToken", async () => {
+    mockGetToken.mockResolvedValueOnce({});
 
     const res = await POST(makeRequest());
 

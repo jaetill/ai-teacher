@@ -7,6 +7,7 @@ const { mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
+vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect, insert: mockDbInsert } }));
 vi.mock("@/db/schema", () => ({ driveFolders: {}, materials: {} }));
@@ -33,10 +34,12 @@ vi.mock("stream", async (importOriginal) => {
 });
 
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { eq, or, isNull } from "drizzle-orm";
 import { POST } from "../../../src/app/api/upload/file/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
+const mockGetToken = vi.mocked(getToken);
 const mockEq = vi.mocked(eq);
 const mockOr = vi.mocked(or);
 const mockIsNull = vi.mocked(isNull);
@@ -84,10 +87,11 @@ function makeFormData(overrides: Record<string, string> = {}) {
 describe("POST /api/upload/file", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetToken.mockResolvedValue({ accessToken: "tok" });
   });
 
-  it("returns 401 when there is no session", async () => {
-    mockGetServerSession.mockResolvedValueOnce(null);
+  it("returns 401 when there is no access token", async () => {
+    mockGetToken.mockResolvedValueOnce(null);
     const req = { formData: () => Promise.resolve(makeFormData()) } as unknown as Request;
 
     const res = await POST(req);

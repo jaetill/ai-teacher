@@ -4,6 +4,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
@@ -12,11 +13,12 @@ import { buildFolderKey, getMimeType } from "@/lib/upload-utils";
 import { Readable } from "stream";
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.accessToken) {
+  const accessToken = await getAccessToken(req);
+  if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const ownerEmail = session.user?.email;
+  const session = await getServerSession(authOptions);
+  const ownerEmail = session?.user?.email;
   if (!ownerEmail) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
   const readable = Readable.from(buffer);
 
   const driveFile = await uploadFile(
-    session.accessToken,
+    accessToken,
     name,
     readable,
     mimeType,
