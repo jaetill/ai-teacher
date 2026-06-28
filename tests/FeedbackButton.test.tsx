@@ -11,6 +11,15 @@ async function openDialog() {
   return { user, trigger };
 }
 
+describe("FeedbackButton privacy disclosure", () => {
+  it("disclosure copy does not claim email is stored", async () => {
+    await openDialog();
+    const disclosure = screen.getByText(/we collect only what you type/i);
+    expect(disclosure.textContent).not.toMatch(/stored privately/i);
+    expect(disclosure.textContent).not.toMatch(/stored for/i);
+  });
+});
+
 describe("FeedbackButton keyboard accessibility", () => {
   it("auto-focuses the Type select when dialog opens", async () => {
     await openDialog();
