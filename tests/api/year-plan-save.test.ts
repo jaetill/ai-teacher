@@ -74,6 +74,8 @@ describe("POST /api/year-plan/save", () => {
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
   });
 
   it("returns 401 when session has no email claim", async () => {
