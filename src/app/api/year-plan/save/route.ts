@@ -49,6 +49,17 @@ export async function POST(req: Request) {
     );
   }
 
+  // Bound the array: each unit triggers DB inserts in a loop, so an unbounded
+  // units[] is an authenticated resource-exhaustion vector (#513). A school year
+  // has at most a few dozen units; 100 is a generous ceiling.
+  const MAX_UNITS = 100;
+  if (body.units.length > MAX_UNITS) {
+    return Response.json(
+      { error: `Too many units (max ${MAX_UNITS})` },
+      { status: 400 },
+    );
+  }
+
   if (body.rawPlan && body.rawPlan.length > 50_000) {
     return Response.json({ error: "rawPlan too large" }, { status: 400 });
   }
