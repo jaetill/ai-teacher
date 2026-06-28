@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────────
 const { mockStreamFn } = vi.hoisted(() => ({
@@ -39,12 +39,17 @@ const VALID_BODY = {
 };
 
 describe("POST /api/communications — tone length guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns 401 when unauthenticated", async () => {
     mockSession.mockResolvedValueOnce(null);
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(401);
     const json = await res.json();
     expect(json.error).toBe("Unauthorized");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 
   it("returns 413 when tone exceeds 50 chars", async () => {

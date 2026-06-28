@@ -97,6 +97,7 @@ describe("POST /api/copilot — conversationId UUID validation", () => {
     const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
 
     expect(res.status).toBe(401);
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 
   it("returns 400 when conversationId is not a valid UUID", async () => {

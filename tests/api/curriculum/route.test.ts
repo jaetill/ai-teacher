@@ -49,6 +49,7 @@ describe("POST /api/curriculum", () => {
     expect(res.status).toBe(401);
     const json = await res.json();
     expect(json.error).toBe("Unauthorized");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 
   it("returns 400 when required fields are missing", async () => {
