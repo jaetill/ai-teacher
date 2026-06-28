@@ -84,6 +84,51 @@ describe("POST /api/lessons/[id]/notes", () => {
     expect(body.error).toBe("Session missing email");
   });
 
+  it("returns 400 on malformed JSON body", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+
+    const req = new Request("http://localhost/api/lessons/lesson-1/notes", {
+      method: "POST",
+      body: "not-json",
+    });
+
+    const res = await POST(req, PARAMS);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid JSON");
+  });
+
+  it("returns 400 when notes field is missing", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+
+    const res = await POST(makeRequest({}), PARAMS);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid notes");
+  });
+
+  it("returns 400 when notes is not a string", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+
+    const res = await POST(makeRequest({ notes: 42 }), PARAMS);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid notes");
+  });
+
+  it("returns 400 when notes exceeds 50 000 characters", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+
+    const res = await POST(makeRequest({ notes: "x".repeat(50_001) }), PARAMS);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid notes");
+  });
+
   it("returns 404 when lesson does not exist", async () => {
     mockGetServerSession.mockResolvedValueOnce(SESSION);
     // lessons query → not found

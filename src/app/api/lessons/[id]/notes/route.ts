@@ -23,7 +23,17 @@ export async function POST(
   }
 
   const { id } = await params;
-  const { notes } = (await req.json()) as { notes: string };
+
+  let notes: string;
+  try {
+    const body = await req.json();
+    if (typeof body?.notes !== "string" || body.notes.length > 50_000) {
+      return Response.json({ error: "Invalid notes" }, { status: 400 });
+    }
+    notes = body.notes;
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
   const [lesson] = await db
     .select({ unitId: lessons.unitId })
