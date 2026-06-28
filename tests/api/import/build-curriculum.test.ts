@@ -300,6 +300,26 @@ describe("POST /api/import/build-curriculum", () => {
       expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher@school.edu" });
     });
 
+    it("fallback SELECT filters by ownerEmail so a second teacher gets her own course, not the first teacher's", async () => {
+      const { eq: mockEq } = await import("drizzle-orm");
+      vi.mocked(mockEq).mockClear();
+
+      mockGetServerSession.mockResolvedValue({
+        user: { email: "second@school.edu", name: "Teacher B" },
+      });
+
+      setupMocks({
+        courseInsertReturn: [], // insert lost a race (first teacher's row exists)
+        courseFallbackReturn: [{ id: "c2" }], // fallback finds second teacher's own row
+      });
+
+      await POST(makeRequest());
+
+      // eq must have been called with the second teacher's email in the WHERE clause
+      const eqSecondArgs = vi.mocked(mockEq).mock.calls.map((c) => c[1]);
+      expect(eqSecondArgs).toContain("second@school.edu");
+    });
+
     it("fallback SELECT filters by schoolYearId so races resolve to the correct school year", async () => {
       const { eq: mockEq } = await import("drizzle-orm");
       vi.mocked(mockEq).mockClear();
