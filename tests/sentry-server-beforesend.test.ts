@@ -128,3 +128,49 @@ describe("sentry server config – beforeSend", () => {
     expect(bc[0].data.user.email).toBe("[REDACTED_EMAIL]");
   });
 });
+
+describe("sentry server config – beforeSendTransaction (#25)", () => {
+  let beforeSendTransaction: BeforeSend;
+
+  beforeEach(async () => {
+    initMock.mockReset();
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_SENTRY_DSN = "https://fake@o0.ingest.sentry.io/0";
+    await import("../sentry.server.config");
+    beforeSendTransaction = initMock.mock.calls[0][0]
+      .beforeSendTransaction as BeforeSend;
+  });
+
+  it("is registered", () => {
+    expect(typeof beforeSendTransaction).toBe("function");
+  });
+
+  it("redacts email from span description and data", () => {
+    const event = {
+      spans: [
+        { description: "SELECT * FROM users WHERE email = 'teacher@school.com'", data: {} },
+        { description: "http GET", data: { url: "https://x/api?u=admin@school.org" } },
+      ],
+    };
+    const result = beforeSendTransaction(event)! as unknown as {
+      spans: Array<{ description: string; data: Record<string, string> }>;
+    };
+    expect(result.spans[0].description).toBe(
+      "SELECT * FROM users WHERE email = '[REDACTED_EMAIL]'"
+    );
+    expect(result.spans[1].data.url).toBe("https://x/api?u=[REDACTED_EMAIL]");
+  });
+
+  it("redacts email from the transaction name and request envelope", () => {
+    const event = {
+      transaction: "GET /u/teacher@school.com",
+      request: { url: "https://app/api?who=t@school.com" },
+    };
+    const result = beforeSendTransaction(event)! as unknown as {
+      transaction: string;
+      request: { url: string };
+    };
+    expect(result.transaction).toBe("GET /u/[REDACTED_EMAIL]");
+    expect(result.request.url).toBe("https://app/api?who=[REDACTED_EMAIL]");
+  });
+});

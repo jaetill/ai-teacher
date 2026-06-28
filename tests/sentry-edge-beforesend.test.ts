@@ -172,3 +172,33 @@ describe("sentry edge config – beforeSend", () => {
     expect(bc[0].data.user.email).toBe("[REDACTED_EMAIL]");
   });
 });
+
+describe("sentry edge config – beforeSendTransaction (#25)", () => {
+  let beforeSendTransaction: BeforeSend;
+
+  beforeEach(async () => {
+    initMock.mockReset();
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_SENTRY_DSN = "https://fake@o0.ingest.sentry.io/0";
+    await import("../sentry.edge.config");
+    beforeSendTransaction = initMock.mock.calls[0][0]
+      .beforeSendTransaction as BeforeSend;
+  });
+
+  it("is registered", () => {
+    expect(typeof beforeSendTransaction).toBe("function");
+  });
+
+  it("redacts email from span data and the transaction name", () => {
+    const event = {
+      transaction: "middleware /u/teacher@school.com",
+      spans: [{ description: "fetch", data: { url: "https://x?u=admin@school.org" } }],
+    };
+    const result = beforeSendTransaction(event)! as unknown as {
+      transaction: string;
+      spans: Array<{ data: Record<string, string> }>;
+    };
+    expect(result.transaction).toBe("middleware /u/[REDACTED_EMAIL]");
+    expect(result.spans[0].data.url).toBe("https://x?u=[REDACTED_EMAIL]");
+  });
+});
