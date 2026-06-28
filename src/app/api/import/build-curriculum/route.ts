@@ -26,6 +26,13 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
 
+const VALID_COVERAGE_TYPES = new Set([
+  "introduces",
+  "teaches",
+  "reinforces",
+  "assesses",
+]);
+
 export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
 
 export async function POST(req: Request) {
@@ -290,12 +297,14 @@ ${standardsList}`,
     // Lesson standards
     for (const std of lessonData.standards ?? []) {
       if (!validStdIds.has(std.id)) continue;
+      const coverageType = std.coverageType || "teaches";
+      if (!VALID_COVERAGE_TYPES.has(coverageType)) continue;
       await db
         .insert(lessonStandards)
         .values({
           lessonId: createdLesson.id,
           standardId: std.id,
-          coverageType: std.coverageType || "teaches",
+          coverageType,
         })
         .onConflictDoNothing();
       lessonStdCount++;

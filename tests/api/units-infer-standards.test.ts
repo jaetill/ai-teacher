@@ -149,4 +149,45 @@ describe("POST /api/units/[id]/infer-standards", () => {
     expect(res.status).not.toBe(403);
     expect(res.status).not.toBe(401);
   });
+
+  it("skips lessonStandards rows whose AI-returned coverageType is not in the allowlist", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { id: "google-sub-alice" } });
+
+    const unitId = "00000000-0000-0000-0000-000000000003";
+    // 1. unit lookup
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ id: unitId, title: "Alice's Unit", userId: "google-sub-alice" }]),
+    );
+    // 2. lessons lookup
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ id: "lesson-1", sortOrder: 1, title: "Intro", objectives: [], lessonPlan: {} }]),
+    );
+    // 3. unitStandards + standards join
+    mockDbSelect.mockReturnValueOnce(
+      makeChain([{ id: "STD.1", description: "A standard", strandCode: "RL" }]),
+    );
+
+    // AI returns a coverageType not in the allowlist
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify([
+            { lessonSortOrder: 1, standards: [{ id: "STD.1", coverageType: "hacked" }] },
+          ]),
+        },
+      ],
+    });
+
+    const res = await POST(
+      new Request(`http://localhost/api/units/${unitId}/infer-standards`, { method: "POST" }),
+      makeParams(unitId),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // invalid coverageType was skipped — nothing inserted
+    expect(body.message).toBe("Mapped 0 lesson-standard connections");
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
 });
