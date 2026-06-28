@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────────
-const { mockDbSelect, mockDbUpdate } = vi.hoisted(() => ({
+const { mockDbSelect, mockDbUpdate, mockEq, mockAnd } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockDbUpdate: vi.fn(),
+  mockEq: vi.fn(),
+  mockAnd: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect, update: mockDbUpdate } }));
-vi.mock("@/db/schema", () => ({ units: {}, courses: {} }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(), and: vi.fn() }));
+vi.mock("@/db/schema", () => ({
+  units: { id: "units.id", courseId: "units.courseId" },
+  courses: { id: "courses.id", ownerEmail: "courses.ownerEmail" },
+}));
+vi.mock("drizzle-orm", () => ({ eq: mockEq, and: mockAnd }));
 
 import { getServerSession } from "next-auth";
 import { POST } from "../../src/app/api/units/[id]/notes/route";
+import { courses } from "@/db/schema";
 
 const mockGetServerSession = vi.mocked(getServerSession);
 
@@ -141,5 +147,10 @@ describe("POST /api/units/[id]/notes", () => {
     const body = await res.json();
     expect(body).toEqual({ ok: true });
     expect(mockDbUpdate).toHaveBeenCalledOnce();
+
+    // Ownership predicate guard: if eq(courses.ownerEmail, email) is removed from
+    // assertCourseOwnership's WHERE clause, this assertion fails — catching a silent
+    // IDOR regression even though mock-controlled 403/200 split would still pass.
+    expect(mockEq).toHaveBeenCalledWith(courses.ownerEmail, "teacher@school.edu");
   });
 });
