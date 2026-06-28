@@ -15,7 +15,7 @@ vi.mock("@/db/schema", () => ({
   lessonStandards: {},
   standards: {},
   courses: {},
-  driveFolders: {},
+  driveFolders: { ownerEmail: "ownerEmail" },
   materials: {},
   materialAttachments: {},
 }));
@@ -133,5 +133,35 @@ describe("GET /api/units/[id]", () => {
     expect(body.unit.courseTitle).toBe("ELA 8");
     // Ownership predicate must use the caller's email on the course lookup
     expect(mockEq.mock.calls.some(([, v]) => v === "owner@school.edu")).toBe(true);
+  });
+
+  it("scopes driveFolders queries by ownerEmail to prevent cross-user folder leakage", async () => {
+    mockGetServerSession.mockResolvedValueOnce({ user: { email: "owner@school.edu" } });
+    // 1. units JOIN courses
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([
+        { id: "u1", courseId: "c1", sortOrder: 1, quarter: "Q1", grade: 8, courseTitle: "ELA 8" },
+      ]),
+    );
+    // 2. lessons (none — lessonStandards and lessonAttachments queries skipped)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 3. unitStandards
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 4. driveFolders – curriculum key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 5. driveFolders – quarter key
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+    // 6. unit-level materials
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await GET(new Request("http://localhost/api/units/u1"), makeParams("u1"));
+
+    expect(res.status).toBe(200);
+    // eq must be called with the driveFolders.ownerEmail column and the session email —
+    // removing this predicate would allow cross-user folder rows to be returned.
+    const eqCalls = mockEq.mock.calls as [unknown, unknown][];
+    const ownerEmailCall = eqCalls.find(([col]) => col === "ownerEmail");
+    expect(ownerEmailCall).toBeDefined();
+    expect(ownerEmailCall![1]).toBe("owner@school.edu");
   });
 });
