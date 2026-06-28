@@ -1,0 +1,3 @@
+ALTER TABLE "drive_folders" ADD COLUMN "owner_email" text;
+ALTER TABLE "drive_folders" DROP CONSTRAINT IF EXISTS "uq_drive_folders_key";
+ALTER TABLE "drive_folders" ADD CONSTRAINT "uq_drive_folders_key_owner" UNIQUE NULLS NOT DISTINCT ("folder_key", "owner_email");
