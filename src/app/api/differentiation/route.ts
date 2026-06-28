@@ -40,10 +40,21 @@ export async function POST(request: Request) {
     grade?: number;
   };
 
-  if (!content || !studentNeed || !outputRequest) {
-    return new Response("content, studentNeed, and outputRequest are required", {
-      status: 400,
-    });
+  // Require non-empty strings. A non-string value (e.g. an array or number)
+  // would pass a bare truthy check but make the MAX_BYTES `.length` guard below
+  // behave unpredictably — letting a caller bypass the size cap (#525).
+  if (
+    typeof content !== "string" ||
+    content.length === 0 ||
+    typeof studentNeed !== "string" ||
+    studentNeed.length === 0 ||
+    typeof outputRequest !== "string" ||
+    outputRequest.length === 0
+  ) {
+    return new Response(
+      "content, studentNeed, and outputRequest are required and must be strings",
+      { status: 400 }
+    );
   }
 
   if (grade !== undefined && typeof grade !== "number") {
