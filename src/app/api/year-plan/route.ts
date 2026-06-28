@@ -68,6 +68,10 @@ export async function POST(request: Request) {
     });
   }
 
+  if (![6, 7, 8].includes(grade)) {
+    return new Response("grade must be 6, 7, or 8", { status: 400 });
+  }
+
   if (
     schoolYear.length > 50 ||
     standards.length > 10_000 ||
