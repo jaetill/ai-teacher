@@ -33,6 +33,8 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
+  and: vi.fn(),
+  isNull: vi.fn(),
 }));
 
 // ── Imports after mocks ─────────────────────────────────────────────────
@@ -282,6 +284,22 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(courseValuesSpy).toHaveBeenCalledOnce();
       expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher@school.edu" });
+    });
+
+    it("fallback SELECT filters by schoolYearId so races resolve to the correct school year", async () => {
+      const { eq: mockEq } = await import("drizzle-orm");
+      vi.mocked(mockEq).mockClear();
+
+      setupMocks({
+        courseInsertReturn: [], // insert loses to a concurrent race
+        courseFallbackReturn: [{ id: "c1" }], // fallback finds the right course
+      });
+
+      await POST(makeRequest());
+
+      // eq must have been called with the current school year id in the WHERE clause
+      const eqSecondArgs = vi.mocked(mockEq).mock.calls.map((c) => c[1]);
+      expect(eqSecondArgs).toContain(SCHOOL_YEAR.id);
     });
 
     it("returns 500 gracefully when both insert and fallback SELECT return nothing", async () => {
