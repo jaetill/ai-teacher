@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release:
-    uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@main
+    uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@6859953981679181b26d578453fe1c64b5a9bd0c # main 2026-06-28
     with:
       release-type: node
     secrets:
