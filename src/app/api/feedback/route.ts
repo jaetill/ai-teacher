@@ -69,7 +69,15 @@ function validate(input: FeedbackBody): string | null {
 }
 
 export async function POST(request: NextRequest) {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Prefer Vercel's trusted real-IP field; fall back to the last XFF value (appended by
+  // Vercel's edge, not the client). The leftmost XFF value is client-writable and must
+  // not be used. Reject when no IP can be determined to avoid a shared "unknown" bucket.
+  const xffLast = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ?? null;
+  const ip = (request as NextRequest & { ip?: string }).ip ?? xffLast;
+
+  if (ip === null) {
+    return Response.json({ error: "bad_request" }, { status: 400 });
+  }
 
   const rl = checkRateLimit(ip);
   if (!rl.allowed) {
