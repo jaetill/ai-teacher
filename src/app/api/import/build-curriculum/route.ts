@@ -21,7 +21,7 @@ import {
   driveFolders,
   schoolYears,
 } from "@/db/schema";
-import { eq, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -205,7 +205,7 @@ ${standardsList}`,
     [course] = await db
       .select({ id: courses.id })
       .from(courses)
-      .where(eq(courses.grade, grade))
+      .where(and(eq(courses.grade, grade), eq(courses.ownerEmail, ownerEmail)))
       .limit(1);
   }
 

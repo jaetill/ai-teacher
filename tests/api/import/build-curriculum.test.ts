@@ -30,6 +30,7 @@ vi.mock("@/db/schema", () => ({
   schoolYears: {},
 }));
 vi.mock("drizzle-orm", () => ({
+  and: vi.fn(),
   eq: vi.fn(),
   asc: vi.fn(),
   inArray: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("drizzle-orm", () => ({
 
 // ── Imports after mocks ─────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
+import { and, eq } from "drizzle-orm";
 import { POST } from "../../../src/app/api/import/build-curriculum/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
@@ -222,6 +224,11 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.unitId).toBe(CREATED_UNIT.id);
       // Fallback SELECT must have been called — 6 selects total
       expect(mockDbSelect).toHaveBeenCalledTimes(6);
+      // Fallback SELECT must scope by ownerEmail to prevent IDOR (#143).
+      // Schema props are undefined in the mock, so inspect the second arg
+      // (the predicate value) across all eq() calls.
+      expect(vi.mocked(and)).toHaveBeenCalled();
+      expect(vi.mocked(eq).mock.calls.map(([, v]) => v)).toContain("teacher@school.edu");
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
