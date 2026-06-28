@@ -12,7 +12,7 @@ import {
   driveFolders,
   courses,
 } from "@/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
 
 export async function GET(req: Request) {
@@ -65,12 +65,22 @@ export async function GET(req: Request) {
   // Scope the driveFolders query to exact keys for this course's grade+quarter combination.
   // Using inArray with exact keys (not a full table scan + substring filter) ensures we
   // never return folder records owned by a different user's course in the same quarter.
+  // Scope by owner too: same folder_key can exist for another user's same-grade
+  // course (#481). Open-null policy (ADR-0044) keeps legacy NULL-owner rows visible.
   const relevantFolderDriveIds = exactFolderKeys.length > 0
     ? (
         await db
           .select({ driveId: driveFolders.driveId })
           .from(driveFolders)
-          .where(inArray(driveFolders.folderKey, exactFolderKeys))
+          .where(
+            and(
+              inArray(driveFolders.folderKey, exactFolderKeys),
+              or(
+                eq(driveFolders.ownerEmail, userEmail),
+                isNull(driveFolders.ownerEmail)
+              )
+            )
+          )
       ).map((f) => f.driveId)
     : [];
 

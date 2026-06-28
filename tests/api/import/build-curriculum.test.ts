@@ -35,6 +35,7 @@ vi.mock("drizzle-orm", () => ({
   inArray: vi.fn(),
   and: vi.fn(),
   isNull: vi.fn(),
+  or: vi.fn(),
 }));
 
 // ── Imports after mocks ─────────────────────────────────────────────────
