@@ -72,6 +72,8 @@ describe("POST /api/year-plan/save", () => {
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
   });
 
   it("returns 400 when rawPlan exceeds 50000 chars", async () => {
