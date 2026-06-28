@@ -60,6 +60,34 @@ describe("POST /api/differentiation — grade field validation (400)", () => {
   });
 });
 
+describe("POST /api/differentiation — required-field type validation (400)", () => {
+  it("returns 400 when content is a non-string (array) — quota-bypass attempt", async () => {
+    authedSession();
+    // An array would pass a bare truthy check; .length on it would skew the
+    // MAX_BYTES guard. Must be rejected before reaching the model (#525).
+    const body = { ...VALID_BODY, content: ["a".repeat(500_000)] };
+    const res = await POST(makeRequest(body));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/must be strings/i);
+    expect(mockStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when studentNeed is a number", async () => {
+    authedSession();
+    const body = { ...VALID_BODY, studentNeed: 12345 };
+    const res = await POST(makeRequest(body));
+    expect(res.status).toBe(400);
+    expect(mockStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when outputRequest is missing/empty", async () => {
+    authedSession();
+    const body = { content: "x", studentNeed: "y", outputRequest: "" };
+    const res = await POST(makeRequest(body));
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/differentiation — MAX_BYTES guard (413)", () => {
   it("returns 413 when combined field lengths exceed 50 000 chars", async () => {
     authedSession();
