@@ -81,3 +81,30 @@ describe("instrumentation-client – beforeSend", () => {
     process.env.NEXT_PUBLIC_SENTRY_DSN = "https://fake@o0.ingest.sentry.io/0";
   });
 });
+
+describe("instrumentation-client – beforeSendTransaction (#25)", () => {
+  let beforeSendTransaction: BeforeSend;
+
+  beforeEach(async () => {
+    initMock.mockReset();
+    vi.resetModules();
+    process.env.NEXT_PUBLIC_SENTRY_DSN = "https://fake@o0.ingest.sentry.io/0";
+    await import("../instrumentation-client");
+    beforeSendTransaction = initMock.mock.calls[0][0]
+      .beforeSendTransaction as BeforeSend;
+  });
+
+  it("is registered", () => {
+    expect(typeof beforeSendTransaction).toBe("function");
+  });
+
+  it("scrubs ui.input breadcrumb values on transactions too", () => {
+    const event = {
+      breadcrumbs: { values: [{ category: "ui.input", data: { value: "typed-secret" } }] },
+    };
+    const result = beforeSendTransaction(event)! as unknown as {
+      breadcrumbs: { values: Array<{ data: Record<string, unknown> }> };
+    };
+    expect(result.breadcrumbs.values[0].data.value).toBe("[REDACTED]");
+  });
+});
