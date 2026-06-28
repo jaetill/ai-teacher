@@ -4,9 +4,10 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { courses, units, unitStandards, standards } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 type UnitInput = {
   title: string;
@@ -29,7 +30,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const sessionEmail = session.user?.email ?? null;
+  const sessionEmail = requireEmail(session);
+  if (!sessionEmail) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
+  }
 
   const body = (await req.json()) as {
     grade: number;
@@ -53,7 +57,7 @@ export async function POST(req: Request) {
   const existing = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(eq(courses.grade, body.grade))
+    .where(and(eq(courses.grade, body.grade), eq(courses.ownerEmail, sessionEmail)))
     .limit(1);
 
   let courseId: string;
