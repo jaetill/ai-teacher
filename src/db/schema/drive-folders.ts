@@ -17,8 +17,12 @@ export const driveFolders = pgTable(
       .defaultNow(),
   },
   (table) => [
-    // NULLS NOT DISTINCT: treats (key, NULL) as equal, preventing duplicate legacy rows
-    unique("uq_drive_folders_key_owner").on(table.folderKey, table.ownerEmail),
+    // NULLS NOT DISTINCT: treats (key, NULL) as equal, preventing duplicate legacy rows.
+    // Must mirror drizzle/0008_drive_folders_owner_email.sql, which writes the
+    // constraint as UNIQUE NULLS NOT DISTINCT — otherwise schema and migration drift.
+    unique("uq_drive_folders_key_owner")
+      .on(table.folderKey, table.ownerEmail)
+      .nullsNotDistinct(),
     index("idx_drive_folders_drive_id").on(table.driveId),
     index("idx_drive_folders_parent_key").on(table.parentKey),
   ]

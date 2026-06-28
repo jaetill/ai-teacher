@@ -1,8 +1,9 @@
 # ADR-0044: Drive-folder ownership — `owner_email` column and scoped unique constraint on `drive_folders`
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-28
 - **Deciders:** Jason
+- **Ratified:** 2026-06-28 (Jason — chosen as the canonical drive_folders ownership PR; the 7 competing PRs #445/#465/#469/#494/#501/#503/#511 were closed in favor of this one)
 - **Tags:** schema, security, authorization
 
 > **Format:** This ADR follows [MADR 4.x](https://adr.github.io/madr/) with three documented extensions: (1) **Neutral consequences** as a third bucket alongside Positive/Negative; (2) **Implementation notes** as a separate section before Links; (3) **Bundled sub-decisions** when multiple related decisions are tightly coupled (each sub-decision gets its own Considered Options and Pros and Cons sections).

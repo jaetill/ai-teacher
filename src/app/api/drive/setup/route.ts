@@ -23,7 +23,13 @@ export async function POST() {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
   const token = session.accessToken;
-  const ownerEmail = session.user?.email ?? null;
+  // Require a real email: a null-email session must not fall through to the
+  // isNull() branch below, which would let it read/overwrite legacy NULL-owner
+  // folder rows and bypass the owner-scoping this PR establishes.
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
+  }
 
   const folders: FolderEntry[] = [];
 
@@ -58,9 +64,12 @@ export async function POST() {
   }
 
   // ── Persist to database (upsert) ───
-  const ownerPredicate = ownerEmail
-    ? or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail))
-    : isNull(driveFolders.ownerEmail);
+  // Open-null read policy (ADR-0044): match this owner's rows OR legacy NULL-owner
+  // rows. ownerEmail is guaranteed non-null by the guard above.
+  const ownerPredicate = or(
+    eq(driveFolders.ownerEmail, ownerEmail),
+    isNull(driveFolders.ownerEmail)
+  );
 
   for (const f of folders) {
     const existing = await db

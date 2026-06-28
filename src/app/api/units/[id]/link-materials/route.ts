@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
 
 const client = new Anthropic();
 
@@ -55,6 +56,14 @@ export async function POST(
   if (!course || unitLessons.length === 0) {
     return Response.json({ error: "No course or lessons found" }, { status: 400 });
   }
+
+  // Enforce that the unit's course belongs to the caller before doing any AI
+  // inference or writes. Scoping the driveFolders lookup by owner (below) hides
+  // another user's *folders*, but the unit/course rows are still loaded by id —
+  // so without this an authenticated user could target another user's unit (IDOR
+  // #517 / #116). Fail-closed, consistent with the notes routes.
+  const forbidden = await assertCourseOwnership(unit.courseId, ownerEmail);
+  if (forbidden) return forbidden;
 
   // ── Find materials in this unit's quarter folders ───
   const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
