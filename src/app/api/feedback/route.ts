@@ -8,6 +8,9 @@
 
 import { NextRequest } from "next/server";
 import { Octokit } from "@octokit/rest";
+import { db } from "@/db";
+import { rateLimits } from "@/db/schema";
+import { sql } from "drizzle-orm";
 
 const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "jaetill";
 const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
@@ -16,25 +19,32 @@ const ALLOWED_TYPES = new Set(["bug", "feature", "other"]);
 const WINDOW_MS = 60 * 60 * 1000;
 const LIMIT = 10;
 
-// In-memory rate limit per warm instance.
-const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>();
+// Distributed rate limit backed by Postgres (ADR-0046). A single atomic upsert
+// per call: insert a fresh row, or — on conflict — reset the window if it has
+// expired (>1h) else increment. RETURNING gives us the post-increment count so
+// the whole check is one round-trip with no read-modify-write race. This is
+// global across serverless instances, unlike the old per-instance Map (#48).
+async function checkRateLimit(
+  ip: string,
+): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const expired = sql`${rateLimits.windowStart} < now() - interval '1 hour'`;
+  const [row] = await db
+    .insert(rateLimits)
+    .values({ key: ip, count: 1, windowStart: new Date() })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        count: sql`CASE WHEN ${expired} THEN 1 ELSE ${rateLimits.count} + 1 END`,
+        windowStart: sql`CASE WHEN ${expired} THEN now() ELSE ${rateLimits.windowStart} END`,
+      },
+    })
+    .returning({ count: rateLimits.count, windowStart: rateLimits.windowStart });
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now();
-  const existing = rateLimitBuckets.get(ip);
-  if (!existing || now - existing.windowStart >= WINDOW_MS) {
-    if (rateLimitBuckets.size >= 10_000) {
-      for (const [k, e] of rateLimitBuckets.entries()) {
-        if (now - e.windowStart >= WINDOW_MS) rateLimitBuckets.delete(k);
-      }
-    }
-    rateLimitBuckets.set(ip, { count: 1, windowStart: now });
-    return { allowed: true };
+  if (row.count > LIMIT) {
+    const elapsed = Date.now() - new Date(row.windowStart).getTime();
+    const retryAfter = Math.max(1, Math.ceil((WINDOW_MS - elapsed) / 1000));
+    return { allowed: false, retryAfter };
   }
-  if (existing.count >= LIMIT) {
-    return { allowed: false, retryAfter: Math.ceil((WINDOW_MS - (now - existing.windowStart)) / 1000) };
-  }
-  existing.count += 1;
   return { allowed: true };
 }
 
@@ -79,7 +89,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const rl = checkRateLimit(ip);
+  const rl = await checkRateLimit(ip);
   if (!rl.allowed) {
     return Response.json(
       { error: "rate_limited", retry_after_seconds: rl.retryAfter },
