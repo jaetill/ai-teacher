@@ -49,6 +49,17 @@ describe("POST /api/differentiation — session auth (401)", () => {
   });
 });
 
+describe("POST /api/differentiation — grade field validation (400)", () => {
+  it("returns 400 when grade is a string (quota-bypass attempt)", async () => {
+    authedSession();
+    const body = { ...VALID_BODY, grade: "a".repeat(500_000) };
+    const res = await POST(makeRequest(body));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/grade must be a number/i);
+    expect(mockStreamFn).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/differentiation — MAX_BYTES guard (413)", () => {
   it("returns 413 when combined field lengths exceed 50 000 chars", async () => {
     authedSession();
