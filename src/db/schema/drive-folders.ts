@@ -8,6 +8,7 @@ export const driveFolders = pgTable(
     driveId: text("drive_id").notNull(), // Google Drive folder ID
     name: text("name").notNull(), // Human-readable name shown in Drive
     parentKey: text("parent_key"), // folder_key of the parent (null for root)
+    ownerEmail: text("owner_email"), // null for legacy single-tenant rows
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -16,7 +17,12 @@ export const driveFolders = pgTable(
       .defaultNow(),
   },
   (table) => [
-    unique("uq_drive_folders_key").on(table.folderKey),
+    // NULLS NOT DISTINCT: treats (key, NULL) as equal, preventing duplicate legacy rows.
+    // Must mirror drizzle/0008_drive_folders_owner_email.sql, which writes the
+    // constraint as UNIQUE NULLS NOT DISTINCT — otherwise schema and migration drift.
+    unique("uq_drive_folders_key_owner")
+      .on(table.folderKey, table.ownerEmail)
+      .nullsNotDistinct(),
     index("idx_drive_folders_drive_id").on(table.driveId),
     index("idx_drive_folders_parent_key").on(table.parentKey),
   ]

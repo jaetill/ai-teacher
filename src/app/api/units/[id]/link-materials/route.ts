@@ -14,8 +14,9 @@ import {
   driveFolders,
   courses,
 } from "@/db/schema";
-import { eq, asc, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
 
 const client = new Anthropic();
 
@@ -26,6 +27,10 @@ export async function POST(
   const session = await getServerSession(authOptions);
   if (!session?.accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const ownerEmail = session.user?.email;
+  if (!ownerEmail) {
+    return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
   const { id } = await params;
@@ -52,6 +57,14 @@ export async function POST(
     return Response.json({ error: "No course or lessons found" }, { status: 400 });
   }
 
+  // Enforce that the unit's course belongs to the caller before doing any AI
+  // inference or writes. Scoping the driveFolders lookup by owner (below) hides
+  // another user's *folders*, but the unit/course rows are still loaded by id —
+  // so without this an authenticated user could target another user's unit (IDOR
+  // #517 / #116). Fail-closed, consistent with the notes routes.
+  const forbidden = await assertCourseOwnership(unit.courseId, ownerEmail);
+  if (forbidden) return forbidden;
+
   // ── Find materials in this unit's quarter folders ───
   const quarter = unit.quarter ?? `Q${Math.ceil(unit.sortOrder / 2)}`;
   const folderCategories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
@@ -62,7 +75,12 @@ export async function POST(
   const folders = await db
     .select({ folderKey: driveFolders.folderKey, driveId: driveFolders.driveId })
     .from(driveFolders)
-    .where(inArray(driveFolders.folderKey, folderKeys));
+    .where(
+      and(
+        inArray(driveFolders.folderKey, folderKeys),
+        or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail)),
+      )
+    );
 
   const folderDriveIds = folders.map((f) => f.driveId);
 
