@@ -320,4 +320,24 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect(mat.driveWebUrl).toBe("https://drive.google.com/file/d/xyz");
     expect(mat.attachments).toEqual([]);
   });
+
+  it("returns empty materials when fallback materialAttachments query finds no attached materials", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    // assertCourseOwnership → owned
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }]));
+    // courseUnits → one Q1 unit (non-empty so we don't hit the early-return)
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "unit-1", quarter: "Q1" }]));
+    // grade query → grade 8 (so exactFolderKeys is non-empty and driveFolders is queried)
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }]));
+    // driveFolders → no matching folders → relevantFolderDriveIds = [] → fallback taken
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    // materialAttachments fallback query → no attached materials → materialIds.length === 0
+    mockDbSelect.mockReturnValueOnce(makeChain([]));
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toEqual([]);
+  });
 });
