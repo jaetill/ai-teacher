@@ -8,6 +8,7 @@ import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { courses, units, unitStandards, standards } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 
 type UnitInput = {
   title: string;
@@ -104,14 +105,34 @@ export async function POST(req: Request) {
     courseId = newCourse.id;
   }
 
-  // ── Insert units ───
-  const createdUnits: { id: string; title: string }[] = [];
+  // ── Resolve standard codes for all units in one round-trip ───
+  // Done upfront so the IDs are available when building the batch below.
+  const allCodes = body.units.flatMap((u) => parseStandardCodes(u.standards));
+  const uniqueCodes = [...new Set(allCodes)];
+
+  const validStandardIds = new Set<string>();
+  if (uniqueCodes.length > 0) {
+    const matched = await db
+      .select({ id: standards.id })
+      .from(standards)
+      .where(inArray(standards.id, uniqueCodes));
+    for (const s of matched) validStandardIds.add(s.id);
+  }
+
+  // Pre-generate unit IDs so unitStandards rows can reference them within the
+  // same batch — neon-http has no interactive transactions, but db.batch() runs
+  // all statements as a single atomic Postgres transaction (closes #114).
+  const unitIds = body.units.map(() => crypto.randomUUID());
+
+  const batchItems: BatchItem<"pg">[] = [];
 
   for (let i = 0; i < body.units.length; i++) {
     const u = body.units[i];
-    const [inserted] = await db
-      .insert(units)
-      .values({
+    const unitId = unitIds[i];
+
+    batchItems.push(
+      db.insert(units).values({
+        id: unitId,
         courseId,
         title: u.title,
         sortOrder: i + 1,
@@ -124,30 +145,22 @@ export async function POST(req: Request) {
         aiGenerationContext: body.rawPlan
           ? { rawPlan: body.rawPlan }
           : null,
-      })
-      .returning({ id: units.id });
+      }),
+    );
 
-    createdUnits.push({ id: inserted.id, title: u.title });
-
-    // ── Link standards ───
-    const codes = parseStandardCodes(u.standards);
+    const codes = parseStandardCodes(u.standards).filter((c) => validStandardIds.has(c));
     if (codes.length > 0) {
-      const matchedStandards = await db
-        .select({ id: standards.id })
-        .from(standards)
-        .where(inArray(standards.id, codes));
-
-      if (matchedStandards.length > 0) {
-        await db.insert(unitStandards).values(
-          matchedStandards.map((s) => ({
-            unitId: inserted.id,
-            standardId: s.id,
-            emphasis: "primary" as const,
-          }))
-        );
-      }
+      batchItems.push(
+        db.insert(unitStandards).values(
+          codes.map((c) => ({ unitId, standardId: c, emphasis: "primary" as const })),
+        ),
+      );
     }
   }
 
+  // batchItems is always non-empty: body.units has at least one entry (validated above).
+  await db.batch(batchItems as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+
+  const createdUnits = unitIds.map((id, i) => ({ id, title: body.units[i].title }));
   return Response.json({ courseId, units: createdUnits });
 }
