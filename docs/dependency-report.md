@@ -1,76 +1,72 @@
-## Dependency Watch (2026-06-22)
+## Dependency Watch (2026-06-29)
 
-**Manifest scanned:** `package.json` (repo root — 17 prod deps, 25 dev deps, 1 114 total installed)
+### Manifest: `package.json` (root)
 
----
-
-## Security Advisories (`npm audit --omit=dev`)
-
-Total: 0 critical · 0 high · 11 moderate · 1 low
-
-### Moderate
-
-| Package | Advisory | CVSS | Direct fix available? |
-|---|---|---|---|
-| `postcss` < 8.5.10 | [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93) XSS via unescaped `</style>` in CSS Stringify output | 6.1 | No — bundled inside `next`; npm suggests downgrading to `next@9.3.3` (major, not viable) |
-| `@opentelemetry/core` < 2.8.0 | [GHSA-8988-4f7v-96qf](https://github.com/advisories/GHSA-8988-4f7v-96qf) Unbounded memory allocation in W3C Baggage propagation | 5.3 | No — transitive via `@sentry/nextjs`; npm suggests downgrading Sentry to 6.3.5 (major, not viable) |
-| `qs` 6.11.1–6.15.1 | [GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) DoS — `qs.stringify` crashes on null/undefined in comma-format arrays | 5.3 | **Yes** — `npm audit fix` should resolve without a major bump |
-| `uuid` < 11.1.1 | [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) Missing buffer bounds check in v3/v5/v6 when `buf` is provided | 7.5 | No — transitive via `next-auth`; npm suggests downgrading to `next-auth@3.29.10` (major, not viable) |
-| `@opentelemetry/instrumentation-http`, `@opentelemetry/resources`, `@opentelemetry/sdk-trace-base` | Downstream of `@opentelemetry/core` above | — | No (same Sentry major-downgrade caveat) |
-| `@sentry/node`, `@sentry/nextjs`, `next-auth` | Downstream of `postcss` / `@opentelemetry/core` / `uuid` above | — | No (same caveats) |
-
-> **Note on "fix not available" advisories:** npm audit recommends major *downgrades* for the `postcss`, `@opentelemetry/core`, and `uuid` chains (`next@9`, `@sentry/nextjs@6`, `next-auth@3`). These are non-starters. The actual fix path is to wait for the respective maintainers to publish patched releases in the current major branches (`next@16.x`, `@sentry/nextjs@10.x`, `next-auth@4.x`), then upgrade when available.
-
-### Low
-
-| Package | Advisory | CVSS | Fix available? |
-|---|---|---|---|
-| `@babel/core` ≤ 7.29.0 | [GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8) Arbitrary file read via `sourceMappingURL` comment (dev-time tool, build context only) | 3.2 | Yes — `npm audit fix` (dev dependency; excluded from `--omit=dev` run but flagged here) |
+390 production dependencies · 612 dev dependencies · 1 low advisory · 11 moderate advisories · 0 high · 0 critical
 
 ---
 
-## Version Updates (`npm outdated`)
+### Security Advisories
 
-### Major Bumps — Review for breaking changes before upgrading
+> No CRITICAL or HIGH advisories detected. All findings are MODERATE or LOW.
 
-| Package | Installed (wanted) | Latest | Risk note |
+#### MODERATE — action recommended
+
+| Package | Advisory | CVSS | Direct cause | Fix path |
+|---|---|---|---|---|
+| `postcss` (via `next`) | [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93) — XSS via unescaped `</style>` in CSS stringify | 6.1 | Bundled inside `next` | No realistic in-range patch; monitor Next.js releases for postcss upgrade |
+| `uuid` (via `next-auth`) | [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) — Missing buffer bounds check in v3/v5/v6 | 7.5 | Transitive via `next-auth` | No in-range fix; `next-auth` v5 resolves it (major migration required) |
+| `@opentelemetry/core` (via `@sentry/nextjs`) | [GHSA-8988-4f7v-96qf](https://github.com/advisories/GHSA-8988-4f7v-96qf) — Unbounded memory allocation in W3C Baggage propagation | 5.3 | Transitive via Sentry | No in-range fix; awaiting `@sentry/nextjs` upgrade to OpenTelemetry ≥ 2.8.0 |
+| `qs` | [GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) — DoS via `qs.stringify` crash on null entries | 5.3 | Transitive (exact dependent unknown) | Fix available — run `npm audit fix` |
+| `@opentelemetry/instrumentation-http` | Inherits `@opentelemetry/core` CVE | 5.3 | Transitive via `@sentry/node` | Same as above (Sentry upstream) |
+| `@opentelemetry/resources` | Inherits `@opentelemetry/core` CVE | 5.3 | Transitive via `@sentry/node` | Same as above |
+| `@opentelemetry/sdk-trace-base` | Inherits `@opentelemetry/core` CVE | 5.3 | Transitive via `@sentry/node` | Same as above |
+| `@sentry/node` | Inherits OpenTelemetry CVE chain | 5.3 | Transitive via `@sentry/nextjs` | Same as above |
+| `@sentry/nextjs` | Inherits `@sentry/node` + `next` CVEs | 5.3 | Direct dependency | Same as above |
+| `next` | Inherits `postcss` CVE | 6.1 | Direct dependency | Monitor Next.js releases |
+| `next-auth` | Inherits `next` + `uuid` CVEs | 6.1 | Direct dependency | `next-auth` v5 migration |
+
+> **Note on "fix available" markers:** `npm audit` reports fixes via major downgrade (e.g., `next 9.3.3`, `@sentry/nextjs 6.3.5`) which are not actionable. These vulnerabilities exist in transitive bundles with no patch released yet in the 16.x / 10.x branches. Monitor upstream for fixes.
+
+#### LOW
+
+| Package | Advisory | CVSS | Note |
 |---|---|---|---|
-| `@octokit/rest` | 21.1.1 | **22.0.1** | Major bump; check changelog for breaking REST client changes |
-
-### Notable Minor Bumps — 0.x pre-release or multi-version gap
-
-| Package | Installed (wanted) | Latest | Risk note |
-|---|---|---|---|
-| `@anthropic-ai/sdk` | 0.96.0 | **0.105.0** | 9 minor versions behind in a 0.x package — 0.x minor bumps may be breaking; review Anthropic SDK changelog before upgrading |
-| `googleapis` | 171.4.0 | **173.0.0** | 2 minor versions behind; no breaking changes expected but confirm before upgrading |
-
-### Patch / Within-Range Updates — Low priority, batch in monthly sweep
-
-| Package | Wanted | Latest |
-|---|---|---|
-| `next` | 16.2.6 | 16.2.9 |
-| `react` | 19.2.4 | 19.2.7 |
-| `react-dom` | 19.2.4 | 19.2.7 |
-| `@dnd-kit/core` | 6.3.1 | 6.3.1 (at latest) |
-| `@dnd-kit/sortable` | 10.0.0 | 10.0.0 (at latest) |
-| `@dnd-kit/utilities` | 3.2.2 | 3.2.2 (at latest) |
-| `@neondatabase/serverless` | 1.1.0 | 1.1.0 (at latest) |
-| `@sentry/nextjs` | 10.59.0 | 10.59.0 (at latest) |
-| `@tailwindcss/typography` | 0.5.20 | 0.5.20 (at latest) |
-| `drizzle-orm` | 0.45.2 | 0.45.2 (at latest) |
-| `jszip` | 3.10.1 | 3.10.1 (at latest) |
-| `next-auth` | 4.24.14 | 4.24.14 (at latest) |
-| `react-markdown` | 10.1.0 | 10.1.0 (at latest) |
-| `remark-gfm` | 4.0.1 | 4.0.1 (at latest) |
-
-> Packages listed at "at latest" appear in `npm outdated` because the locally installed version lags the semver-wanted version — a plain `npm install` or lock-file sync will resolve them without any package.json change.
+| `@babel/core` | [GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8) — Arbitrary file read via `sourceMappingURL` comment | 3.2 | Transitive dev-adjacent dep; fix available via `npm audit fix` |
 
 ---
 
-## Recommended Actions
+### Outdated Packages
 
-1. **Run `npm audit fix`** — resolves the `qs` DoS (moderate, CVSS 5.3) and the `@babel/core` low advisory without any major-version changes. Low risk.
-2. **Upgrade `@anthropic-ai/sdk` → 0.105.0** — review the SDK changelog for breaking changes across 9 minor versions before merging. This is the project's primary AI dependency.
-3. **Upgrade `@octokit/rest` → 22.0.1** — check the v22 migration guide; REST client interface changes are likely.
-4. **Monitor upstream for `next@16.x` postcss patch and `@sentry/nextjs@10.x` OpenTelemetry patch** — no actionable fix today; track next.js and Sentry release notes.
-5. **Batch patch sweep** — `next`, `react`, `react-dom` patch bumps plus lock-file sync for at-latest packages.
+#### Major version bump — breaking-change risk
+
+| Package | Installed | Latest | Risk |
+|---|---|---|---|
+| `@octokit/rest` | 21.1.1 | 22.0.1 | **Major** — review [v22 changelog](https://github.com/octokit/rest.js/releases) for breaking API changes before upgrading; package.json range `^21.0.0` prevents auto-install |
+
+#### Minor/pre-release bumps — batch in next sweep
+
+| Package | Installed | Latest | Note |
+|---|---|---|---|
+| `@anthropic-ai/sdk` | 0.96.0 | 0.106.0 | 10 minor bumps in `0.x` range — each minor can be semver-breaking; review SDK changelog before upgrading; range `^0.96.0` blocks auto-install |
+| `googleapis` | 171.4.0 | 173.0.0 | Minor version jump within same major; low risk |
+
+#### Patch bumps — low priority
+
+| Package | Installed | Latest | Note |
+|---|---|---|---|
+| `next` | 16.2.6 | 16.2.9 | Patch — pinned without `^`; bump manually in `package.json` |
+| `react` | 19.2.4 | 19.2.7 | Patch — pinned without `^`; bump manually |
+| `react-dom` | 19.2.4 | 19.2.7 | Patch — pinned without `^`; bump manually |
+
+---
+
+### Recommended Actions
+
+1. **Run `npm audit fix`** — resolves the `qs` and `@babel/core` advisories without breaking changes.
+2. **Bump pinned packages** (`next`, `react`, `react-dom`) to their latest patch versions — edit `package.json` manually since they are pinned without a range specifier.
+3. **Review `@octokit/rest` v22 changelog** before upgrading — major version; breaking API changes likely.
+4. **Review `@anthropic-ai/sdk` changelog** for 0.96 → 0.106 — 0.x minor bumps may include breaking changes; test streaming and tool-use flows after upgrade.
+5. **Monitor upstream** for `@sentry/nextjs` + `next` fixes to the OpenTelemetry and postcss advisory chains — no in-range patches exist today.
+6. **Evaluate `next-auth` v5 migration** when capacity allows — resolves the `uuid` advisory and brings auth to the actively maintained major.
+
