@@ -17,8 +17,14 @@ permissions:
 
 jobs:
   release:
-    # First-party reusable rides @main so platform fixes propagate (ADR-0048/0034) —
-    # don't pin to a SHA.
+    # First-party reusable rides @main so platform fixes propagate (ADR-0048/0034).
+    # Mutable-ref risk is mitigated at the source: jaetill/agentic-dev-environment
+    # main is branch-protected (no force-pushes, no deletions, required checks) —
+    # confirmed 2026-06-17 per ADR-0048. @main therefore resolves to "the reviewed
+    # platform HEAD," not an attacker-writable ref. Pinning to a SHA is wrong here:
+    # it breaks propagation, can delay security fixes, and creates a merge dam
+    # (caller-file edits can't pass the App-token gate). See ADR-0048 for full posture.
+    # Do NOT convert this to a SHA pin; do NOT file a supply-chain finding for this ref.
     uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@main
     with:
       release-type: node
