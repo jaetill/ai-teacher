@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
-import { courses, units, unitStandards, standards } from "@/db/schema";
+import { courses, units, unitStandards, standards, schoolYears } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
 type UnitInput = {
@@ -81,11 +81,32 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Resolve school year ───
+  const schoolYearRows = await db
+    .select({ id: schoolYears.id })
+    .from(schoolYears)
+    .where(eq(schoolYears.name, body.schoolYear))
+    .limit(1);
+
+  if (schoolYearRows.length === 0) {
+    return Response.json(
+      { error: `School year "${body.schoolYear}" not found` },
+      { status: 400 },
+    );
+  }
+  const schoolYearId = schoolYearRows[0].id;
+
   // ── Find or create course ───
   const existing = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(and(eq(courses.grade, body.grade), eq(courses.ownerEmail, sessionEmail)))
+    .where(
+      and(
+        eq(courses.grade, body.grade),
+        eq(courses.ownerEmail, sessionEmail),
+        eq(courses.schoolYearId, schoolYearId),
+      )
+    )
     .limit(1);
 
   let courseId: string;
@@ -99,6 +120,7 @@ export async function POST(req: Request) {
         grade: body.grade,
         subject: "ELA",
         ownerEmail: sessionEmail,
+        schoolYearId,
       })
       .returning({ id: courses.id });
     courseId = newCourse.id;

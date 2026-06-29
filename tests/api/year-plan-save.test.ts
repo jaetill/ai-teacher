@@ -14,6 +14,7 @@ vi.mock("@/db/schema", () => ({
   units: {},
   unitStandards: {},
   standards: {},
+  schoolYears: {},
 }));
 vi.mock("drizzle-orm", () => ({ and: vi.fn(), eq: vi.fn(), inArray: vi.fn() }));
 
@@ -94,8 +95,10 @@ describe("POST /api/year-plan/save", () => {
     });
     mockEq.mockClear();
 
-    // Existing course found — no INSERT needed
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    // school year lookup, then existing course found — no INSERT needed
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-1" }]))
+      .mockReturnValueOnce(makeChain([{ id: "c1" }]));
     mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1", title: "Unit 1" }]));
 
     await POST(makeRequest());
@@ -196,8 +199,10 @@ describe("POST /api/year-plan/save", () => {
       user: { id: "user-alice", email: "alice@example.com" },
     });
 
-    // No existing course — triggers INSERT
-    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    // school year lookup, then no existing course — triggers INSERT
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-1" }]))
+      .mockReturnValueOnce(makeChain([]));
 
     const courseChain = makeChain([{ id: "c1" }]);
     const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
@@ -220,8 +225,10 @@ describe("POST /api/year-plan/save", () => {
       user: { id: "user-alice", email: "alice@example.com" },
     });
 
-    // Existing course found — no courses insert needed
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    // school year lookup, then existing course found — no courses insert needed
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-1" }]))
+      .mockReturnValueOnce(makeChain([{ id: "c1" }]));
 
     const unitChain = makeChain([{ id: "u1", title: "Unit 1" }]);
     const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
@@ -239,7 +246,9 @@ describe("POST /api/year-plan/save", () => {
     mockGetServerSession.mockResolvedValue({
       user: { id: "user-alice", email: "alice@example.com" },
     });
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-1" }])) // school year
+      .mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
     mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert
 
     const res = await POST(makeRequest());
@@ -250,12 +259,101 @@ describe("POST /api/year-plan/save", () => {
     expect(body.units).toEqual([{ id: "u1", title: "Unit 1" }]);
   });
 
+  it("returns 400 when the schoolYear name is not found in the database", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // school year not found
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/school year/i);
+  });
+
+  it("creates separate courses for the same grade across different school years (#113)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+
+    const makeUnitBody = (schoolYear: string) => ({
+      grade: 6,
+      schoolYear,
+      units: [
+        {
+          title: "Unit 1",
+          weeks: 4,
+          standards: "none",
+          summary: "s",
+          anchorTexts: "a",
+          flags: "None",
+        },
+      ],
+    });
+
+    // --- 2025-2026 request ---
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-2025" }])) // school year
+      .mockReturnValueOnce(makeChain([])); // no existing course
+
+    const chain2025 = makeChain([{ id: "course-2025" }]);
+    const values2025 = vi.fn().mockReturnValue(chain2025);
+    chain2025.values = values2025;
+    mockDbInsert
+      .mockReturnValueOnce(chain2025) // course insert
+      .mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert
+
+    const res1 = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(makeUnitBody("2025-2026")),
+      }),
+    );
+    expect(res1.status).toBe(200);
+    const body1 = await res1.json();
+
+    // --- 2026-2027 request ---
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-2026" }])) // school year
+      .mockReturnValueOnce(makeChain([])); // no existing course
+
+    const chain2026 = makeChain([{ id: "course-2026" }]);
+    const values2026 = vi.fn().mockReturnValue(chain2026);
+    chain2026.values = values2026;
+    mockDbInsert
+      .mockReturnValueOnce(chain2026) // course insert
+      .mockReturnValueOnce(makeChain([{ id: "u2" }])); // unit insert
+
+    const res2 = await POST(
+      new Request("http://localhost/api/year-plan/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(makeUnitBody("2026-2027")),
+      }),
+    );
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json();
+
+    // Same grade, different years → distinct course IDs
+    expect(body1.courseId).toBe("course-2025");
+    expect(body2.courseId).toBe("course-2026");
+    expect(body1.courseId).not.toBe(body2.courseId);
+
+    // Each course insert carries the matching schoolYearId
+    expect(values2025.mock.calls[0][0]).toMatchObject({ schoolYearId: "sy-2025" });
+    expect(values2026.mock.calls[0][0]).toMatchObject({ schoolYearId: "sy-2026" });
+  });
+
   it("links parsed standard codes to the unit via unitStandards (#515)", async () => {
     mockGetServerSession.mockResolvedValue({
       user: { id: "user-alice", email: "alice@example.com" },
     });
-    // 1. existing course lookup, 2. standards lookup (codes matched)
+    // 1. school year lookup, 2. existing course lookup, 3. standards lookup (codes matched)
     mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy-1" }]))
       .mockReturnValueOnce(makeChain([{ id: "c1" }]))
       .mockReturnValueOnce(makeChain([{ id: "8.RL.1.A" }]));
 
