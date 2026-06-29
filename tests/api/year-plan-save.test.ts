@@ -17,8 +17,9 @@ vi.mock("@/db/schema", () => ({
   units: {},
   unitStandards: {},
   standards: {},
+  schoolYears: {},
 }));
-vi.mock("drizzle-orm", () => ({ and: vi.fn(), eq: vi.fn(), inArray: vi.fn() }));
+vi.mock("drizzle-orm", () => ({ and: vi.fn(), eq: vi.fn(), inArray: vi.fn(), isNull: vi.fn() }));
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
@@ -97,8 +98,9 @@ describe("POST /api/year-plan/save", () => {
     });
     mockEq.mockClear();
 
-    // Existing course found — no INSERT needed
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }])) // school year lookup
+      .mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course found
     mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1", title: "Unit 1" }]));
 
     await POST(makeRequest());
@@ -199,8 +201,9 @@ describe("POST /api/year-plan/save", () => {
       user: { id: "user-alice", email: "alice@example.com" },
     });
 
-    // No existing course — triggers INSERT
-    mockDbSelect.mockReturnValueOnce(makeChain([]));
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }])) // school year lookup
+      .mockReturnValueOnce(makeChain([])); // no existing course — triggers INSERT
 
     const courseChain = makeChain([{ id: "c1" }]);
     const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
@@ -223,8 +226,9 @@ describe("POST /api/year-plan/save", () => {
       user: { id: "user-alice", email: "alice@example.com" },
     });
 
-    // Existing course found — no courses insert needed
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }])) // school year lookup
+      .mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course found
 
     const unitChain = makeChain([{ id: "u1", title: "Unit 1" }]);
     const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
@@ -242,7 +246,9 @@ describe("POST /api/year-plan/save", () => {
     mockGetServerSession.mockResolvedValue({
       user: { id: "user-alice", email: "alice@example.com" },
     });
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }])) // school year lookup
+      .mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
     mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert (in batch)
 
     const res = await POST(makeRequest());
@@ -260,8 +266,9 @@ describe("POST /api/year-plan/save", () => {
     mockGetServerSession.mockResolvedValue({
       user: { id: "user-alice", email: "alice@example.com" },
     });
-    // 1. existing course lookup, 2. standards lookup (codes matched)
+    // 1. school year lookup, 2. existing course lookup, 3. standards lookup (codes matched)
     mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }]))
       .mockReturnValueOnce(makeChain([{ id: "c1" }]))
       .mockReturnValueOnce(makeChain([{ id: "8.RL.1.A" }]));
 
@@ -301,13 +308,69 @@ describe("POST /api/year-plan/save", () => {
     ]);
   });
 
+  it("creates separate courses for the same grade in different school years (closes #113)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+
+    async function postPlan(schoolYear: string, courseId: string) {
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([{ id: `sy-${schoolYear}` }])) // school year lookup
+        .mockReturnValueOnce(makeChain([])); // no existing course for this grade+year
+
+      const courseChain = makeChain([{ id: courseId }]);
+      const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+      courseChain.values = courseValuesSpy;
+      mockDbInsert.mockReturnValueOnce(courseChain); // course INSERT
+      mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit INSERT (in batch)
+
+      const res = await POST(
+        new Request("http://localhost/api/year-plan/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            grade: 6,
+            schoolYear,
+            units: [
+              {
+                title: "U1",
+                weeks: 4,
+                standards: "none",
+                summary: "s",
+                anchorTexts: "a",
+                flags: "None",
+              },
+            ],
+          }),
+        }),
+      );
+      const body = await res.json();
+      return { res, body, courseValuesSpy };
+    }
+
+    const r1 = await postPlan("2025-2026", "c1");
+    const r2 = await postPlan("2026-2027", "c2");
+
+    expect(r1.res.status).toBe(200);
+    expect(r2.res.status).toBe(200);
+
+    // Each school year triggers a distinct course INSERT scoped to that year
+    expect(r1.courseValuesSpy.mock.calls[0][0]).toMatchObject({ schoolYearId: "sy-2025-2026" });
+    expect(r2.courseValuesSpy.mock.calls[0][0]).toMatchObject({ schoolYearId: "sy-2026-2027" });
+
+    // The two responses carry different courseIds, confirming no cross-year sharing
+    expect(r1.body.courseId).toBe("c1");
+    expect(r2.body.courseId).toBe("c2");
+  });
+
   it("rolls back all inserts when batch fails atomically (#114)", async () => {
     mockGetServerSession.mockResolvedValue({
       user: { id: "user-alice", email: "alice@example.com" },
     });
 
-    // existing course
-    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: "sy1" }])) // school year lookup
+      .mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
     // Both unit inserts go to the batch but never commit
     mockDbInsert
       .mockReturnValueOnce(makeChain([{ id: "u1" }]))

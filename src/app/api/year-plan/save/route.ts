@@ -6,8 +6,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { requireEmail } from "@/lib/auth-helpers";
 import { db } from "@/db";
-import { courses, units, unitStandards, standards } from "@/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { courses, units, unitStandards, standards, schoolYears } from "@/db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 
 type UnitInput = {
@@ -82,11 +82,22 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Resolve school year ───
+  const [resolvedYear] = await db
+    .select({ id: schoolYears.id })
+    .from(schoolYears)
+    .where(eq(schoolYears.name, body.schoolYear))
+    .limit(1);
+
+  const yearFilter = resolvedYear?.id
+    ? eq(courses.schoolYearId, resolvedYear.id)
+    : isNull(courses.schoolYearId);
+
   // ── Find or create course ───
   const existing = await db
     .select({ id: courses.id })
     .from(courses)
-    .where(and(eq(courses.grade, body.grade), eq(courses.ownerEmail, sessionEmail)))
+    .where(and(eq(courses.grade, body.grade), yearFilter, eq(courses.ownerEmail, sessionEmail)))
     .limit(1);
 
   let courseId: string;
@@ -99,6 +110,7 @@ export async function POST(req: Request) {
         title: `Grade ${body.grade} English Language Arts`,
         grade: body.grade,
         subject: "ELA",
+        schoolYearId: resolvedYear?.id ?? null,
         ownerEmail: sessionEmail,
       })
       .returning({ id: courses.id });
