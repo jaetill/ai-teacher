@@ -23,8 +23,12 @@ jobs:
     with:
       release-type: node
     # The release reusable declares no `secrets:` block — its contract is
-    # `secrets: inherit` (it reads secrets.FLEET_APP_* directly). Passing explicit
-    # named secrets it doesn't declare is rejected at startup (#64). Release is
-    # push-on-main (not a prompt-injection surface), so inherit is the sanctioned
-    # pattern here, matching the rest of the fleet's release callers.
+    # `secrets: inherit` (it reads secrets.FLEET_APP_ID and
+    # secrets.FLEET_APP_PRIVATE_KEY directly). Passing explicit named secrets it
+    # doesn't declare is rejected at startup (#64). Release is push-on-main (not
+    # a prompt-injection surface), so inherit is the sanctioned pattern here,
+    # matching the rest of the fleet's release callers.
+    # Trust-boundary audit: reusable currently consumes FLEET_APP_ID,
+    # FLEET_APP_PRIVATE_KEY. If you add a new repo secret, verify it should be
+    # forwarded here before relying on inherit to pass it silently.
     secrets: inherit
