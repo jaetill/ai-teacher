@@ -119,7 +119,7 @@ export async function POST(req: Request) {
   }
 
   const drive = getDriveClient(accessToken);
-  const results: Array<{ name: string; status: string; driveWebUrl?: string }> = [];
+  const results: Array<{ name: string; status: string; driveWebUrl?: string; message?: string }> = [];
 
   for (const file of body.files) {
     try {
@@ -173,10 +173,8 @@ export async function POST(req: Request) {
         driveWebUrl: copied.data.webViewLink!,
       });
     } catch (err) {
-      results.push({
-        name: file.name,
-        status: `error: ${err instanceof Error ? err.message : "unknown"}`,
-      });
+      console.error("Drive copy failed:", err);
+      results.push({ name: file.name, status: "error", message: "Failed to copy file" });
     }
   }
 
