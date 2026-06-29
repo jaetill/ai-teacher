@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────────
-const { mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
+const { mockDbSelect, mockDbInsert, mockDbBatch } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
+  mockDbBatch: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/db", () => ({ db: { select: mockDbSelect, insert: mockDbInsert } }));
+vi.mock("@/db", () => ({
+  db: { select: mockDbSelect, insert: mockDbInsert, batch: mockDbBatch },
+}));
 vi.mock("@/db/schema", () => ({
   courses: {},
   units: {},
@@ -204,7 +207,7 @@ describe("POST /api/year-plan/save", () => {
     courseChain.values = courseValuesSpy;
     mockDbInsert.mockReturnValueOnce(courseChain);
 
-    // unit INSERT
+    // unit INSERT (goes into batch)
     mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }]));
 
     await POST(makeRequest());
@@ -240,14 +243,17 @@ describe("POST /api/year-plan/save", () => {
       user: { id: "user-alice", email: "alice@example.com" },
     });
     mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }])); // existing course
-    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert
+    mockDbInsert.mockReturnValueOnce(makeChain([{ id: "u1" }])); // unit insert (in batch)
 
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.courseId).toBe("c1");
-    expect(body.units).toEqual([{ id: "u1", title: "Unit 1" }]);
+    expect(body.units).toHaveLength(1);
+    // Unit id is a pre-generated UUID, not the DB-returned value
+    expect(typeof body.units[0].id).toBe("string");
+    expect(body.units[0].title).toBe("Unit 1");
   });
 
   it("links parsed standard codes to the unit via unitStandards (#515)", async () => {
@@ -263,8 +269,8 @@ describe("POST /api/year-plan/save", () => {
     const stdValuesSpy = vi.fn().mockReturnValue(stdChain);
     stdChain.values = stdValuesSpy;
     mockDbInsert
-      .mockReturnValueOnce(makeChain([{ id: "u1" }])) // unit insert
-      .mockReturnValueOnce(stdChain); // unitStandards insert
+      .mockReturnValueOnce(makeChain([{ id: "u1" }])) // unit insert (in batch)
+      .mockReturnValueOnce(stdChain); // unitStandards insert (in batch)
 
     const req = new Request("http://localhost/api/year-plan/save", {
       method: "POST",
@@ -289,8 +295,56 @@ describe("POST /api/year-plan/save", () => {
 
     expect(res.status).toBe(200);
     expect(stdValuesSpy).toHaveBeenCalledOnce();
+    // unitId is a pre-generated UUID; verify the standard code and emphasis
     expect(stdValuesSpy.mock.calls[0][0]).toEqual([
-      { unitId: "u1", standardId: "8.RL.1.A", emphasis: "primary" },
+      { unitId: expect.any(String), standardId: "8.RL.1.A", emphasis: "primary" },
     ]);
+  });
+
+  it("rolls back all inserts when batch fails atomically (#114)", async () => {
+    mockGetServerSession.mockResolvedValue({
+      user: { id: "user-alice", email: "alice@example.com" },
+    });
+
+    // existing course
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: "c1" }]));
+    // Both unit inserts go to the batch but never commit
+    mockDbInsert
+      .mockReturnValueOnce(makeChain([{ id: "u1" }]))
+      .mockReturnValueOnce(makeChain([{ id: "u2" }]));
+    // Simulate a DB error mid-batch — the atomic batch rejects and no rows are written
+    mockDbBatch.mockRejectedValueOnce(new Error("constraint violation"));
+
+    const req = new Request("http://localhost/api/year-plan/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        grade: 7,
+        schoolYear: "2025-2026",
+        units: [
+          {
+            title: "Unit 1",
+            weeks: 4,
+            standards: "none",
+            summary: "s",
+            anchorTexts: "a",
+            flags: "None",
+          },
+          {
+            title: "Unit 2",
+            weeks: 3,
+            standards: "none",
+            summary: "s",
+            anchorTexts: "a",
+            flags: "None",
+          },
+        ],
+      }),
+    });
+
+    // The batch error propagates — no partial rows committed
+    await expect(POST(req)).rejects.toThrow("constraint violation");
+    // Exactly one batch call was made (all inserts were bundled, not retried)
+    expect(mockDbBatch).toHaveBeenCalledOnce();
   });
 });
