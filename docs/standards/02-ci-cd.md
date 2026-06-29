@@ -212,7 +212,30 @@ Each scaffolded project references reusable workflows from this repo (`workflows
 
 Implementation of these workflows happens in Task #15 (Wire reusable GitHub Actions workflows).
 
-## 9. Setup checklist
+## 9. Workflow reference & secret-forwarding policy (ADR-0048)
+
+### Reusable-workflow reference pins
+
+| Workflow origin | Reference style | Rationale |
+|---|---|---|
+| **First-party** (`jaetill/agentic-dev-environment`) | `@main` | Owner-controlled; main is branch-protected. `@main` = "reviewed platform HEAD." Pinning to SHA breaks propagation and creates merge dams (App-token gate). |
+| **Third-party** (`actions/*`, `anthropics/*`, any external owner) | `@<full-commit-SHA>` | Untrusted third party; SHA pin prevents silent drift or compromise. |
+
+**Do NOT file a supply-chain finding for a first-party `@main` ref.** The mitigating control is upstream branch protection (no force-pushes, no deletions, required checks on `jaetill/agentic-dev-environment` main — confirmed 2026-06-17). Still flag: (a) third-party actions not SHA-pinned, (b) `secrets: inherit` to any reusable where explicit secrets can be declared instead, (c) a first-party `@main` ref if the upstream main ever loses branch protection.
+
+### Secret forwarding
+
+Prefer **explicit minimal secrets** over `secrets: inherit` in reusable workflow callers. Pass only what the reusable declares:
+
+| Caller | Forward |
+|---|---|
+| `claude-pr-review.yml` | `CLAUDE_CODE_OAUTH_TOKEN` (GITHUB_TOKEN is auto-provided) |
+| `claude-implementer.yml` | `CLAUDE_CODE_OAUTH_TOKEN`, `IMPLEMENTER_PAT`, `FLEET_APP_ID`, `FLEET_APP_PRIVATE_KEY` |
+| `release.yml` | `secrets: inherit` — the release reusable does not declare a named `secrets:` block; GitHub rejects explicit forwarding to a reusable that doesn't declare them (#64). This is the documented exception. |
+
+`secrets: inherit` for `release.yml` is safe because the trigger is `push` to main (not a prompt-injection surface) and the caller itself scopes permissions (`contents: write`, `pull-requests: write`, `id-token: write` — nothing beyond what release-please needs).
+
+## 11. Setup checklist
 
 When bootstrapping a new project, the `new-project.sh` script will:
 
@@ -227,7 +250,7 @@ When bootstrapping a new project, the `new-project.sh` script will:
 - [ ] Add `.github/workflows/digest.yml` — scheduled daily/weekly digest job
 - [ ] Add an empty `docs/adr/_pending.md` for the decision queue
 
-## 10. Anti-patterns to avoid
+## 12. Anti-patterns to avoid
 
 - ❌ **"Just this once" manual approval gates.** They rot. Either automate or formally ADR-gate the change category.
 - ❌ **Different code in different environments.** Same artifact, different config. Period.
