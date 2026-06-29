@@ -17,9 +17,14 @@ permissions:
 
 jobs:
   release:
-    uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@6859953981679181b26d578453fe1c64b5a9bd0c # main 2026-06-28
+    # First-party reusable rides @main so platform fixes propagate (ADR-0048/0034) —
+    # don't pin to a SHA.
+    uses: jaetill/agentic-dev-environment/.github/workflows/release.yml@main
     with:
       release-type: node
-    secrets:
-      FLEET_APP_ID: ${{ secrets.FLEET_APP_ID }}
-      FLEET_APP_PRIVATE_KEY: ${{ secrets.FLEET_APP_PRIVATE_KEY }}
+    # The release reusable declares no `secrets:` block — its contract is
+    # `secrets: inherit` (it reads secrets.FLEET_APP_* directly). Passing explicit
+    # named secrets it doesn't declare is rejected at startup (#64). Release is
+    # push-on-main (not a prompt-injection surface), so inherit is the sanctioned
+    # pattern here, matching the rest of the fleet's release callers.
+    secrets: inherit
