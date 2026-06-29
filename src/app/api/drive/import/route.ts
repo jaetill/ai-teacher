@@ -164,6 +164,7 @@ export async function POST(req: Request) {
         driveMimeType: copied.data.mimeType!,
         driveWebUrl: copied.data.webViewLink!,
         driveFolderId: folder.driveId,
+        ownerEmail,
         source: "human",
       });
 
