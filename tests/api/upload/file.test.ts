@@ -147,6 +147,29 @@ describe("POST /api/upload/file", () => {
     expect(mockIsNull).toHaveBeenCalled();
   });
 
+  it("stamps ownerEmail on the materials insert (IDOR regression)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok",
+      user: { email: "teacher@school.edu" },
+    });
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ driveId: "folder-id" }]));
+
+    let capturedValues: Record<string, unknown> | null = null;
+    mockDbInsert.mockReturnValueOnce({
+      values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+        capturedValues = v;
+        return { returning: () => Promise.resolve([{ id: "mat-1" }]) };
+      }),
+    });
+
+    const req = { formData: () => Promise.resolve(makeFormData()) } as unknown as Request;
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(capturedValues).not.toBeNull();
+    expect(capturedValues!.ownerEmail).toBe("teacher@school.edu");
+  });
+
   it("does NOT allow teacher-b to upload to teacher-a's folder (cross-user isolation)", async () => {
     // teacher-b calls upload/file; the DB returns no folder for their scoped query
     mockGetServerSession.mockResolvedValueOnce({
