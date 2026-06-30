@@ -83,6 +83,7 @@ export async function POST(req: Request) {
       driveMimeType: driveFile.mimeType!,
       driveWebUrl: driveFile.webViewLink!,
       driveFolderId: folder.driveId,
+      ownerEmail,
       source: "human",
     })
     .returning({ id: materials.id });

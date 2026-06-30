@@ -84,13 +84,20 @@ export async function GET(req: Request) {
       ).map((f) => f.driveId)
     : [];
 
+  const materialOwnerPredicate = or(eq(materials.ownerEmail, userEmail), isNull(materials.ownerEmail));
+
   // Get materials from these folders
   let courseMaterials;
   if (relevantFolderDriveIds.length > 0) {
     courseMaterials = await db
       .select()
       .from(materials)
-      .where(inArray(materials.driveFolderId, relevantFolderDriveIds));
+      .where(
+        and(
+          inArray(materials.driveFolderId, relevantFolderDriveIds),
+          materialOwnerPredicate,
+        )
+      );
   } else {
     // Fallback: get all materials that are attached to this course's units
     const unitIds = courseUnits.map((u) => u.id);
@@ -102,7 +109,9 @@ export async function GET(req: Request) {
       );
     const materialIds = attachedMaterialIds.map((r) => r.materialId);
     courseMaterials = materialIds.length
-      ? await db.select().from(materials).where(inArray(materials.id, materialIds))
+      ? await db.select().from(materials).where(
+          and(inArray(materials.id, materialIds), materialOwnerPredicate)
+        )
       : [];
   }
 

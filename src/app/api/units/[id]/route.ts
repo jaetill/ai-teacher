@@ -121,6 +121,8 @@ export async function GET(
     .where(and(eq(driveFolders.folderKey, quarterFolderKey), ownerPredicate))
     .limit(1);
 
+  const materialOwnerPredicate = or(eq(materials.ownerEmail, email), isNull(materials.ownerEmail));
+
   // ── Material attachments per lesson ───
   const lessonAttachments = lessonIds.length
     ? await db
@@ -137,7 +139,8 @@ export async function GET(
         .where(
           and(
             eq(materialAttachments.attachableType, "lesson"),
-            inArray(materialAttachments.attachableId, lessonIds)
+            inArray(materialAttachments.attachableId, lessonIds),
+            materialOwnerPredicate,
           )
         )
     : [];
@@ -156,7 +159,8 @@ export async function GET(
     .where(
       and(
         eq(materialAttachments.attachableType, "unit"),
-        eq(materialAttachments.attachableId, id)
+        eq(materialAttachments.attachableId, id),
+        materialOwnerPredicate,
       )
     );
 

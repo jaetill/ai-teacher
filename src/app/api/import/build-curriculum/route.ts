@@ -89,7 +89,12 @@ export async function POST(req: Request) {
   const quarterMaterials = await db
     .select()
     .from(materials)
-    .where(inArray(materials.driveFolderId, folderDriveIds));
+    .where(
+      and(
+        inArray(materials.driveFolderId, folderDriveIds),
+        or(eq(materials.ownerEmail, ownerEmail), isNull(materials.ownerEmail)),
+      )
+    );
 
   if (quarterMaterials.length === 0) {
     return Response.json({

@@ -98,7 +98,12 @@ export async function POST(
       driveFolderId: materials.driveFolderId,
     })
     .from(materials)
-    .where(inArray(materials.driveFolderId, folderDriveIds));
+    .where(
+      and(
+        inArray(materials.driveFolderId, folderDriveIds),
+        or(eq(materials.ownerEmail, ownerEmail), isNull(materials.ownerEmail)),
+      )
+    );
 
   if (quarterMaterials.length === 0) {
     return Response.json({
