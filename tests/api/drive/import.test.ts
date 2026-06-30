@@ -201,7 +201,8 @@ describe("POST /api/drive/import", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.results[0].status).toBe("error: folder not found");
+    expect(body.results[0].status).toBe("error");
+    expect(body.results[0].message).toBe("Destination folder not found");
     // The eq() call used teacher-b's email, not teacher-a's
     expect(mockEq.mock.calls.some(([, v]) => v === "teacher-b@school.edu")).toBe(true);
     expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);

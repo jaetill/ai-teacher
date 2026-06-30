@@ -141,7 +141,7 @@ export async function POST(req: Request) {
         .limit(1);
 
       if (!folder) {
-        results.push({ name: file.name, status: "error: folder not found" });
+        results.push({ name: file.name, status: "error", message: "Destination folder not found" });
         continue;
       }
 
