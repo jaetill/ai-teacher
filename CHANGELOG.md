@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1](https://github.com/jaetill/ai-teacher/compare/v1.1.0...v1.1.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **ci:** release caller uses secrets: inherit + rides [@main](https://github.com/main) (closes [#64](https://github.com/jaetill/ai-teacher/issues/64)) ([#548](https://github.com/jaetill/ai-teacher/issues/548)) ([35e0b02](https://github.com/jaetill/ai-teacher/commit/35e0b027264b59d600aa69c36edae5ce4dfab598))
+* **drive/import:** align early-exit folder error format with catch-block sanitization ([#567](https://github.com/jaetill/ai-teacher/issues/567)) ([c0db4da](https://github.com/jaetill/ai-teacher/commit/c0db4da55c79c005d92355ad1577de119b17f409))
+* **drive/import:** sanitize per-file Drive error messages in POST handler ([#560](https://github.com/jaetill/ai-teacher/issues/560)) ([dfd78be](https://github.com/jaetill/ai-teacher/commit/dfd78be416f588acce162d3a734acd09a3adaa73)), closes [#555](https://github.com/jaetill/ai-teacher/issues/555)
+* **year-plan/save:** batch all unit inserts atomically to prevent partial writes ([#114](https://github.com/jaetill/ai-teacher/issues/114)) ([#556](https://github.com/jaetill/ai-teacher/issues/556)) ([54d8da4](https://github.com/jaetill/ai-teacher/commit/54d8da422cd1d5190f8c24912d327f04968dab35))
+* **year-plan/save:** scope course lookup and insert to schoolYear (closes [#113](https://github.com/jaetill/ai-teacher/issues/113)) ([#564](https://github.com/jaetill/ai-teacher/issues/564)) ([717d5d9](https://github.com/jaetill/ai-teacher/commit/717d5d9e3e229ce0066ee495d0043c4d7159677d))
+
 ## [1.1.0](https://github.com/jaetill/ai-teacher/compare/v1.0.2...v1.1.0) (2026-06-27)
 
 
