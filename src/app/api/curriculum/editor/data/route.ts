@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, lessons, assessments, materialAttachments, materials } from "@/db/schema";
-import { eq, asc, inArray, and } from "drizzle-orm";
+import { eq, asc, inArray, and, or, isNull } from "drizzle-orm";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -75,6 +75,8 @@ export async function GET(req: Request) {
     attachableId: string;
   };
 
+  const materialOwnerPredicate = or(eq(materials.ownerEmail, userEmail), isNull(materials.ownerEmail));
+
   const lessonMats: MatLink[] = lessonIds.length
     ? await db
         .select({
@@ -91,7 +93,8 @@ export async function GET(req: Request) {
         .where(
           and(
             eq(materialAttachments.attachableType, "lesson"),
-            inArray(materialAttachments.attachableId, lessonIds)
+            inArray(materialAttachments.attachableId, lessonIds),
+            materialOwnerPredicate,
           )
         )
         .orderBy(asc(materialAttachments.sortOrder))
@@ -113,7 +116,8 @@ export async function GET(req: Request) {
         .where(
           and(
             eq(materialAttachments.attachableType, "assessment"),
-            inArray(materialAttachments.attachableId, assessmentIds)
+            inArray(materialAttachments.attachableId, assessmentIds),
+            materialOwnerPredicate,
           )
         )
         .orderBy(asc(materialAttachments.sortOrder))

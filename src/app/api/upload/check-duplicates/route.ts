@@ -83,7 +83,12 @@ export async function POST(req: Request) {
     ? await db
         .select({ title: materials.title, driveFolderId: materials.driveFolderId })
         .from(materials)
-        .where(inArray(materials.driveFolderId, driveIds))
+        .where(
+          and(
+            inArray(materials.driveFolderId, driveIds),
+            or(eq(materials.ownerEmail, ownerEmail), isNull(materials.ownerEmail)),
+          )
+        )
     : [];
   const dbMaterialsByFolder = new Map<string, Set<string>>();
   for (const m of dbMaterials) {

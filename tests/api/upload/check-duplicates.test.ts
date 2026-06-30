@@ -176,4 +176,51 @@ describe("POST /api/upload/check-duplicates", () => {
     expect(body.results[0].isDuplicate).toBe(true);
     expect(body.results[0].reason).toBe("Exists in database");
   });
+
+  it("scopes the materials DB lookup to the caller's email (IDOR regression, #566)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok",
+      user: { email: "teacher-a@school.edu" },
+    });
+    // driveFolders: teacher-a's folder found
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ folderKey: "8_Q1_Lessons", driveId: "folder-a" }]),
+    );
+    // materials query → empty (no duplicate found)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+
+    // eq() must be called with teacher-a's email for BOTH the driveFolders and materials queries
+    const emailEqCalls = mockEq.mock.calls.filter(([, v]) => v === "teacher-a@school.edu");
+    expect(emailEqCalls.length).toBeGreaterThanOrEqual(2);
+    // or()/isNull() compose the open-null owner predicate in both queries
+    expect(mockOr.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mockIsNull.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does NOT expose teacher-a's materials to teacher-b via materials DB (cross-user isolation, #566)", async () => {
+    // teacher-b queries check-duplicates; the folder exists (e.g. ownerEmail=null legacy row)
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok-b",
+      user: { email: "teacher-b@school.edu" },
+    });
+    // teacher-b's driveFolders query returns a shared/legacy folder
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ folderKey: "8_Q1_Lessons", driveId: "folder-shared" }]),
+    );
+    // teacher-b's materials query returns nothing — ownerEmail predicate filtered out teacher-a's rows
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // File is not flagged as a duplicate — teacher-a's material was not visible to teacher-b
+    expect(body.results[0].isDuplicate).toBe(false);
+
+    // The ownerEmail predicate uses teacher-b's email, never teacher-a's
+    expect(mockEq.mock.calls.some(([, v]) => v === "teacher-b@school.edu")).toBe(true);
+    expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);
+  });
 });
