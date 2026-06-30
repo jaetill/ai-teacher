@@ -208,6 +208,28 @@ describe("POST /api/drive/import", () => {
     expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);
   });
 
+  it("stamps ownerEmail on the materials insert (IDOR fix)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok",
+      user: { email: "teacher-a@school.edu" },
+    });
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ driveId: "folder-a" }]));
+    mockDriveFilesCopy.mockResolvedValueOnce({
+      data: {
+        id: "copied-id",
+        mimeType: "application/pdf",
+        webViewLink: "https://drive.google.com/file/d/copied-id/view",
+      },
+    });
+    const valuesMock = vi.fn().mockResolvedValue(undefined);
+    mockDbInsert.mockReturnValueOnce({ values: valuesMock });
+
+    await POST(makePostRequest());
+
+    expect(valuesMock).toHaveBeenCalledOnce();
+    expect(valuesMock.mock.calls[0][0]).toMatchObject({ ownerEmail: "teacher-a@school.edu" });
+  });
+
   it("returns copied status and Drive URL on success", async () => {
     mockGetServerSession.mockResolvedValueOnce({
       accessToken: "tok",

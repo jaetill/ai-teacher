@@ -28,6 +28,8 @@ export const materials = pgTable(
     url: text("url"),
     inlineContent: text("inline_content"),
 
+    ownerEmail: text("owner_email"),
+
     // AI-readable summary of what this material is
     description: text("description"),
     source: text("source").notNull().default("human"),
@@ -41,6 +43,7 @@ export const materials = pgTable(
   (table) => [
     index("idx_materials_drive_file").on(table.driveFileId),
     index("idx_materials_type").on(table.materialType),
+    index("idx_materials_owner").on(table.ownerEmail),
   ]
 );
 

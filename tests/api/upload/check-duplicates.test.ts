@@ -133,6 +133,30 @@ describe("POST /api/upload/check-duplicates", () => {
     expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);
   });
 
+  it("scopes the materials DB lookup to the caller's email (IDOR regression)", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok-b",
+      user: { email: "teacher-b@school.edu" },
+    });
+    // teacher-b can see the shared Drive folder
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ folderKey: "8_Q1_Lessons", driveId: "shared-folder" }]),
+    );
+    // Drive listing is empty
+    mockListFilesInFolder.mockResolvedValueOnce([]);
+    // materials DB returns empty for teacher-b (teacher-a's rows filtered out)
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results[0].isDuplicate).toBe(false);
+    // eq() was called with teacher-b's email (not teacher-a's) for the materials WHERE clause
+    expect(mockEq.mock.calls.some(([, v]) => v === "teacher-b@school.edu")).toBe(true);
+    expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);
+  });
+
   it("flags a file as duplicate when it exists in the Drive folder", async () => {
     mockGetServerSession.mockResolvedValueOnce({
       accessToken: "tok",
