@@ -12,6 +12,12 @@ const { mockStream, mockDbSelect, mockDbInsert, mockDbUpdate } = vi.hoisted(() =
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+// The copilot route checks the shared AI budget before streaming; stub it so
+// these contract tests exercise the stream, not the limiter (see route tests).
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
