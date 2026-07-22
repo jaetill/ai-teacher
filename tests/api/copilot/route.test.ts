@@ -10,6 +10,10 @@ const { mockDbSelect, mockDbInsert, mockDbUpdate, mockStreamFn } = vi.hoisted(()
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = { stream: mockStreamFn };
@@ -339,5 +343,123 @@ describe("POST /api/copilot — input size caps (quota-exhaustion prevention)", 
     );
 
     expect(res.status).not.toBe(413);
+  });
+});
+
+// ── Request parsing / AI budget ──────────────────────────────────────────────
+describe("POST /api/copilot — body parsing and rate limit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("returns 400 on a malformed JSON body", async () => {
+    authedSession();
+
+    const res = await POST(
+      new Request("http://localhost/api/copilot", { method: "POST", body: "{not json" }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid JSON body");
+    expect(mockStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("returns the 429 from checkAiRateLimit when the user is over budget", async () => {
+    authedSession();
+
+    const { checkAiRateLimit } = await import("@/lib/rate-limit");
+    vi.mocked(checkAiRateLimit).mockResolvedValueOnce(
+      Response.json({ error: "rate_limited", retry_after_seconds: 60 }, { status: 429 }),
+    );
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toBe("rate_limited");
+    expect(mockStreamFn).not.toHaveBeenCalled();
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+});
+
+// ── Assistant-message persistence semantics ──────────────────────────────────
+describe("POST /api/copilot — assistant persistence after the stream", () => {
+  function textDelta(text: string) {
+    return { type: "content_block_delta", delta: { type: "text_delta", text } };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbInsert.mockReturnValue(makeChain([{ id: VALID_UUID }]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("persists the assistant message and bumps the conversation after a successful stream", async () => {
+    authedSession();
+
+    mockStreamFn.mockReturnValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        yield textDelta("Hello ");
+        yield textDelta("teacher");
+      },
+    });
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("Hello teacher");
+    // inserts: new conversation, user message, assistant message
+    expect(mockDbInsert).toHaveBeenCalledTimes(3);
+    // conversation messageCount/updatedAt bump
+    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the assistant insert and conversation update when the stream yields no text", async () => {
+    authedSession();
+
+    mockStreamFn.mockReturnValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        // no text_delta events at all
+      },
+    });
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("");
+    // inserts: new conversation + user message only — no empty assistant row
+    expect(mockDbInsert).toHaveBeenCalledTimes(2);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("persists accumulated text and errors the response stream on a mid-stream failure", async () => {
+    authedSession();
+
+    const streamError = new Error("anthropic exploded");
+    mockStreamFn.mockReturnValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        yield textDelta("partial answer");
+        throw streamError;
+      },
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(res.status).toBe(200);
+    // the response stream surfaces the error to the client
+    await expect(res.text()).rejects.toBe(streamError);
+    // the partial assistant text is still persisted (conversation + user + assistant)
+    expect(mockDbInsert).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("[copilot] Anthropic stream failed:", streamError);
+
+    consoleErrorSpy.mockRestore();
   });
 });

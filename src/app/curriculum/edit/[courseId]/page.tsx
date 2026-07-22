@@ -177,7 +177,18 @@ export default function CurriculumEditorPage() {
 
       const overUnit = findUnitForItem(overId);
       if (overUnit && overUnit.id === activeUnit.id) {
-        // Same-unit reorder
+        // Same-unit reorder. This was a silent no-op stub: dnd-kit animated
+        // the drop, then the list snapped back with nothing persisted.
+        const oldIndex = activeUnit.assessments.findIndex((a) => a.id === active.id);
+        const newIndex = activeUnit.assessments.findIndex((a) => a.id === overId);
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          editor.moveAssessment(
+            active.id as string,
+            activeUnit.id,
+            activeUnit.id,
+            newIndex + 1
+          );
+        }
       } else if (overUnit && overUnit.id !== activeUnit.id) {
         const overIndex = overUnit.assessments.findIndex((a) => a.id === overId);
         const newSortOrder = overIndex !== -1 ? overIndex + 1 : overUnit.assessments.length + 1;

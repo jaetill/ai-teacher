@@ -17,6 +17,11 @@ export default function CopilotPanel() {
   const [streaming, setStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // In-flight stream, so "New" can cancel it. Without this, clicking New while
+  // streaming emptied `messages` while the read loop kept appending to
+  // updated[length - 1] — undefined.content, a render-pass TypeError that
+  // crashed the whole app (CopilotPanel lives in the root layout).
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,10 +39,14 @@ export default function CopilotPanel() {
 
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     try {
       const res = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abort.signal,
         body: JSON.stringify({
           messages: nextMessages,
           conversationId,
@@ -62,6 +71,12 @@ export default function CopilotPanel() {
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         setMessages((prev) => {
+          // Guard against racing a conversation reset: if messages were
+          // cleared (or the tail isn't the assistant placeholder), drop the
+          // late chunk instead of crashing on undefined.
+          if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
+            return prev;
+          }
           const updated = [...prev];
           const last = updated[updated.length - 1];
           updated[updated.length - 1] = {
@@ -71,16 +86,23 @@ export default function CopilotPanel() {
           return updated;
         });
       }
-    } catch {
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: "assistant",
-          content: "Something went wrong. Please try again.",
-        };
-        return updated;
-      });
+    } catch (err) {
+      // A deliberate abort (New conversation) is not an error.
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        setMessages((prev) => {
+          if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
+            return prev;
+          }
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: "Something went wrong. Please try again.",
+          };
+          return updated;
+        });
+      }
     } finally {
+      if (abortRef.current === abort) abortRef.current = null;
       setStreaming(false);
     }
   }
@@ -93,8 +115,11 @@ export default function CopilotPanel() {
   }
 
   function newConversation() {
+    abortRef.current?.abort();
+    abortRef.current = null;
     setMessages([]);
     setConversationId(null);
+    setStreaming(false);
   }
 
   return (

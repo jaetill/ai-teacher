@@ -9,6 +9,10 @@ const { mockDbSelect, mockDbInsert, mockMessagesCreate } = vi.hoisted(() => ({
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
@@ -106,18 +110,19 @@ const AI_RESPONSE = {
 };
 
 /**
- * Sets up the db mock sequences for the three course-upsert test cases.
+ * Sets up the db mock sequences for the course select-first/insert test cases.
  *
  * Select call order (shared prefix):
  *   1. driveFolders
  *   2. materials
  *   3. standards
  *   4. schoolYears
- *   5. courses fallback SELECT (only when courseInsertReturn is [])
- *   5 or 6. units existingUnits (only when a course was ultimately found)
+ *   5. courses select-first lookup (courseSelectReturn)
+ *   6. courses race-fallback SELECT (only when courseFallbackReturn provided)
+ *   next: units existingUnits (only when a course was ultimately found)
  *
  * Insert call order:
- *   1. courses (the result we're testing)
+ *   1. courses (only when the select-first lookup found nothing)
  *   If a course was found:
  *   2. units
  *   3. unitStandards
@@ -126,13 +131,16 @@ const AI_RESPONSE = {
  *   6. materialAttachments
  */
 function setupMocks({
-  courseInsertReturn,
+  courseSelectReturn = [],
+  courseInsertReturn = [],
   courseFallbackReturn,
 }: {
-  courseInsertReturn: unknown[];
+  courseSelectReturn?: unknown[];
+  courseInsertReturn?: unknown[];
   courseFallbackReturn?: unknown[];
 }) {
   const courseFound =
+    courseSelectReturn.length > 0 ||
     courseInsertReturn.length > 0 ||
     (courseFallbackReturn !== undefined && courseFallbackReturn.length > 0);
 
@@ -141,17 +149,20 @@ function setupMocks({
     .mockReturnValueOnce(makeChain([FOLDER])) // 1. driveFolders
     .mockReturnValueOnce(makeChain([MATERIAL])) // 2. materials
     .mockReturnValueOnce(makeChain([STANDARD])) // 3. standards
-    .mockReturnValueOnce(makeChain([SCHOOL_YEAR])); // 4. schoolYears
+    .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 4. schoolYears
+    .mockReturnValueOnce(makeChain(courseSelectReturn)); // 5. courses select-first
 
   if (courseFallbackReturn !== undefined) {
-    mockDbSelect.mockReturnValueOnce(makeChain(courseFallbackReturn)); // 5. courses fallback
+    mockDbSelect.mockReturnValueOnce(makeChain(courseFallbackReturn)); // 6. courses race fallback
   }
   if (courseFound) {
     mockDbSelect.mockReturnValueOnce(makeChain([])); // existingUnits
   }
 
   mockDbInsert.mockReset();
-  mockDbInsert.mockReturnValueOnce(makeChain(courseInsertReturn)); // courses insert
+  if (courseSelectReturn.length === 0) {
+    mockDbInsert.mockReturnValueOnce(makeChain(courseInsertReturn)); // courses insert
+  }
 
   if (courseFound) {
     mockDbInsert
@@ -204,6 +215,43 @@ describe("POST /api/import/build-curriculum", () => {
     expect(body.error).toBeTruthy();
   });
 
+  it("returns 400 on a malformed JSON body", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/import/build-curriculum", {
+        method: "POST",
+        body: "{not json",
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid JSON body");
+    expect(mockDbSelect).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when grade or quarter is invalid", async () => {
+    for (const payload of [
+      { grade: "5", quarter: "Q1" }, // grade must be a number
+      { grade: 0, quarter: "Q1" }, // falsy grade
+      { quarter: "Q1" }, // missing grade
+      { grade: 5, quarter: "" }, // empty quarter
+      { grade: 5, quarter: "Q1-extra-long" }, // quarter > 10 chars
+      { grade: 5 }, // missing quarter
+    ]) {
+      const res = await POST(
+        new Request("http://localhost/api/import/build-curriculum", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("grade and quarter required");
+    }
+    expect(mockDbSelect).not.toHaveBeenCalled();
+    expect(mockMessagesCreate).not.toHaveBeenCalled();
+  });
+
   it("returns structured 500 JSON when getServerSession throws", async () => {
     mockGetServerSession.mockRejectedValue(new Error("JWT decode failure"));
 
@@ -214,18 +262,32 @@ describe("POST /api/import/build-curriculum", () => {
     expect(body.error).toBeTruthy();
   });
 
-  describe("course upsert race paths", () => {
-    it("uses the course from the insert when the row is returned (no concurrent race)", async () => {
-      setupMocks({ courseInsertReturn: [{ id: "c1" }] });
+  describe("course select-first / insert race paths", () => {
+    it("uses the existing course from the select-first lookup without inserting a course", async () => {
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
 
       const res = await POST(makeRequest());
 
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.unitId).toBe(CREATED_UNIT.id);
-      // Fallback SELECT should NOT have been called — only 5 selects total
-      // (folders, materials, standards, schoolYears, existingUnits)
-      expect(mockDbSelect).toHaveBeenCalledTimes(5);
+      // 6 selects: folders, materials, standards, schoolYears, courses, existingUnits
+      expect(mockDbSelect).toHaveBeenCalledTimes(6);
+      // No courses insert — units, unitStandards, lessons, lessonStandards, materialAttachments
+      expect(mockDbInsert).toHaveBeenCalledTimes(5);
+    });
+
+    it("inserts the course when the select-first lookup finds nothing", async () => {
+      setupMocks({ courseSelectReturn: [], courseInsertReturn: [{ id: "c1" }] });
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.unitId).toBe(CREATED_UNIT.id);
+      // Fallback SELECT should NOT have been called — 6 selects total
+      // (folders, materials, standards, schoolYears, courses select-first, existingUnits)
+      expect(mockDbSelect).toHaveBeenCalledTimes(6);
     });
 
     it("scopes DB lookups by the session ownerEmail (#142)", async () => {
@@ -241,7 +303,8 @@ describe("POST /api/import/build-curriculum", () => {
 
     it("falls back to SELECT and succeeds when the insert loses a concurrent race", async () => {
       setupMocks({
-        courseInsertReturn: [], // insert returns nothing (row existed)
+        courseSelectReturn: [], // select-first finds nothing
+        courseInsertReturn: [], // insert returns nothing (concurrent winner exists)
         courseFallbackReturn: [{ id: "c1" }], // fallback SELECT finds the winner's row
       });
 
@@ -250,8 +313,8 @@ describe("POST /api/import/build-curriculum", () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.unitId).toBe(CREATED_UNIT.id);
-      // Fallback SELECT must have been called — 6 selects total
-      expect(mockDbSelect).toHaveBeenCalledTimes(6);
+      // Fallback SELECT must have been called — 7 selects total
+      expect(mockDbSelect).toHaveBeenCalledTimes(7);
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
@@ -265,6 +328,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])) // courses select-first → not found
         .mockReturnValueOnce(makeChain([])); // existingUnits
 
       const unitChain = makeChain([CREATED_UNIT]);
@@ -293,6 +357,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])) // courses select-first → not found
         .mockReturnValueOnce(makeChain([])); // existingUnits
 
       const courseChain = makeChain([{ id: "c1" }]);
@@ -319,6 +384,7 @@ describe("POST /api/import/build-curriculum", () => {
       vi.mocked(mockEq).mockClear();
 
       setupMocks({
+        courseSelectReturn: [], // select-first finds nothing
         courseInsertReturn: [], // insert loses to a concurrent race
         courseFallbackReturn: [{ id: "c1" }], // fallback finds the right course
       });
@@ -330,8 +396,9 @@ describe("POST /api/import/build-curriculum", () => {
       expect(eqSecondArgs).toContain(SCHOOL_YEAR.id);
     });
 
-    it("returns 500 gracefully when both insert and fallback SELECT return nothing", async () => {
+    it("returns 500 gracefully when select, insert, and fallback SELECT all return nothing", async () => {
       setupMocks({
+        courseSelectReturn: [], // select-first finds nothing
         courseInsertReturn: [], // insert returns nothing
         courseFallbackReturn: [], // fallback also returns nothing
       });
@@ -365,6 +432,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])) // courses select-first → not found
         .mockReturnValueOnce(makeChain([])); // existingUnits
       mockDbInsert.mockReset();
       mockDbInsert

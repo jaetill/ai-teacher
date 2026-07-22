@@ -39,6 +39,9 @@ function makeChain(value: unknown) {
   return chain;
 }
 
+// unitId must now be a valid UUID — non-UUID ids are rejected before any DB read.
+const UNIT_ID = "550e8400-e29b-41d4-a716-446655440001";
+
 function authed() {
   mockGetServerSession.mockResolvedValue({
     user: { email: "teacher@example.com" },
@@ -52,7 +55,7 @@ function ownsUnit() {
   mockAssert.mockResolvedValue(null);
 }
 
-function makeRequest(body: object = { unitId: "unit-1", lessonPlan: "# Week 1\n..." }) {
+function makeRequest(body: object = { unitId: UNIT_ID, lessonPlan: "# Week 1\n..." }) {
   return new Request("http://localhost/api/curriculum/save", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -91,8 +94,34 @@ describe("POST /api/curriculum/save", () => {
 
   it("returns 400 when lessonPlan is missing", async () => {
     authed();
-    const res = await POST(makeRequest({ unitId: "unit-1" }));
+    const res = await POST(makeRequest({ unitId: UNIT_ID }));
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when unitId is not a UUID", async () => {
+    authed();
+    const res = await POST(makeRequest({ unitId: "unit-1", lessonPlan: "# Week 1" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/unitId/);
+    expect(mockDbSelect).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 on a malformed JSON body", async () => {
+    authed();
+    const res = await POST(
+      new Request("http://localhost/api/curriculum/save", { method: "POST", body: "{not json" }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Invalid JSON body");
+    expect(mockDbSelect).not.toHaveBeenCalled();
+  });
+
+  it("returns 413 when lessonPlan exceeds 200000 chars", async () => {
+    authed();
+    const res = await POST(makeRequest({ unitId: UNIT_ID, lessonPlan: "x".repeat(200_001) }));
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe("lessonPlan too large");
+    expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the unit does not exist", async () => {
@@ -107,9 +136,7 @@ describe("POST /api/curriculum/save", () => {
   it("returns 403 (and never updates) when the caller does not own the unit's course", async () => {
     authed();
     mockDbSelect.mockReturnValue(makeChain([{ courseId: "course-1" }]));
-    mockAssert.mockResolvedValue(
-      Response.json({ error: "Forbidden" }, { status: 403 })
-    );
+    mockAssert.mockResolvedValue(Response.json({ error: "Forbidden" }, { status: 403 }));
     const res = await POST(makeRequest());
     expect(res.status).toBe(403);
     expect(mockAssert).toHaveBeenCalledWith("course-1", "teacher@example.com");
@@ -119,7 +146,7 @@ describe("POST /api/curriculum/save", () => {
   it("returns 200 ok:true when the unit is owned and updated", async () => {
     authed();
     ownsUnit();
-    mockDbUpdate.mockReturnValue(makeChain([{ id: "unit-1" }]));
+    mockDbUpdate.mockReturnValue(makeChain([{ id: UNIT_ID }]));
     const res = await POST(makeRequest());
     expect(res.status).toBe(200);
     expect((await res.json()).ok).toBe(true);
@@ -128,12 +155,12 @@ describe("POST /api/curriculum/save", () => {
   it("writes lessonPlan into aiGenerationContext.lessonPlanMarkdown", async () => {
     authed();
     ownsUnit();
-    const updateChain = makeChain([{ id: "unit-1" }]);
+    const updateChain = makeChain([{ id: UNIT_ID }]);
     const setSpy = vi.fn().mockReturnValue(updateChain);
     updateChain.set = setSpy;
     mockDbUpdate.mockReturnValue(updateChain);
 
-    await POST(makeRequest({ unitId: "unit-1", lessonPlan: "# My Plan" }));
+    await POST(makeRequest({ unitId: UNIT_ID, lessonPlan: "# My Plan" }));
 
     expect(setSpy).toHaveBeenCalledOnce();
     expect(setSpy.mock.calls[0][0]).toMatchObject({

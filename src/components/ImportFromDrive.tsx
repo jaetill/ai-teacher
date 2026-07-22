@@ -52,7 +52,6 @@ export default function ImportFromDrive() {
   const [importing, setImporting] = useState(false);
   const [building, setBuilding] = useState(false);
   const [buildResult, setBuildResult] = useState<{ unitId: string; unitTitle: string; lessonCount: number } | null>(null);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // ── Step 1: Scan folder ───
@@ -192,11 +191,9 @@ export default function ImportFromDrive() {
     if (!folderId) return;
     setStep("import");
     setImporting(true);
-    setProgress(0);
 
     const toImport = files;
     for (let i = 0; i < toImport.length; i++) {
-      setProgress(i + 1);
       setFiles((prev) =>
         prev.map((f, idx) =>
           idx === i ? { ...f, status: "copying" } : f
@@ -240,7 +237,6 @@ export default function ImportFromDrive() {
           return { ...f, status: "error" };
         })
       );
-      setProgress(files.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {

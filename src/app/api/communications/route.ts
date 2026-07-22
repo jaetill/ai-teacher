@@ -11,9 +11,9 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson } from "@/lib/api-utils";
 
 const SYSTEM_PROMPT = `You are helping a middle school ELA teacher at a private school draft professional communications.
 
@@ -41,14 +41,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { recipient, situation, tone, studentName, recipientName } = body as {
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
+
+  const body = await readJson<{
     recipient: "parent" | "admin";
     situation: string;
     tone: "positive" | "concerned" | "neutral";
     studentName?: string;
     recipientName?: string;
-  };
+  }>(request);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { recipient, situation, tone, studentName, recipientName } = body;
 
   if (!recipient || !situation || !tone) {
     return new Response("recipient, situation, and tone are required", {
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
 **Situation:**
 ${situation}`;
 
-  const stream = client.messages.stream({
+  const stream = getAnthropic().messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 4000,
     system: SYSTEM_PROMPT,
@@ -103,9 +109,20 @@ ${situation}`;
           }
         }
       } catch (err) {
-        controller.error(err);
-      } finally {
+        // Log server-side (was silently swallowed) and don't call close() on
+        // an errored controller — that throws and masks the original failure.
+        console.error("[communications] Anthropic stream failed:", err);
+        try {
+          controller.error(err);
+        } catch {
+          // Controller already closed (client disconnected) — nothing to signal.
+        }
+        return;
+      }
+      try {
         controller.close();
+      } catch {
+        // Client disconnected mid-stream; controller already closed.
       }
     },
   });

@@ -8,9 +8,7 @@
 
 import { NextRequest } from "next/server";
 import { Octokit } from "@octokit/rest";
-import { db } from "@/db";
-import { rateLimits } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "jaetill";
 const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
@@ -18,35 +16,6 @@ const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
 const ALLOWED_TYPES = new Set(["bug", "feature", "other"]);
 const WINDOW_MS = 60 * 60 * 1000;
 const LIMIT = 10;
-
-// Distributed rate limit backed by Postgres (ADR-0046). A single atomic upsert
-// per call: insert a fresh row, or — on conflict — reset the window if it has
-// expired (>1h) else increment. RETURNING gives us the post-increment count so
-// the whole check is one round-trip with no read-modify-write race. This is
-// global across serverless instances, unlike the old per-instance Map (#48).
-async function checkRateLimit(
-  ip: string,
-): Promise<{ allowed: boolean; retryAfter?: number }> {
-  const expired = sql`${rateLimits.windowStart} < now() - interval '1 hour'`;
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key: ip, count: 1, windowStart: new Date() })
-    .onConflictDoUpdate({
-      target: rateLimits.key,
-      set: {
-        count: sql`CASE WHEN ${expired} THEN 1 ELSE ${rateLimits.count} + 1 END`,
-        windowStart: sql`CASE WHEN ${expired} THEN now() ELSE ${rateLimits.windowStart} END`,
-      },
-    })
-    .returning({ count: rateLimits.count, windowStart: rateLimits.windowStart });
-
-  if (row.count > LIMIT) {
-    const elapsed = Date.now() - new Date(row.windowStart).getTime();
-    const retryAfter = Math.max(1, Math.ceil((WINDOW_MS - elapsed) / 1000));
-    return { allowed: false, retryAfter };
-  }
-  return { allowed: true };
-}
 
 function escapeMarkdown(str: string): string {
   return str.replace(/[\\*_#[\]`<>!]/g, "\\$&");
@@ -89,7 +58,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const rl = await checkRateLimit(ip);
+  const rl = await checkRateLimit(ip, LIMIT, WINDOW_MS);
   if (!rl.allowed) {
     return Response.json(
       { error: "rate_limited", retry_after_seconds: rl.retryAfter },

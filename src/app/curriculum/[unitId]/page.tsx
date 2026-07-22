@@ -28,17 +28,24 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(lesson.teacherNotes ?? "");
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const activities = (lesson.lessonPlan as { activities?: string[] })
     ?.activities;
 
   async function saveNotes() {
     setSaving(true);
+    setSaveFailed(false);
     try {
-      await fetch(`/api/lessons/${lesson.id}/notes`, {
+      const res = await fetch(`/api/lessons/${lesson.id}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       });
+      // A non-ok response doesn't throw — without this check a failed save
+      // looked identical to a successful one and the notes were silently lost.
+      if (!res.ok) setSaveFailed(true);
+    } catch {
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -172,6 +179,11 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
             />
             {saving && (
               <span className="text-xs text-zinc-400 mt-0.5">Saving...</span>
+            )}
+            {saveFailed && !saving && (
+              <span className="text-xs text-red-500 mt-0.5">
+                Save failed — your notes are not saved. Click away from the box to retry.
+              </span>
             )}
           </div>
           {lesson.standards && lesson.standards.length > 0 && (
@@ -375,6 +387,7 @@ export default function UnitDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [notesSaveFailed, setNotesSaveFailed] = useState(false);
   const [inferring, setInferring] = useState(false);
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -400,7 +413,7 @@ export default function UnitDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [unitId]);
+  }, [unitId, setPageContext]);
 
   useEffect(() => {
     fetchUnit();
@@ -409,12 +422,16 @@ export default function UnitDetailPage() {
   async function saveNotes() {
     if (!unit) return;
     setSavingNotes(true);
+    setNotesSaveFailed(false);
     try {
-      await fetch(`/api/units/${unit.id}/notes`, {
+      const res = await fetch(`/api/units/${unit.id}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       });
+      if (!res.ok) setNotesSaveFailed(true);
+    } catch {
+      setNotesSaveFailed(true);
     } finally {
       setSavingNotes(false);
     }
@@ -598,6 +615,11 @@ export default function UnitDetailPage() {
             />
             {savingNotes && (
               <span className="text-xs text-zinc-400 mt-0.5">Saving...</span>
+            )}
+            {notesSaveFailed && !savingNotes && (
+              <span className="text-xs text-red-500 mt-0.5">
+                Save failed — your notes are not saved. Click away from the box to retry.
+              </span>
             )}
           </div>
         </div>

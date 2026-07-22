@@ -11,9 +11,9 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson } from "@/lib/api-utils";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer specializing in full-year planning for grades 6-8.
 
@@ -52,15 +52,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { grade, schoolYear, standards, existingCurriculum, notes } =
-    body as {
-      grade: number;
-      schoolYear: string;
-      standards: string;
-      existingCurriculum?: string;
-      notes?: string;
-    };
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
+
+  const body = await readJson<{
+    grade: number;
+    schoolYear: string;
+    standards: string;
+    existingCurriculum?: string;
+    notes?: string;
+  }>(request);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { grade, schoolYear, standards, existingCurriculum, notes } = body;
 
   if (!grade || !schoolYear || !standards) {
     return new Response("grade, schoolYear, and standards are required", {
@@ -107,7 +112,7 @@ ${standards}`;
     userMessage += `\n\n**Notes from this year to inform next year's planning:**\n${notes}`;
   }
 
-  const stream = client.messages.stream({
+  const stream = getAnthropic().messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 64000,
     thinking: { type: "adaptive" },
@@ -128,9 +133,20 @@ ${standards}`;
           }
         }
       } catch (err) {
-        controller.error(err);
-      } finally {
+        // Log server-side (was silently swallowed) and don't call close() on
+        // an errored controller — that throws and masks the original failure.
+        console.error("[year-plan] Anthropic stream failed:", err);
+        try {
+          controller.error(err);
+        } catch {
+          // Controller already closed (client disconnected) — nothing to signal.
+        }
+        return;
+      }
+      try {
         controller.close();
+      } catch {
+        // Client disconnected mid-stream; controller already closed.
       }
     },
   });

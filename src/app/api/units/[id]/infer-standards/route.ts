@@ -14,9 +14,9 @@ import {
   lessonStandards,
 } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 
-const client = new Anthropic();
 
 const VALID_COVERAGE_TYPES = new Set([
   "introduces",
@@ -44,6 +44,10 @@ export async function POST(
   if (!UUID_RE.test(id)) {
     return Response.json({ error: "Invalid unit id" }, { status: 400 });
   }
+
+  // After the cheap validation, before any AI spend.
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
 
   // ── Load unit, lessons, and standards ───
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
@@ -92,7 +96,7 @@ export async function POST(
     })
     .join("\n\n");
 
-  const message = await client.messages.create({
+  const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
     system: `You map teaching standards to lessons. For each lesson, identify which standards it covers and how.

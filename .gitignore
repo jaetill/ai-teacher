@@ -44,3 +44,6 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# Claude Code worktrees (local scratch checkouts with their own builds)
+.claude/worktrees/

@@ -7,7 +7,10 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson, UUID_RE } from "@/lib/api-utils";
 import { db } from "@/db";
 import {
   copilotConversations,
@@ -20,8 +23,6 @@ import {
   standards,
 } from "@/db/schema";
 import { eq, sql, asc, inArray } from "drizzle-orm";
-
-const client = new Anthropic();
 
 const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with full access to this teacher's curriculum database. You help teachers with:
 - Creating rubrics, lesson plans, unit maps, and pacing guides
@@ -87,8 +88,6 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
   const stdRows = stdIds.size > 0
     ? await db.select({ id: standards.id, description: standards.description }).from(standards).where(inArray(standards.id, [...stdIds]))
     : [];
-  const stdMap = new Map(stdRows.map(s => [s.id, s.description]));
-
   let ctx = "\n── CURRICULUM DATABASE ──\n\n";
 
   for (const course of allCourses) {
@@ -143,12 +142,18 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { messages, context, conversationId } = body as {
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
+
+  const body = await readJson<{
     messages: Anthropic.MessageParam[];
     context?: string;
     conversationId?: string;
-  };
+  }>(request);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { messages, context, conversationId } = body;
 
   if (!messages || messages.length === 0) {
     return new Response("messages are required", { status: 400 });
@@ -174,8 +179,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (conversationId && !UUID_RE.test(conversationId)) {
     return Response.json({ error: "Bad Request" }, { status: 400 });
   }
@@ -222,7 +225,7 @@ export async function POST(request: Request) {
     ? `${BASE_SYSTEM_PROMPT}${curriculumContext}\n\n── Additional context ───\n${context}`
     : `${BASE_SYSTEM_PROMPT}${curriculumContext}`;
 
-  const stream = client.messages.stream({
+  const stream = getAnthropic().messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 64000,
     thinking: { type: "adaptive" },
@@ -235,6 +238,14 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
+      // Track enqueue failures (client disconnected: stop button, tab close,
+      // navigation) separately from Anthropic stream failures. On disconnect
+      // we keep consuming the stream so the full assistant turn can still be
+      // persisted — otherwise a resumed conversation has user messages with
+      // no assistant replies and colliding sortOrder values (#eval-2026-07).
+      let clientGone = false;
+      let streamError: unknown = null;
+
       try {
         for await (const event of stream) {
           if (
@@ -242,31 +253,51 @@ export async function POST(request: Request) {
             event.delta.type === "text_delta"
           ) {
             assistantText += event.delta.text;
-            controller.enqueue(encoder.encode(event.delta.text));
+            if (!clientGone) {
+              try {
+                controller.enqueue(encoder.encode(event.delta.text));
+              } catch {
+                clientGone = true;
+              }
+            }
           }
         }
-
-        // ── Save assistant message after streaming completes ───
-        await db.insert(copilotMessages).values({
-          conversationId: convId!,
-          role: "assistant",
-          content: assistantText,
-          sortOrder: messageIndex + 1,
-          model: "claude-opus-4-6",
-        });
-
-        // Update conversation metadata
-        await db
-          .update(copilotConversations)
-          .set({
-            messageCount: sql`${copilotConversations.messageCount} + 2`,
-            updatedAt: new Date(),
-          })
-          .where(eq(copilotConversations.id, convId!));
       } catch (err) {
-        controller.error(err);
-      } finally {
-        controller.close();
+        streamError = err;
+        console.error("[copilot] Anthropic stream failed:", err);
+      }
+
+      // ── Persist whatever the model produced, even on disconnect/error ───
+      if (assistantText.length > 0) {
+        try {
+          await db.insert(copilotMessages).values({
+            conversationId: convId!,
+            role: "assistant",
+            content: assistantText,
+            sortOrder: messageIndex + 1,
+            model: "claude-opus-4-6",
+          });
+
+          await db
+            .update(copilotConversations)
+            .set({
+              messageCount: sql`${copilotConversations.messageCount} + 2`,
+              updatedAt: new Date(),
+            })
+            .where(eq(copilotConversations.id, convId!));
+        } catch (err) {
+          console.error("[copilot] failed to persist assistant message:", err);
+        }
+      }
+
+      try {
+        if (streamError && !clientGone) {
+          controller.error(streamError);
+        } else {
+          controller.close();
+        }
+      } catch {
+        // Controller already closed/errored — nothing left to signal.
       }
     },
   });

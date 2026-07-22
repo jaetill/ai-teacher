@@ -6,9 +6,9 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson } from "@/lib/api-utils";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer. You create detailed, practical unit plans for grades 6-8 English Language Arts.
 
@@ -51,14 +51,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { grade, theme, weeks, standards, context } = body as {
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
+
+  const body = await readJson<{
     grade: number;
     theme: string;
     weeks: number;
     standards: string;
     context?: string;
-  };
+  }>(request);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { grade, theme, weeks, standards, context } = body;
 
   if (!grade || !theme || !weeks || !standards) {
     return new Response("grade, theme, weeks, and standards are required", {
@@ -89,7 +95,7 @@ export async function POST(request: Request) {
 **Standards to Address:**
 ${standards}${context ? `\n\n**Additional Context:**\n${context}` : ""}`;
 
-  const stream = client.messages.stream({
+  const stream = getAnthropic().messages.stream({
     model: "claude-opus-4-8",
     max_tokens: 64000,
     thinking: { type: "adaptive" },
@@ -110,9 +116,20 @@ ${standards}${context ? `\n\n**Additional Context:**\n${context}` : ""}`;
           }
         }
       } catch (err) {
-        controller.error(err);
-      } finally {
+        // Log server-side (was silently swallowed) and don't call close() on
+        // an errored controller — that throws and masks the original failure.
+        console.error("[curriculum] Anthropic stream failed:", err);
+        try {
+          controller.error(err);
+        } catch {
+          // Controller already closed (client disconnected) — nothing to signal.
+        }
+        return;
+      }
+      try {
         controller.close();
+      } catch {
+        // Client disconnected mid-stream; controller already closed.
       }
     },
   });

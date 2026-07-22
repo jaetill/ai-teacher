@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { courses, units, unitStandards, standards, schoolYears } from "@/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
+import { readJson } from "@/lib/api-utils";
 
 type UnitInput = {
   title: string;
@@ -36,12 +37,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const body = (await req.json()) as {
+  const body = await readJson<{
     grade: number;
     schoolYear: string;
     units: UnitInput[];
     rawPlan?: string;
-  };
+  }>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   if (!body.grade || !body.schoolYear || !Array.isArray(body.units) || body.units.length === 0) {
     return Response.json(

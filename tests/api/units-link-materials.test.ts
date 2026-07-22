@@ -7,6 +7,10 @@ const { mockDbSelect } = vi.hoisted(() => ({
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect } }));
 vi.mock("@/db/schema", () => ({
   units: {},

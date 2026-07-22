@@ -10,6 +10,7 @@ import { driveFolders, materials } from "@/db/schema";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { listFilesInFolder } from "@/lib/drive";
 import { buildFolderKey } from "@/lib/upload-utils";
+import { readJson } from "@/lib/api-utils";
 
 type FileInput = {
   name: string;
@@ -29,7 +30,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const { files } = (await req.json()) as { files: FileInput[] };
+  const parsed = await readJson<{ files: FileInput[] }>(req);
+  if (!parsed) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { files } = parsed;
 
   // Bound the array — each file drives folder-key building and Drive lookups;
   // an unbounded files[] is an authenticated resource-exhaustion vector (#536).

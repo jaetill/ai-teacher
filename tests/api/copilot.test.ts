@@ -8,6 +8,10 @@ const { mockDbSelect, mockDbInsert } = vi.hoisted(() => ({
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {

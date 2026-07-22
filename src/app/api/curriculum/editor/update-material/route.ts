@@ -8,6 +8,7 @@ import { materialAttachments, materials, units, lessons, assessments } from "@/d
 import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 const VALID_ROLES = ["primary", "supporting", "teacher_reference"];
 const VALID_MATERIAL_TYPES = [
@@ -27,14 +28,17 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = await req.json();
-  const { attachmentId, role, materialType } = body as {
+  const body = await readJson<{
     attachmentId: string;
     role?: string;
     materialType?: string;
-  };
+  }>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { attachmentId, role, materialType } = body;
 
-  if (!attachmentId) {
+  if (!isUuid(attachmentId)) {
     return Response.json({ error: "attachmentId required" }, { status: 400 });
   }
 

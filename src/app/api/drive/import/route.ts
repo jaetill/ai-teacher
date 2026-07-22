@@ -14,6 +14,7 @@ import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { buildFolderKey } from "@/lib/upload-utils";
 import { escapeDriveQueryValue } from "@/lib/drive";
+import { readJson } from "@/lib/api-utils";
 
 function getDriveClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const body = (await req.json()) as {
+  const body = await readJson<{
     sourceFolderId: string;
     files: Array<{
       sourceFileId: string;
@@ -102,7 +103,10 @@ export async function POST(req: Request) {
       grade: number;
       destination: string;
     }>;
-  };
+  }>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   // Bound the array: each file triggers Drive API calls + a DB insert in the
   // loop below, so an unbounded files[] is an authenticated resource-exhaustion

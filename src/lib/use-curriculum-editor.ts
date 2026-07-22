@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   EditorUnit,
   EditorLesson,
@@ -22,6 +22,10 @@ export function useCurriculumEditor(courseId: string) {
   const [course, setCourse] = useState<{ id: string; title: string; grade: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  // Pending status-reset timer. Cleared before each save so a stale timer from
+  // an earlier save can't wipe a newer status (e.g. save A's "saved → idle"
+  // timer firing 0.3s after save B set "error", hiding the failure).
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Load data ───
 
@@ -31,10 +35,19 @@ export function useCurriculumEditor(courseId: string) {
         fetch(`/api/curriculum/editor/data?courseId=${courseId}`),
         fetch(`/api/curriculum/editor/pool?courseId=${courseId}`),
       ]);
+      // A transient 401/500 used to parse the error JSON and set
+      // course/units to undefined, crashing or blanking the editor.
+      // Throw instead: initial load shows the not-found state; a failed
+      // background refresh keeps the current data on screen.
+      if (!dataRes.ok || !poolRes.ok) {
+        throw new Error(
+          `editor data load failed (${dataRes.status}/${poolRes.status})`
+        );
+      }
       const data = await dataRes.json();
       const poolData = await poolRes.json();
-      setCourse(data.course);
-      setUnits(data.units);
+      setCourse(data.course ?? null);
+      setUnits(data.units ?? []);
       setPool(
         (poolData.materials ?? []).map(
           (m: PoolMaterialApiRow): PoolMaterial => ({
@@ -62,6 +75,7 @@ export function useCurriculumEditor(courseId: string) {
 
   async function apiCall(path: string, body: unknown) {
     setSaveStatus("saving");
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     try {
       const res = await fetch(`/api/curriculum/editor/${path}`, {
         method: "POST",
@@ -69,15 +83,17 @@ export function useCurriculumEditor(courseId: string) {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "API error");
       }
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 1500);
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
       return res.json();
     } catch (err) {
       setSaveStatus("error");
-      setTimeout(() => setSaveStatus("idle"), 3000);
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
       throw err;
     }
   }
@@ -157,6 +173,20 @@ export function useCurriculumEditor(courseId: string) {
   ) {
     setUnits((prev) =>
       prev.map((u) => {
+        // Same-unit reorder: remove + reinsert in one pass. (The two-branch
+        // logic below never reinserted when fromUnitId === toUnitId, so the
+        // assessment vanished from the optimistic state.)
+        if (fromUnitId === toUnitId) {
+          if (u.id !== fromUnitId) return u;
+          const current = u.assessments.find((a) => a.id === assessmentId);
+          if (!current) return u;
+          const reordered = u.assessments.filter((a) => a.id !== assessmentId);
+          reordered.splice(newSortOrder - 1, 0, current);
+          return {
+            ...u,
+            assessments: reordered.map((a, i) => ({ ...a, sortOrder: i + 1 })),
+          };
+        }
         if (u.id === fromUnitId) {
           return {
             ...u,

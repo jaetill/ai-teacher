@@ -15,8 +15,9 @@ Target user: one teacher (primary), with potential sharing to a small teaching c
 - **AI**: Claude API (streaming) via Anthropic SDK — conversational copilot experience
 - **Observability**: Sentry (`@sentry/nextjs`) — error tracking + performance tracing
 - **Hosting**: Vercel — https://ai-teacher-omega-sage.vercel.app
-- **Auth**: TBD (Cognito or NextAuth depending on multi-user needs)
-- **Database**: TBD (DynamoDB or Neon/PostgreSQL — data is relational)
+- **Auth**: NextAuth (Google OAuth, Drive scopes; JWT sessions with access-token refresh)
+- **Database**: Neon/PostgreSQL via Drizzle ORM (neon-http driver — no interactive
+  transactions; use `db.batch()` for atomic multi-statement writes)
 
 ## Project status
 Live on Vercel. Teacher Copilot (streaming chat) is functional. Other modules are scaffolded but not yet built.
@@ -65,9 +66,27 @@ src/
 - Vercel project connected to `jaetill/ai-teacher` on GitHub
 - Auto-deploys on push to `main`
 - Production URL: https://ai-teacher-omega-sage.vercel.app
-- Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
+- Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SENTRY_DSN`,
+  `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
+- Optional hardening env vars (2026-07 eval): `ALLOWED_EMAILS` (comma-separated sign-in
+  allowlist — SET THIS IN PROD; unset means any Google account can sign in and spend
+  Anthropic tokens) and `AI_RATE_LIMIT_PER_HOUR` (shared per-user AI budget, default 40)
 - Build-time secrets (Vercel + CI): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
 - To deploy: `git push origin main`
+
+## Server-code conventions (2026-07 eval)
+
+- Parse request bodies with `readJson()` and validate ids with `isUuid()` from
+  `src/lib/api-utils.ts` — never call `req.json()` bare or pass unvalidated ids to Postgres.
+- Every Anthropic-calling route must call `checkAiRateLimit(email)` (`src/lib/rate-limit.ts`)
+  after auth and cheap validation, before any AI spend.
+- Get the Anthropic client via `getAnthropic()` (`src/lib/anthropic.ts`) — never construct
+  `new Anthropic()` at module scope (breaks builds where the key env var is scoped).
+- Atomic multi-statement writes use `db.batch([...])`; `db.transaction()` throws on the
+  neon-http driver.
+- Migrations: 0007_platform_scope.sql consolidates the former hand-written 0007–0010
+  (which had broken journal timestamps and no snapshots). Always create migrations with
+  `drizzle-kit generate` — never hand-write SQL + journal entries.
 
 ---
 
@@ -98,7 +117,9 @@ Several agent prompts use AWS/Lambda examples copied verbatim from game-night-pw
 Phase 3 (quality gates), Phase 4 (CI workflows), Phase 6 (IaC retrofit), Phase 7 (user-feedback API route) — all deferred. See `docs/adr/0001-platform-adoption.md` for the deferral reasons and what each phase needs from Jason.
 
 Active gaps before the platform is "fully on":
-- Phase 3 — extend `eslint.config.mjs` to add platform plugins on top of `eslint-config-next`; add Prettier, vitest, Playwright, husky, commitlint, gitleaks
+- ~~Phase 3~~ — DONE (Prettier, vitest, Playwright, husky, commitlint, lint-staged,
+  gitleaks all installed and wired; `src/` is prettier-ignored and converges via
+  lint-staged on touch)
 - Phase 4 — add `.github/workflows/ci.yml` + the platform agent workflows; configure repo secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `SENTRY_*`, etc.); enable branch protection on `main`
 
 Each phase is its own PR.

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { units } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -19,13 +20,17 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const { unitId, lessonPlan } = (await req.json()) as {
-    unitId: string;
-    lessonPlan: string;
-  };
+  const parsed = await readJson<{ unitId: string; lessonPlan: string }>(req);
+  if (!parsed) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { unitId, lessonPlan } = parsed;
 
-  if (!unitId || !lessonPlan) {
+  if (!isUuid(unitId) || typeof lessonPlan !== "string" || lessonPlan.length === 0) {
     return Response.json({ error: "Missing unitId or lessonPlan" }, { status: 400 });
+  }
+  if (lessonPlan.length > 200_000) {
+    return Response.json({ error: "lessonPlan too large" }, { status: 413 });
   }
 
   // Authorization: only the owner of the unit's course may overwrite its lesson

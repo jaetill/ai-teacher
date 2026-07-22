@@ -9,11 +9,24 @@ import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { UpdateItemPayload } from "@/types/curriculum-editor";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 const ALLOWED_FIELDS: Record<string, string[]> = {
   lesson: ["title", "sortOrder", "durationMinutes"],
   assessment: ["title", "sortOrder", "assessmentType"],
   unit: ["title", "sortOrder", "durationWeeks", "quarter"],
+};
+
+// Per-field value validators. Field names were already allowlisted, but the
+// values went to Postgres verbatim — {"sortOrder": "abc"} threw an uncaught
+// DB type error → 500, and out-of-range smallints did the same.
+const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
+  title: (v) => typeof v === "string" && v.length > 0 && v.length <= 500,
+  sortOrder: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 10_000,
+  durationMinutes: (v) => v === null || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 1_440),
+  durationWeeks: (v) => v === null || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 52),
+  assessmentType: (v) => typeof v === "string" && v.length > 0 && v.length <= 50,
+  quarter: (v) => v === null || (typeof v === "string" && v.length <= 10),
 };
 
 export async function POST(req: Request) {
@@ -22,7 +35,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body: UpdateItemPayload = await req.json();
+  const body = await readJson<UpdateItemPayload>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { entityType, entityId, fields } = body;
 
   const allowed = ALLOWED_FIELDS[entityType];
@@ -30,12 +46,23 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid entity type" }, { status: 400 });
   }
 
-  // Filter to only allowed fields
+  if (!isUuid(entityId)) {
+    return Response.json({ error: "Invalid entityId" }, { status: 400 });
+  }
+
+  if (!fields || typeof fields !== "object") {
+    return Response.json({ error: "fields must be an object" }, { status: 400 });
+  }
+
+  // Filter to only allowed fields, and reject invalid values outright rather
+  // than letting Postgres throw on them.
   const updates: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (allowed.includes(key)) {
-      updates[key] = value;
+    if (!allowed.includes(key)) continue;
+    if (!FIELD_VALIDATORS[key]?.(value)) {
+      return Response.json({ error: `Invalid value for ${key}` }, { status: 400 });
     }
+    updates[key] = value;
   }
 
   if (Object.keys(updates).length === 0) {
@@ -51,7 +78,8 @@ export async function POST(req: Request) {
     if (!current) return Response.json({ error: "Not found" }, { status: 404 });
     previousValue = { title: current.title, sortOrder: current.sortOrder, durationMinutes: current.durationMinutes };
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
 
     const forbidden = await assertCourseOwnership(courseId, session.user?.email);
     if (forbidden) return forbidden;
@@ -67,7 +95,8 @@ export async function POST(req: Request) {
     if (!current) return Response.json({ error: "Not found" }, { status: 404 });
     previousValue = { title: current.title, sortOrder: current.sortOrder, assessmentType: current.assessmentType };
     const [unit] = await db.select({ courseId: units.courseId }).from(units).where(eq(units.id, current.unitId)).limit(1);
-    courseId = unit!.courseId;
+    if (!unit) return Response.json({ error: "Unit not found" }, { status: 404 });
+    courseId = unit.courseId;
 
     const forbidden = await assertCourseOwnership(courseId, session.user?.email);
     if (forbidden) return forbidden;
@@ -95,14 +124,19 @@ export async function POST(req: Request) {
   }
 
   const action = "title" in updates ? "update_title" : "update_metadata";
-  await logEdit({
-    courseId,
-    action,
-    entityType,
-    entityId,
-    previousValue,
-    newValue: updates,
-  });
+  // Audit-log failure must not turn an already-committed write into a 500.
+  try {
+    await logEdit({
+      courseId,
+      action,
+      entityType,
+      entityId,
+      previousValue,
+      newValue: updates,
+    });
+  } catch (err) {
+    console.error("[update-item] logEdit failed:", err);
+  }
 
   return Response.json({ ok: true });
 }

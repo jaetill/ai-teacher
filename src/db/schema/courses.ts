@@ -30,12 +30,14 @@ export const courses = pgTable(
   (table) => [
     index("idx_courses_grade").on(table.grade),
     // Scoped to owner_email (ADR-0045): each teacher owns their own course row
-    // for the same grade/subject/year. Mirrors drizzle/0009_scope_courses_unique_to_owner.sql.
-    unique("uq_courses_grade_subject_year_owner").on(
-      table.grade,
-      table.subject,
-      table.schoolYearId,
-      table.ownerEmail
-    ),
+    // for the same grade/subject/year.
+    // NULLS NOT DISTINCT: school_year_id is nullable (a fresh install has no
+    // is_current school year), and with default NULLS DISTINCT semantics the
+    // constraint never fires for NULL year rows — so onConflictDoNothing() in
+    // import/build-curriculum silently created a duplicate course per import.
+    // Matches the drive_folders constraint style.
+    unique("uq_courses_grade_subject_year_owner")
+      .on(table.grade, table.subject, table.schoolYearId, table.ownerEmail)
+      .nullsNotDistinct(),
   ]
 );

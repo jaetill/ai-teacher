@@ -6,9 +6,9 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson } from "@/lib/api-utils";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA teacher with deep experience adapting materials for diverse learners.
 
@@ -32,13 +32,19 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { content, studentNeed, outputRequest, grade } = body as {
+  const rateLimited = await checkAiRateLimit(session.user?.email);
+  if (rateLimited) return rateLimited;
+
+  const body = await readJson<{
     content: string;
     studentNeed: string;
     outputRequest: string;
     grade?: number;
-  };
+  }>(request);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { content, studentNeed, outputRequest, grade } = body;
 
   // Require non-empty strings. A non-string value (e.g. an array or number)
   // would pass a bare truthy check but make the MAX_BYTES `.length` guard below
@@ -81,7 +87,7 @@ ${studentNeed}
 **What I Need:**
 ${outputRequest}`;
 
-  const stream = client.messages.stream({
+  const stream = getAnthropic().messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 16000,
     system: SYSTEM_PROMPT,
@@ -101,9 +107,20 @@ ${outputRequest}`;
           }
         }
       } catch (err) {
-        controller.error(err);
-      } finally {
+        // Log server-side (was silently swallowed) and don't call close() on
+        // an errored controller — that throws and masks the original failure.
+        console.error("[differentiation] Anthropic stream failed:", err);
+        try {
+          controller.error(err);
+        } catch {
+          // Controller already closed (client disconnected) — nothing to signal.
+        }
+        return;
+      }
+      try {
         controller.close();
+      } catch {
+        // Client disconnected mid-stream; controller already closed.
       }
     },
   });

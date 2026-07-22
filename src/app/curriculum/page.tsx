@@ -90,6 +90,7 @@ export default function CurriculumPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [displayOutput, setDisplayOutput] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
 
   const fetchCourses = useCallback(async () => {
     try {
@@ -116,6 +117,7 @@ export default function CurriculumPage() {
     if (!form.grade || !form.schoolYear || !form.standards) return;
     setGenerating(true);
     setDisplayOutput("");
+    setGenError(null);
 
     let accumulated = "";
 
@@ -144,37 +146,53 @@ export default function CurriculumPage() {
         setDisplayOutput(splitOutput(accumulated).display);
       }
 
-      // Parse and save to database
+      // Parse and save to database. On ANY failure below, keep the streamed
+      // plan on screen and the form intact — clearing them made a failed save
+      // silently destroy the teacher's generated plan and typed inputs.
       const { json } = splitOutput(accumulated);
-      if (json) {
-        const parsedUnits = JSON.parse(json) as Array<{
-          title: string;
-          weeks: number;
-          standards: string;
-          summary: string;
-          anchorTexts: string;
-          flags: string;
-        }>;
-
-        await fetch("/api/year-plan/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grade: parseInt(form.grade),
-            schoolYear: form.schoolYear,
-            units: parsedUnits,
-            rawPlan: accumulated,
-          }),
-        });
-
-        // Reload courses from DB
-        await fetchCourses();
-        setShowForm(false);
-        setDisplayOutput("");
-        setForm(emptyForm);
+      if (!json) {
+        setGenError(
+          "The plan finished, but no unit data was found to save. The generated text is shown below — copy anything you want to keep, then try again."
+        );
+        return;
       }
+
+      const parsedUnits = JSON.parse(json) as Array<{
+        title: string;
+        weeks: number;
+        standards: string;
+        summary: string;
+        anchorTexts: string;
+        flags: string;
+      }>;
+
+      const saveRes = await fetch("/api/year-plan/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grade: parseInt(form.grade),
+          schoolYear: form.schoolYear,
+          units: parsedUnits,
+          rawPlan: accumulated,
+        }),
+      });
+
+      if (!saveRes.ok) {
+        setGenError(
+          `Saving the plan failed (error ${saveRes.status}). The generated plan is still shown below — copy anything you want to keep, then try again.`
+        );
+        return;
+      }
+
+      // Saved — reload courses from DB and reset the form
+      await fetchCourses();
+      setShowForm(false);
+      setDisplayOutput("");
+      setForm(emptyForm);
     } catch (err) {
-      setDisplayOutput("Something went wrong. Please try again.");
+      setGenError(
+        "Something went wrong while generating. Any partial output is shown below."
+      );
       console.error(err);
     } finally {
       setGenerating(false);
@@ -420,12 +438,21 @@ export default function CurriculumPage() {
           </div>
         )}
 
-        {/* ── Streaming output ─── */}
-        {generating && displayOutput && (
+        {/* ── Generation error ─── */}
+        {genError && (
+          <div className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-700 dark:text-red-300">
+            {genError}
+          </div>
+        )}
+
+        {/* ── Streaming output (kept on screen after errors so nothing is lost) ─── */}
+        {displayOutput && (
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
             <div className="prose prose-zinc dark:prose-invert max-w-none text-sm leading-relaxed">
               <ReactMarkdown>{displayOutput}</ReactMarkdown>
-              <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
+              {generating && (
+                <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
+              )}
             </div>
           </div>
         )}

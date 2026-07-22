@@ -22,10 +22,11 @@ import {
   schoolYears,
 } from "@/db/schema";
 import { eq, inArray, asc, and, isNull, or } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 import { normalizeMaterialRole } from "@/lib/material-roles";
+import { readJson } from "@/lib/api-utils";
 
-const client = new Anthropic();
 
 const VALID_COVERAGE_TYPES = new Set([
   "introduces",
@@ -48,12 +49,25 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const { grade, quarter } = (await req.json()) as {
+  const rateLimited = await checkAiRateLimit(ownerEmail);
+  if (rateLimited) return rateLimited;
+
+  const reqBody = await readJson<{
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
-  };
+  }>(req);
+  if (!reqBody) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { grade, quarter } = reqBody;
 
-  if (!grade || !quarter) {
+  if (
+    typeof grade !== "number" ||
+    !grade ||
+    typeof quarter !== "string" ||
+    !quarter ||
+    quarter.length > 10
+  ) {
     return Response.json({ error: "grade and quarter required" }, { status: 400 });
   }
 
@@ -116,7 +130,7 @@ export async function POST(req: Request) {
     .map((s) => `${s.id}: ${s.description}`)
     .join("\n");
 
-  const message = await client.messages.create({
+  const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 16384,
     system: `You are building a curriculum unit from a set of teaching materials (files).
@@ -208,34 +222,47 @@ ${standardsList}`,
     .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
+  // Select-before-insert: uq_courses_grade_subject_year_owner is NULLS
+  // DISTINCT on databases that predate the NULLS NOT DISTINCT migration, so
+  // when no school year is marked current (schoolYearId = NULL) the
+  // onConflictDoNothing() below never fires and every import used to create a
+  // duplicate course row, fracturing units across courses (#eval-2026-07).
+  const yearFilter = currentYear?.id
+    ? eq(courses.schoolYearId, currentYear.id)
+    : isNull(courses.schoolYearId);
+  const courseWhere = and(
+    eq(courses.grade, grade),
+    eq(courses.subject, "ELA"),
+    yearFilter,
+    eq(courses.ownerEmail, ownerEmail),
+  );
+
   let [course] = await db
-    .insert(courses)
-    .values({
-      title: `Grade ${grade} English Language Arts`,
-      grade,
-      subject: "ELA",
-      schoolYearId: currentYear?.id ?? null,
-      ownerEmail,
-    })
-    .onConflictDoNothing()
-    .returning({ id: courses.id });
+    .select({ id: courses.id })
+    .from(courses)
+    .where(courseWhere)
+    .limit(1);
 
   if (!course) {
-    const yearFilter = currentYear?.id
-      ? eq(courses.schoolYearId, currentYear.id)
-      : isNull(courses.schoolYearId);
+    [course] = await db
+      .insert(courses)
+      .values({
+        title: `Grade ${grade} English Language Arts`,
+        grade,
+        subject: "ELA",
+        schoolYearId: currentYear?.id ?? null,
+        ownerEmail,
+      })
+      .onConflictDoNothing()
+      .returning({ id: courses.id });
+  }
 
+  if (!course) {
+    // Lost a concurrent-create race; the row exists now.
     [course] = await db
       .select({ id: courses.id })
       .from(courses)
-      .where(
-        and(
-          eq(courses.grade, grade),
-          eq(courses.subject, "ELA"),
-          yearFilter,
-          eq(courses.ownerEmail, ownerEmail),
-        )
-      )
+      .where(courseWhere)
       .limit(1);
   }
 

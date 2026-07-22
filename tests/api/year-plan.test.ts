@@ -21,7 +21,13 @@ vi.mock("@/lib/auth", () => ({
   authOptions: {},
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
+
 import { getServerSession } from "next-auth";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 import { POST } from "../../src/app/api/year-plan/route";
 
 const mockSession = vi.mocked(getServerSession);
@@ -127,6 +133,31 @@ describe("POST /api/year-plan", () => {
     authedSession();
     const res = await POST(makeRequest({ grade: 7 }));
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 on a malformed JSON body", async () => {
+    authedSession();
+    const res = await POST(
+      new Request("http://localhost/api/year-plan", { method: "POST", body: "{not json" }),
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Invalid JSON body");
+    expect(mockStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("returns the 429 from checkAiRateLimit when over the AI budget", async () => {
+    authedSession();
+    vi.mocked(checkAiRateLimit).mockResolvedValueOnce(
+      Response.json({ error: "rate_limited", retry_after_seconds: 60 }, { status: 429 }),
+    );
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(429);
+    const json = await res.json();
+    expect(json.error).toBe("rate_limited");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 
   it("returns 200 text/plain stream for a valid authed request", async () => {

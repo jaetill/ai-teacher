@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { DetachMaterialPayload } from "@/types/curriculum-editor";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -16,8 +17,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body: DetachMaterialPayload = await req.json();
+  const body = await readJson<DetachMaterialPayload>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { materialAttachmentId } = body;
+
+  if (!isUuid(materialAttachmentId)) {
+    return Response.json({ error: "Invalid id" }, { status: 400 });
+  }
 
   // Get current attachment for logging
   const [attachment] = await db
@@ -55,18 +63,23 @@ export async function POST(req: Request) {
 
   await db.delete(materialAttachments).where(eq(materialAttachments.id, materialAttachmentId));
 
-  await logEdit({
-    courseId,
-    action: "detach_material",
-    entityType: "material",
-    entityId: attachment.materialId,
-    previousValue: {
-      attachableType: attachment.attachableType,
-      attachableId: attachment.attachableId,
-      role: attachment.role,
-    },
-    newValue: null,
-  });
+  // Audit-log failure must not turn an already-committed write into a 500.
+  try {
+    await logEdit({
+      courseId,
+      action: "detach_material",
+      entityType: "material",
+      entityId: attachment.materialId,
+      previousValue: {
+        attachableType: attachment.attachableType,
+        attachableId: attachment.attachableId,
+        role: attachment.role,
+      },
+      newValue: null,
+    });
+  } catch (err) {
+    console.error("[detach-material] logEdit failed:", err);
+  }
 
   return Response.json({ ok: true });
 }

@@ -15,11 +15,11 @@ import {
   courses,
 } from "@/db/schema";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
 import { normalizeMaterialRole } from "@/lib/material-roles";
 
-const client = new Anthropic();
 
 export async function POST(
   _req: Request,
@@ -33,6 +33,9 @@ export async function POST(
   if (!ownerEmail) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
+
+  const rateLimited = await checkAiRateLimit(ownerEmail);
+  if (rateLimited) return rateLimited;
 
   const { id } = await params;
 
@@ -125,7 +128,7 @@ export async function POST(
     })
     .join("\n");
 
-  const message = await client.messages.create({
+  const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
     system: `You link teaching materials (files) to the lessons that use them.

@@ -10,6 +10,7 @@ import { eq, and } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { RetypeContentPayload } from "@/types/curriculum-editor";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -17,8 +18,19 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body: RetypeContentPayload = await req.json();
+  const body = await readJson<RetypeContentPayload>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { entityType, entityId, newType } = body;
+
+  if (
+    !isUuid(entityId) ||
+    !["lesson", "assessment"].includes(entityType) ||
+    !["lesson", "assessment"].includes(newType)
+  ) {
+    return Response.json({ error: "Invalid payload" }, { status: 400 });
+  }
 
   if (entityType === newType) {
     return Response.json({ error: "Already that type" }, { status: 400 });
@@ -35,30 +47,32 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    let newAssessmentId: string;
+    // neon-http cannot run interactive transactions (db.transaction() throws
+    // at runtime — this route 500ed on every request). Generate the new row's
+    // id up front so all statements are known and can run as one atomic
+    // db.batch(), which neon executes in a single transaction.
+    const newAssessmentId = crypto.randomUUID();
     try {
-      newAssessmentId = await db.transaction(async (tx) => {
-        const [newAssessment] = await tx.insert(assessments).values({
+      await db.batch([
+        db.insert(assessments).values({
+          id: newAssessmentId,
           unitId: lesson.unitId,
           title: lesson.title,
           assessmentType: "formative",
           sortOrder: lesson.sortOrder,
           source: lesson.source,
-        }).returning({ id: assessments.id });
-
-        await tx
+        }),
+        db
           .update(materialAttachments)
-          .set({ attachableType: "assessment", attachableId: newAssessment.id })
+          .set({ attachableType: "assessment", attachableId: newAssessmentId })
           .where(
             and(
               eq(materialAttachments.attachableType, "lesson"),
               eq(materialAttachments.attachableId, entityId)
             )
-          );
-
-        await tx.delete(lessons).where(eq(lessons.id, entityId));
-        return newAssessment.id;
-      });
+          ),
+        db.delete(lessons).where(eq(lessons.id, entityId)),
+      ]);
     } catch (err) {
       console.error("[retype-content] transaction failed", err);
       return Response.json({ error: "Failed to retype content" }, { status: 500 });
@@ -91,29 +105,28 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(unit.courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    let newLessonId: string;
+    // Same neon-http constraint as above: pre-generate the id, batch atomically.
+    const newLessonId = crypto.randomUUID();
     try {
-      newLessonId = await db.transaction(async (tx) => {
-        const [newLesson] = await tx.insert(lessons).values({
+      await db.batch([
+        db.insert(lessons).values({
+          id: newLessonId,
           unitId: assessment.unitId,
           title: assessment.title,
           sortOrder: assessment.sortOrder,
           source: assessment.source,
-        }).returning({ id: lessons.id });
-
-        await tx
+        }),
+        db
           .update(materialAttachments)
-          .set({ attachableType: "lesson", attachableId: newLesson.id })
+          .set({ attachableType: "lesson", attachableId: newLessonId })
           .where(
             and(
               eq(materialAttachments.attachableType, "assessment"),
               eq(materialAttachments.attachableId, entityId)
             )
-          );
-
-        await tx.delete(assessments).where(eq(assessments.id, entityId));
-        return newLesson.id;
-      });
+          ),
+        db.delete(assessments).where(eq(assessments.id, entityId)),
+      ]);
     } catch (err) {
       console.error("[retype-content] transaction failed", err);
       return Response.json({ error: "Failed to retype content" }, { status: 500 });

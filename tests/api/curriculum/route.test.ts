@@ -9,6 +9,10 @@ const { mockStreamFn } = vi.hoisted(() => ({
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = { stream: mockStreamFn };
@@ -173,5 +177,21 @@ describe("POST /api/curriculum — size guards (413)", () => {
       }),
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/curriculum — body parsing", () => {
+  it("returns 400 on a malformed JSON body", async () => {
+    vi.clearAllMocks();
+    mockSession.mockResolvedValueOnce({ user: { email: "teacher@example.com" }, expires: "" });
+
+    const res = await POST(
+      new Request("http://localhost/api/curriculum", { method: "POST", body: "{not json" }),
+    );
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Invalid JSON body");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 });

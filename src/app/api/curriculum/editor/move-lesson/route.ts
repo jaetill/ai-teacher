@@ -9,6 +9,7 @@ import { sql, and, eq, gt, gte } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { MoveLessonPayload } from "@/types/curriculum-editor";
+import { readJson, isUuid } from "@/lib/api-utils";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -16,8 +17,20 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body: MoveLessonPayload = await req.json();
+  const body = await readJson<MoveLessonPayload>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { lessonId, fromUnitId, toUnitId, newSortOrder } = body;
+
+  // Validate before Postgres does: a non-UUID id or non-integer sort order
+  // throws an uncaught driver error → 500 (#eval-2026-07).
+  if (!isUuid(lessonId) || !isUuid(fromUnitId) || !isUuid(toUnitId)) {
+    return Response.json({ error: "Invalid id" }, { status: 400 });
+  }
+  if (!Number.isInteger(newSortOrder) || newSortOrder < 1 || newSortOrder > 10_000) {
+    return Response.json({ error: "Invalid newSortOrder" }, { status: 400 });
+  }
 
   const [lesson] = await db
     .select()
@@ -60,25 +73,27 @@ export async function POST(req: Request) {
   if (destForbidden) return destForbidden;
 
   try {
-    await db.transaction(async (tx) => {
+    // neon-http cannot run interactive transactions (db.transaction() throws
+    // "No transactions support in neon-http driver" at runtime — this route
+    // 500ed on every request). All statements are known upfront, so send them
+    // as one atomic db.batch(), which neon executes in a single transaction.
+    await db.batch([
       // Close the gap in the source unit
-      await tx
+      db
         .update(lessons)
         .set({ sortOrder: sql<number>`${lessons.sortOrder} - 1`, updatedAt: new Date() })
-        .where(and(eq(lessons.unitId, fromUnitId), gt(lessons.sortOrder, lesson.sortOrder)));
-
+        .where(and(eq(lessons.unitId, fromUnitId), gt(lessons.sortOrder, lesson.sortOrder))),
       // Make room in the target unit
-      await tx
+      db
         .update(lessons)
         .set({ sortOrder: sql<number>`${lessons.sortOrder} + 1`, updatedAt: new Date() })
-        .where(and(eq(lessons.unitId, toUnitId), gte(lessons.sortOrder, newSortOrder)));
-
+        .where(and(eq(lessons.unitId, toUnitId), gte(lessons.sortOrder, newSortOrder))),
       // Move the lesson
-      await tx
+      db
         .update(lessons)
         .set({ unitId: toUnitId, sortOrder: newSortOrder, updatedAt: new Date() })
-        .where(eq(lessons.id, lessonId));
-    });
+        .where(eq(lessons.id, lessonId)),
+    ]);
   } catch (err) {
     console.error("[move-lesson] transaction failed", err);
     return Response.json({ error: "Failed to move lesson" }, { status: 500 });

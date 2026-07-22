@@ -38,12 +38,6 @@ function makeRequest() {
   return new Request("http://localhost/api/drive/setup", { method: "POST" });
 }
 
-// Convenience: a signed-in caller with a Drive token + email.
-function authed(email = "teacher@school.edu") {
-  mockGetToken.mockResolvedValue({ accessToken: "tok" });
-  mockGetServerSession.mockResolvedValue({ user: { email } });
-}
-
 function makeSelectChain(resolvedValue: unknown) {
   const p = Promise.resolve(resolvedValue);
   const chain: Record<string, unknown> = {};

@@ -3,10 +3,17 @@
 // Accepts filenames and uses Claude to classify each into
 // grade, destination (quarter or year plan), category, and material type.
 
-import { getAccessToken } from "@/lib/auth-helpers";
-import Anthropic from "@anthropic-ai/sdk";
+import { getAccessToken, getUserEmail } from "@/lib/auth-helpers";
+import { getAnthropic } from "@/lib/anthropic";
+import { checkAiRateLimit } from "@/lib/rate-limit";
+import { readJson } from "@/lib/api-utils";
 
-const client = new Anthropic();
+// Caps on the classification request. Every other array-accepting route
+// validates its payload before interpolating into a prompt (#536, #477); this
+// one handles zip imports, so the ceiling is high but bounded.
+const MAX_FILENAMES = 500;
+const MAX_FILENAME_CHARS = 500;
+const MAX_ZIPNAME_CHARS = 200;
 
 const SYSTEM_PROMPT = `You classify teaching materials for a middle-school English class (grades 6-8).
 
@@ -40,20 +47,42 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { filenames, zipName } = (await req.json()) as {
-    filenames: string[];
-    zipName?: string;
-  };
+  const rateLimited = await checkAiRateLimit(await getUserEmail());
+  if (rateLimited) return rateLimited;
 
-  if (!filenames?.length) {
+  const body = await readJson<{ filenames: string[]; zipName?: string }>(req);
+  if (!body) {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { filenames, zipName } = body;
+
+  if (!Array.isArray(filenames) || filenames.length === 0) {
     return Response.json({ error: "No filenames provided" }, { status: 400 });
+  }
+  if (filenames.length > MAX_FILENAMES) {
+    return Response.json(
+      { error: `Too many filenames (max ${MAX_FILENAMES})` },
+      { status: 413 },
+    );
+  }
+  if (!filenames.every((f) => typeof f === "string" && f.length <= MAX_FILENAME_CHARS)) {
+    return Response.json(
+      { error: `filenames must be strings of at most ${MAX_FILENAME_CHARS} chars` },
+      { status: 400 },
+    );
+  }
+  if (zipName !== undefined && (typeof zipName !== "string" || zipName.length > MAX_ZIPNAME_CHARS)) {
+    return Response.json(
+      { error: `zipName must be a string of at most ${MAX_ZIPNAME_CHARS} chars` },
+      { status: 400 },
+    );
   }
 
   const contextHint = zipName
     ? `\nThe zip file was named: "${zipName}" — use this as a hint for grade/quarter.\n`
     : "";
 
-  const message = await client.messages.create({
+  const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
@@ -72,8 +101,12 @@ export async function POST(req: Request) {
     const classifications = JSON.parse(text);
     return Response.json({ classifications });
   } catch {
+    console.error(
+      "[classify] unparseable AI response:",
+      text.slice(0, 500),
+    );
     return Response.json(
-      { error: "Failed to parse classification response", raw: text },
+      { error: "Failed to parse classification response" },
       { status: 500 }
     );
   }

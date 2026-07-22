@@ -30,7 +30,7 @@ async function migrate() {
   console.log("Migrating material types...\n");
 
   for (const [oldType, newType] of Object.entries(REMAP)) {
-    const result = await db
+    await db
       .update(materials)
       .set({ materialType: newType, updatedAt: new Date() })
       .where(eq(materials.materialType, oldType));

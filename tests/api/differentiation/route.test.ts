@@ -13,6 +13,10 @@ const { mockStreamFn } = vi.hoisted(() => ({
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkAiRateLimit: vi.fn().mockResolvedValue(null),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+}));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = { stream: mockStreamFn };
@@ -200,5 +204,19 @@ describe("POST /api/differentiation — MAX_BYTES guard (413)", () => {
     };
     const res = await POST(makeRequest(body));
     expect(res.status).toBe(413);
+  });
+});
+
+describe("POST /api/differentiation — body parsing", () => {
+  it("returns 400 on a malformed JSON body", async () => {
+    vi.clearAllMocks();
+    authedSession();
+    const res = await POST(
+      new Request("http://localhost/api/differentiation", { method: "POST", body: "{not json" }),
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Invalid JSON body");
+    expect(mockStreamFn).not.toHaveBeenCalled();
   });
 });
