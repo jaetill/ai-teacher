@@ -102,13 +102,18 @@ export default function CurriculumPage() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
 
-  // ── Import-from-previous-year state ───
-  const [showImport, setShowImport] = useState(false);
+  // ── Import-from-previous-year state (lives inside the generate form) ───
   const [cloneSources, setCloneSources] = useState<CloneSource[]>([]);
   const [importSourceId, setImportSourceId] = useState("");
   const [importTargetYear, setImportTargetYear] = useState("");
+  const [importTitle, setImportTitle] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+
+  // ── Inline course-title editing (list view) ───
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
 
   const fetchCourses = useCallback(async () => {
     try {
@@ -123,27 +128,42 @@ export default function CurriculumPage() {
     }
   }, []);
 
-  const openImport = useCallback(async () => {
+  // Load clonable source courses to populate the import block inside the form.
+  const loadCloneSources = useCallback(async () => {
     setImportError(null);
-    setShowImport(true);
     try {
       const res = await fetch("/api/curriculum/clone-year");
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
       const sources: CloneSource[] = data.sources ?? [];
       setCloneSources(sources);
-      if (sources.length > 0) setImportSourceId(sources[0].courseId);
+      if (sources.length > 0) {
+        setImportSourceId(sources[0].courseId);
+        setImportTitle(sources[0].title);
+      }
       setImportTargetYear(
         data.suggestedTargetYear ?? `${currentYear}-${currentYear + 1}`,
       );
     } catch (err) {
       console.error("Failed to load import sources", err);
-      setImportError("Couldn't load your previous courses. Please try again.");
     }
   }, []);
 
+  function openGenerateForm() {
+    setShowForm(true);
+    setGenError(null);
+    loadCloneSources();
+  }
+
+  // Keep the title in sync with the chosen source (until the user edits it).
+  function onImportSourceChange(courseId: string) {
+    setImportSourceId(courseId);
+    const src = cloneSources.find((s) => s.courseId === courseId);
+    if (src) setImportTitle(src.title);
+  }
+
   async function runImport() {
-    if (!importSourceId || !importTargetYear || importing) return;
+    if (!importSourceId || !importTargetYear.trim() || !importTitle.trim() || importing) return;
     setImporting(true);
     setImportError(null);
     try {
@@ -152,7 +172,8 @@ export default function CurriculumPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sourceCourseId: importSourceId,
-          targetSchoolYear: importTargetYear,
+          targetSchoolYear: importTargetYear.trim(),
+          title: importTitle.trim(),
         }),
       });
       const data = await res.json();
@@ -167,6 +188,37 @@ export default function CurriculumPage() {
       setImportError("Something went wrong during import. Please try again.");
     } finally {
       setImporting(false);
+    }
+  }
+
+  function startEditingTitle(courseId: string, currentTitle: string) {
+    setEditingCourseId(courseId);
+    setEditingTitle(currentTitle);
+  }
+
+  async function saveCourseTitle(courseId: string) {
+    const next = editingTitle.trim();
+    if (!next || savingTitle) {
+      setEditingCourseId(null);
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      const res = await fetch(`/api/courses/${courseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (res.ok) {
+        setCourses((prev) =>
+          prev.map((c) => (c.id === courseId ? { ...c, title: next } : c)),
+        );
+        setEditingCourseId(null);
+      }
+    } catch (err) {
+      console.error("Failed to rename course", err);
+    } finally {
+      setSavingTitle(false);
     }
   }
 
@@ -295,111 +347,18 @@ export default function CurriculumPage() {
               Your courses and units — click a unit to see lessons
             </p>
           </div>
-          {!showForm && !showImport && (
-            <div className="flex items-center gap-4">
-              {courses.length > 0 && (
-                <button
-                  onClick={openImport}
-                  className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-                >
-                  ↓ Import previous year
-                </button>
-              )}
-              <button
-                onClick={() => setShowForm(true)}
-                className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-              >
-                + Generate Year Plan
-              </button>
-            </div>
+          {!showForm && (
+            <button
+              onClick={openGenerateForm}
+              className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+            >
+              + New Year Plan
+            </button>
           )}
         </div>
 
-        {/* ── Import from previous year ─── */}
-        {showImport && (
-          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Import from a previous year
-              </h2>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Copies a grade&apos;s units, lessons, assessments, and material
-                links into a new year — your baseline to adjust. The same Drive
-                files are reused, not duplicated.
-              </p>
-            </div>
-
-            {cloneSources.length === 0 ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                No previous courses with units to import yet.
-              </p>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
-                      Copy from
-                    </label>
-                    <select
-                      value={importSourceId}
-                      onChange={(e) => setImportSourceId(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
-                    >
-                      {cloneSources.map((s) => (
-                        <option key={s.courseId} value={s.courseId}>
-                          {s.schoolYear ? `${s.schoolYear} · ` : ""}Grade {s.grade}
-                          {" — "}
-                          {s.unitCount} {s.unitCount === 1 ? "unit" : "units"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
-                      New school year
-                    </label>
-                    <input
-                      type="text"
-                      value={importTargetYear}
-                      onChange={(e) => setImportTargetYear(e.target.value)}
-                      placeholder="2026-2027"
-                      className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {importError && (
-              <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
-                {importError}
-              </div>
-            )}
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={runImport}
-                disabled={!importSourceId || !importTargetYear || importing || cloneSources.length === 0}
-                className="h-10 px-4 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-40 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
-              >
-                {importing ? "Importing..." : "Import & edit"}
-              </button>
-              <button
-                onClick={() => {
-                  setShowImport(false);
-                  setImportError(null);
-                }}
-                disabled={importing}
-                className="h-10 px-4 rounded-lg text-sm font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ── Existing courses ─── */}
-        {courses.length > 0 && !showForm && !showImport && (
+        {courses.length > 0 && !showForm && (
           <div className="space-y-10">
             {courses.map((course) => {
               const quarters = ["Q1", "Q2", "Q3", "Q4"];
@@ -407,12 +366,41 @@ export default function CurriculumPage() {
               return (
                 <div key={course.id}>
                   <div className="flex items-center justify-between mb-5">
-                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                      Grade {course.grade} — {course.title}
-                    </h2>
+                    {editingCourseId === course.id ? (
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-zinc-400 shrink-0">
+                          Grade {course.grade} —
+                        </span>
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          autoFocus
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onBlur={() => saveCourseTitle(course.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveCourseTitle(course.id);
+                            if (e.key === "Escape") setEditingCourseId(null);
+                          }}
+                          className="flex-1 min-w-0 h-8 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                        />
+                      </div>
+                    ) : (
+                      <h2 className="group flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                        Grade {course.grade} — {course.title}
+                        <button
+                          onClick={() => startEditingTitle(course.id, course.title)}
+                          title="Rename course"
+                          className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-opacity"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
+                          </svg>
+                        </button>
+                      </h2>
+                    )}
                     <Link
                       href={`/curriculum/edit/${course.id}`}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors ml-3 shrink-0"
                     >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="opacity-60">
                         <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
@@ -481,7 +469,7 @@ export default function CurriculumPage() {
         )}
 
         {/* ── Empty state ─── */}
-        {courses.length === 0 && !showForm && !showImport && (
+        {courses.length === 0 && !showForm && (
           <div className="text-center py-16">
             <p className="text-zinc-500 dark:text-zinc-400 mb-4">
               No curriculum yet. Generate a year plan to get started.
@@ -500,7 +488,7 @@ export default function CurriculumPage() {
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                Generate a new year plan
+                New year plan
               </h2>
               <button
                 onClick={() => {
@@ -512,6 +500,89 @@ export default function CurriculumPage() {
                 Cancel
               </button>
             </div>
+
+            {/* ── Reuse a previous year (fast path) ─── */}
+            {cloneSources.length > 0 && (
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 p-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                    Start from a previous year
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Copies a grade&apos;s units, lessons, assessments, and material
+                    links into the new year — your baseline to adjust. The same
+                    Drive files are reused, not duplicated.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Copy from
+                    </label>
+                    <select
+                      value={importSourceId}
+                      onChange={(e) => onImportSourceChange(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                    >
+                      {cloneSources.map((s) => (
+                        <option key={s.courseId} value={s.courseId}>
+                          {s.schoolYear ? `${s.schoolYear} · ` : ""}Grade {s.grade}
+                          {" — "}
+                          {s.unitCount} {s.unitCount === 1 ? "unit" : "units"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      New school year
+                    </label>
+                    <input
+                      type="text"
+                      value={importTargetYear}
+                      onChange={(e) => setImportTargetYear(e.target.value)}
+                      placeholder="2026-2027"
+                      className="w-full h-9 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                      Course title
+                    </label>
+                    <input
+                      type="text"
+                      value={importTitle}
+                      onChange={(e) => setImportTitle(e.target.value)}
+                      placeholder="e.g. Grade 8 ELA (2026-2027)"
+                      className="w-full h-9 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                    />
+                  </div>
+                </div>
+
+                {importError && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-2.5 text-xs text-red-700 dark:text-red-300">
+                    {importError}
+                  </div>
+                )}
+
+                <button
+                  onClick={runImport}
+                  disabled={!importSourceId || !importTargetYear.trim() || !importTitle.trim() || importing}
+                  className="h-9 px-4 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-40 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+                >
+                  {importing ? "Importing..." : "Import & edit"}
+                </button>
+              </div>
+            )}
+
+            {cloneSources.length > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+                <span className="text-xs font-medium text-zinc-400">or generate with AI</span>
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
