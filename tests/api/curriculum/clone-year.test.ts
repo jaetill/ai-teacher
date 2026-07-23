@@ -118,6 +118,18 @@ describe("POST /api/curriculum/clone-year", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400 on an over-long custom title", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    const res = await POST(
+      req({
+        sourceCourseId: UID.sourceCourse,
+        targetSchoolYear: "2026-2027",
+        title: "x".repeat(201),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("400 on malformed JSON body", async () => {
     mockGetServerSession.mockResolvedValueOnce(SESSION);
     const bad = new Request("http://localhost/api/curriculum/clone-year", {
@@ -251,7 +263,11 @@ describe("POST /api/curriculum/clone-year", () => {
       );
 
     const res = await POST(
-      req({ sourceCourseId: UID.sourceCourse, targetSchoolYear: "2026-2027" }),
+      req({
+        sourceCourseId: UID.sourceCourse,
+        targetSchoolYear: "2026-2027",
+        title: "Grade 8 ELA (2026-2027)",
+      }),
     );
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -274,10 +290,11 @@ describe("POST /api/curriculum/clone-year", () => {
     expect(attachRows[0].materialId).toBe(UID.material1);
     expect(attachRows[0].attachableId).not.toBe(UID.lesson1);
 
-    // The new course carries the source grade/subject.
+    // The new course carries the source grade/subject and the CUSTOM title.
     const courseInsert = insertCalls.find((c) => c.table === "courses");
     expect(courseInsert).toBeDefined();
     expect((courseInsert!.values as { grade: number }).grade).toBe(8);
+    expect((courseInsert!.values as { title: string }).title).toBe("Grade 8 ELA (2026-2027)");
   });
 });
 

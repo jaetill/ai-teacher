@@ -131,7 +131,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const body = await readJson<{ sourceCourseId: string; targetSchoolYear: string }>(req);
+  const body = await readJson<{
+    sourceCourseId: string;
+    targetSchoolYear: string;
+    title?: string;
+  }>(req);
   if (!body) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -146,6 +150,18 @@ export async function POST(req: Request) {
       { error: "targetSchoolYear must be a school year like \"2026-2027\"" },
       { status: 400 },
     );
+  }
+
+  // Optional custom title for the new course. Falls back to the source title.
+  let title: string | undefined;
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string" || body.title.trim().length === 0 || body.title.length > 200) {
+      return Response.json(
+        { error: "title must be a non-empty string of at most 200 characters" },
+        { status: 400 },
+      );
+    }
+    title = body.title.trim();
   }
 
   // ── Load + authorize source course ───
@@ -364,7 +380,7 @@ export async function POST(req: Request) {
     statements.push(
       db.insert(courses).values({
         id: newCourseId,
-        title: sourceCourse.title,
+        title: title ?? sourceCourse.title,
         grade: sourceCourse.grade,
         subject: sourceCourse.subject,
         schoolYearId: targetYearId,
@@ -372,6 +388,11 @@ export async function POST(req: Request) {
         description: sourceCourse.description,
         teacherNotes: sourceCourse.teacherNotes,
       }),
+    );
+  } else if (title) {
+    // Reusing an existing empty course — honor the custom title too.
+    statements.push(
+      db.update(courses).set({ title, updatedAt: new Date() }).where(eq(courses.id, newCourseId)),
     );
   }
   statements.push(db.insert(units).values(newUnits));
