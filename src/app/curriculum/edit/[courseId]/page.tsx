@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   DndContext,
@@ -24,8 +24,36 @@ import SaveIndicator from "@/components/curriculum-editor/SaveIndicator";
 
 export default function CurriculumEditorPage() {
   const { courseId } = useParams<{ courseId: string }>();
+  const router = useRouter();
   const editor = useCurriculumEditor(courseId);
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Title editing + delete confirmation (course-level, in the toolbar).
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  function beginTitleEdit() {
+    setTitleDraft(editor.course?.title ?? "");
+    setEditingTitle(true);
+  }
+  async function commitTitleEdit() {
+    if (titleDraft.trim() && titleDraft.trim() !== editor.course?.title) {
+      await editor.renameCourse(titleDraft);
+    }
+    setEditingTitle(false);
+  }
+  async function handleDelete() {
+    setDeleting(true);
+    const ok = await editor.deleteCourse();
+    if (ok) {
+      router.push("/curriculum");
+    } else {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -237,15 +265,77 @@ export default function CurriculumEditorPage() {
             </Link>
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
             <div>
-              <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Grade {editor.course.grade} &mdash; {editor.course.title}
-              </h1>
+              {editingTitle ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-semibold text-zinc-400 shrink-0">
+                    Grade {editor.course.grade} &mdash;
+                  </span>
+                  <input
+                    type="text"
+                    value={titleDraft}
+                    autoFocus
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={commitTitleEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitTitleEdit();
+                      if (e.key === "Escape") setEditingTitle(false);
+                    }}
+                    className="h-7 w-64 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                  />
+                </div>
+              ) : (
+                <h1 className="group flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  Grade {editor.course.grade} &mdash; {editor.course.title}
+                  <button
+                    onClick={beginTitleEdit}
+                    title="Rename curriculum"
+                    className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-opacity"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
+                    </svg>
+                  </button>
+                </h1>
+              )}
               <p className="text-[11px] text-zinc-400 mt-0.5">
                 {editor.units.length} units &middot; {totalLessons} lessons &middot; {totalAssessments} assessments
               </p>
             </div>
           </div>
-          <SaveIndicator status={editor.saveStatus} />
+          <div className="flex items-center gap-3">
+            <SaveIndicator status={editor.saveStatus} />
+            {confirmingDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">Delete this whole curriculum?</span>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-md px-2.5 py-1 transition-colors"
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                title="Delete curriculum"
+                className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" />
+                  <path d="M14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 01-1-1V2a1 1 0 011-1H6a1 1 0 011-1h2a1 1 0 011 1h3.5a1 1 0 011 1v1zM4.118 4L4 4.059V13a1 1 0 001 1h6a1 1 0 001-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z" />
+                </svg>
+                Delete
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

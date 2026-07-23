@@ -334,6 +334,43 @@ export function useCurriculumEditor(courseId: string) {
     }
   }
 
+  // ── Rename the course (title) ───
+
+  async function renameCourse(title: string): Promise<boolean> {
+    const next = title.trim();
+    if (!next) return false;
+    setSaveStatus("saving");
+    try {
+      const res = await fetch(`/api/courses/${courseId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      setCourse((prev) => (prev ? { ...prev, title: next } : prev));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1500);
+      return true;
+    } catch (err) {
+      console.error("Failed to rename course", err);
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+      return false;
+    }
+  }
+
+  // ── Delete the whole course ───
+
+  async function deleteCourse(): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/courses/${courseId}`, { method: "DELETE" });
+      return res.ok;
+    } catch (err) {
+      console.error("Failed to delete course", err);
+      return false;
+    }
+  }
+
   return {
     course,
     units,
@@ -348,6 +385,8 @@ export function useCurriculumEditor(courseId: string) {
     attachMaterial,
     detachMaterial,
     updateMaterial,
+    renameCourse,
+    deleteCourse,
     refresh: fetchData,
   };
 }
