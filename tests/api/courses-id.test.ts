@@ -1,15 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockDbUpdate } = vi.hoisted(() => ({ mockDbUpdate: vi.fn() }));
+const { mockDbUpdate, mockDbSelect, mockDbDelete, mockDbBatch } = vi.hoisted(() => ({
+  mockDbUpdate: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbDelete: vi.fn(),
+  mockDbBatch: vi.fn(),
+}));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
-vi.mock("@/db", () => ({ db: { update: mockDbUpdate } }));
-vi.mock("@/db/schema", () => ({ courses: {} }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(), and: vi.fn() }));
+vi.mock("@/db", () => ({
+  db: {
+    update: mockDbUpdate,
+    select: mockDbSelect,
+    delete: mockDbDelete,
+    batch: mockDbBatch,
+  },
+}));
+vi.mock("@/db/schema", () => ({
+  courses: {},
+  units: {},
+  lessons: {},
+  assessments: {},
+  materialAttachments: {},
+}));
+vi.mock("drizzle-orm", () => ({ eq: vi.fn(), and: vi.fn(), inArray: vi.fn() }));
 
 import { getServerSession } from "next-auth";
-import { PATCH } from "../../src/app/api/courses/[id]/route";
+import { PATCH, DELETE } from "../../src/app/api/courses/[id]/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
 
@@ -18,7 +36,7 @@ function makeChain(value: unknown) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chain: Record<string, any> = {};
   const self = () => chain;
-  for (const m of ["set", "where", "returning"]) chain[m] = vi.fn(self);
+  for (const m of ["set", "where", "returning", "from", "limit"]) chain[m] = vi.fn(self);
   chain.then = (r: (v: unknown) => unknown, j?: (e: unknown) => unknown) => p.then(r, j);
   chain.catch = (j: (e: unknown) => unknown) => p.catch(j);
   chain.finally = (fn: () => void) => p.finally(fn);
@@ -85,5 +103,47 @@ describe("PATCH /api/courses/[id]", () => {
     const data = await res.json();
     expect(data.ok).toBe(true);
     expect(data.course.title).toBe("New title");
+  });
+});
+
+function delReq() {
+  return new Request(`http://localhost/api/courses/${VALID}`, { method: "DELETE" });
+}
+
+describe("DELETE /api/courses/[id]", () => {
+  it("401 when unauthenticated", async () => {
+    mockGetServerSession.mockResolvedValueOnce(null);
+    const res = await DELETE(delReq(), params(VALID));
+    expect(res.status).toBe(401);
+  });
+
+  it("400 on non-UUID id", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    const res = await DELETE(delReq(), params("nope"));
+    expect(res.status).toBe(400);
+  });
+
+  it("404 when the course isn't owned by the caller", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // owner check → none
+    const res = await DELETE(delReq(), params(VALID));
+    expect(res.status).toBe(404);
+  });
+
+  it("200 and cleans up attachments + deletes course atomically", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([{ id: VALID }])) // owner check
+      .mockReturnValueOnce(makeChain([{ id: "unit-1" }])) // units
+      .mockReturnValueOnce(makeChain([{ id: "lesson-1" }])) // lessons
+      .mockReturnValueOnce(makeChain([{ id: "assess-1" }])); // assessments
+    mockDbDelete.mockReturnValue(makeChain(undefined));
+    mockDbBatch.mockResolvedValueOnce([]);
+
+    const res = await DELETE(delReq(), params(VALID));
+    expect(res.status).toBe(200);
+    // Two deletes batched: material_attachments cleanup + course delete.
+    expect(mockDbBatch).toHaveBeenCalledOnce();
+    expect(mockDbDelete).toHaveBeenCalledTimes(2);
   });
 });

@@ -110,11 +110,6 @@ export default function CurriculumPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // ── Inline course-title editing (list view) ───
-  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState("");
-  const [savingTitle, setSavingTitle] = useState(false);
-
   const fetchCourses = useCallback(async () => {
     try {
       const res = await fetch("/api/courses");
@@ -188,37 +183,6 @@ export default function CurriculumPage() {
       setImportError("Something went wrong during import. Please try again.");
     } finally {
       setImporting(false);
-    }
-  }
-
-  function startEditingTitle(courseId: string, currentTitle: string) {
-    setEditingCourseId(courseId);
-    setEditingTitle(currentTitle);
-  }
-
-  async function saveCourseTitle(courseId: string) {
-    const next = editingTitle.trim();
-    if (!next || savingTitle) {
-      setEditingCourseId(null);
-      return;
-    }
-    setSavingTitle(true);
-    try {
-      const res = await fetch(`/api/courses/${courseId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: next }),
-      });
-      if (res.ok) {
-        setCourses((prev) =>
-          prev.map((c) => (c.id === courseId ? { ...c, title: next } : c)),
-        );
-        setEditingCourseId(null);
-      }
-    } catch (err) {
-      console.error("Failed to rename course", err);
-    } finally {
-      setSavingTitle(false);
     }
   }
 
@@ -366,38 +330,9 @@ export default function CurriculumPage() {
               return (
                 <div key={course.id}>
                   <div className="flex items-center justify-between mb-5">
-                    {editingCourseId === course.id ? (
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-zinc-400 shrink-0">
-                          Grade {course.grade} —
-                        </span>
-                        <input
-                          type="text"
-                          value={editingTitle}
-                          autoFocus
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={() => saveCourseTitle(course.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveCourseTitle(course.id);
-                            if (e.key === "Escape") setEditingCourseId(null);
-                          }}
-                          className="flex-1 min-w-0 h-8 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
-                        />
-                      </div>
-                    ) : (
-                      <h2 className="group flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                        Grade {course.grade} — {course.title}
-                        <button
-                          onClick={() => startEditingTitle(course.id, course.title)}
-                          title="Rename course"
-                          className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-opacity"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
-                          </svg>
-                        </button>
-                      </h2>
-                    )}
+                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      Grade {course.grade} — {course.title}
+                    </h2>
                     <Link
                       href={`/curriculum/edit/${course.id}`}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors ml-3 shrink-0"
