@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 // ── Types ───
@@ -22,6 +23,14 @@ type Course = {
   title: string;
   grade: number;
   units: UnitSummary[];
+};
+
+type CloneSource = {
+  courseId: string;
+  grade: number;
+  title: string;
+  schoolYear: string | null;
+  unitCount: number;
 };
 
 interface FormState {
@@ -83,6 +92,7 @@ const QUARTER_STYLES: Record<string, { border: string; badge: string; accent: st
 // ── Component ───
 
 export default function CurriculumPage() {
+  const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [schoolYear, setSchoolYear] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,6 +101,14 @@ export default function CurriculumPage() {
   const [displayOutput, setDisplayOutput] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+
+  // ── Import-from-previous-year state ───
+  const [showImport, setShowImport] = useState(false);
+  const [cloneSources, setCloneSources] = useState<CloneSource[]>([]);
+  const [importSourceId, setImportSourceId] = useState("");
+  const [importTargetYear, setImportTargetYear] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const fetchCourses = useCallback(async () => {
     try {
@@ -104,6 +122,53 @@ export default function CurriculumPage() {
       setLoading(false);
     }
   }, []);
+
+  const openImport = useCallback(async () => {
+    setImportError(null);
+    setShowImport(true);
+    try {
+      const res = await fetch("/api/curriculum/clone-year");
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+      const sources: CloneSource[] = data.sources ?? [];
+      setCloneSources(sources);
+      if (sources.length > 0) setImportSourceId(sources[0].courseId);
+      setImportTargetYear(
+        data.suggestedTargetYear ?? `${currentYear}-${currentYear + 1}`,
+      );
+    } catch (err) {
+      console.error("Failed to load import sources", err);
+      setImportError("Couldn't load your previous courses. Please try again.");
+    }
+  }, []);
+
+  async function runImport() {
+    if (!importSourceId || !importTargetYear || importing) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch("/api/curriculum/clone-year", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceCourseId: importSourceId,
+          targetSchoolYear: importTargetYear,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportError(data.error ?? `Import failed (error ${res.status}).`);
+        return;
+      }
+      // Land in the editor holding the cloned baseline, ready to adjust.
+      router.push(`/curriculum/edit/${data.courseId}`);
+    } catch (err) {
+      console.error("Import failed", err);
+      setImportError("Something went wrong during import. Please try again.");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   useEffect(() => {
     fetchCourses();
@@ -230,18 +295,111 @@ export default function CurriculumPage() {
               Your courses and units — click a unit to see lessons
             </p>
           </div>
-          {!showForm && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-            >
-              + Generate Year Plan
-            </button>
+          {!showForm && !showImport && (
+            <div className="flex items-center gap-4">
+              {courses.length > 0 && (
+                <button
+                  onClick={openImport}
+                  className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                >
+                  ↓ Import previous year
+                </button>
+              )}
+              <button
+                onClick={() => setShowForm(true)}
+                className="text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              >
+                + Generate Year Plan
+              </button>
+            </div>
           )}
         </div>
 
+        {/* ── Import from previous year ─── */}
+        {showImport && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                Import from a previous year
+              </h2>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                Copies a grade&apos;s units, lessons, assessments, and material
+                links into a new year — your baseline to adjust. The same Drive
+                files are reused, not duplicated.
+              </p>
+            </div>
+
+            {cloneSources.length === 0 ? (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                No previous courses with units to import yet.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
+                      Copy from
+                    </label>
+                    <select
+                      value={importSourceId}
+                      onChange={(e) => setImportSourceId(e.target.value)}
+                      className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                    >
+                      {cloneSources.map((s) => (
+                        <option key={s.courseId} value={s.courseId}>
+                          {s.schoolYear ? `${s.schoolYear} · ` : ""}Grade {s.grade}
+                          {" — "}
+                          {s.unitCount} {s.unitCount === 1 ? "unit" : "units"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">
+                      New school year
+                    </label>
+                    <input
+                      type="text"
+                      value={importTargetYear}
+                      onChange={(e) => setImportTargetYear(e.target.value)}
+                      placeholder="2026-2027"
+                      className="w-full h-10 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {importError && (
+              <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
+                {importError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={runImport}
+                disabled={!importSourceId || !importTargetYear || importing || cloneSources.length === 0}
+                className="h-10 px-4 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-40 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+              >
+                {importing ? "Importing..." : "Import & edit"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowImport(false);
+                  setImportError(null);
+                }}
+                disabled={importing}
+                className="h-10 px-4 rounded-lg text-sm font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Existing courses ─── */}
-        {courses.length > 0 && !showForm && (
+        {courses.length > 0 && !showForm && !showImport && (
           <div className="space-y-10">
             {courses.map((course) => {
               const quarters = ["Q1", "Q2", "Q3", "Q4"];
@@ -323,7 +481,7 @@ export default function CurriculumPage() {
         )}
 
         {/* ── Empty state ─── */}
-        {courses.length === 0 && !showForm && (
+        {courses.length === 0 && !showForm && !showImport && (
           <div className="text-center py-16">
             <p className="text-zinc-500 dark:text-zinc-400 mb-4">
               No curriculum yet. Generate a year plan to get started.
