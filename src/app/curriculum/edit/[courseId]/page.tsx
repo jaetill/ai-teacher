@@ -284,18 +284,16 @@ export default function CurriculumEditorPage() {
                   />
                 </div>
               ) : (
-                <h1 className="group flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  Grade {editor.course.grade} &mdash; {editor.course.title}
-                  <button
-                    onClick={beginTitleEdit}
-                    title="Rename curriculum"
-                    className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-opacity"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
-                    </svg>
-                  </button>
-                </h1>
+                <button
+                  onClick={beginTitleEdit}
+                  title="Rename curriculum"
+                  className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                >
+                  <span>Grade {editor.course.grade} &mdash; {editor.course.title}</span>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="text-zinc-400 shrink-0">
+                    <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
+                  </svg>
+                </button>
               )}
               <p className="text-[11px] text-zinc-400 mt-0.5">
                 {editor.units.length} units &middot; {totalLessons} lessons &middot; {totalAssessments} assessments
