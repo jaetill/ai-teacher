@@ -14,7 +14,7 @@ import { readJson, isUuid } from "@/lib/api-utils";
 const ALLOWED_FIELDS: Record<string, string[]> = {
   lesson: ["title", "sortOrder", "durationMinutes"],
   assessment: ["title", "sortOrder", "assessmentType"],
-  unit: ["title", "sortOrder", "durationWeeks", "quarter"],
+  unit: ["title", "sortOrder", "durationWeeks", "quarter", "summary"],
 };
 
 // Per-field value validators. Field names were already allowlisted, but the
@@ -27,6 +27,7 @@ const FIELD_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   durationWeeks: (v) => v === null || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 52),
   assessmentType: (v) => typeof v === "string" && v.length > 0 && v.length <= 50,
   quarter: (v) => v === null || (typeof v === "string" && v.length <= 10),
+  summary: (v) => typeof v === "string" && v.length <= 5_000,
 };
 
 export async function POST(req: Request) {
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
   } else {
     const [current] = await db.select().from(units).where(eq(units.id, entityId)).limit(1);
     if (!current) return Response.json({ error: "Not found" }, { status: 404 });
-    previousValue = { title: current.title, sortOrder: current.sortOrder, durationWeeks: current.durationWeeks, quarter: current.quarter };
+    previousValue = { title: current.title, sortOrder: current.sortOrder, durationWeeks: current.durationWeeks, quarter: current.quarter, summary: current.summary };
     courseId = current.courseId;
 
     const forbidden = await assertCourseOwnership(courseId, session.user?.email);
@@ -120,6 +121,7 @@ export async function POST(req: Request) {
     if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
     if ("durationWeeks" in updates) dbUpdates.duration_weeks = updates.durationWeeks;
     if ("quarter" in updates) dbUpdates.quarter = updates.quarter;
+    if ("summary" in updates) dbUpdates.summary = updates.summary;
     await db.update(units).set(dbUpdates as never).where(eq(units.id, entityId));
   }
 

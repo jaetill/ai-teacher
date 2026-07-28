@@ -44,12 +44,22 @@ const MATERIAL_TYPE_OPTIONS = [
 type Props = {
   lesson: EditorLesson;
   onUpdateTitle: (title: string) => void;
+  onUpdateDuration: (durationMinutes: number) => void;
   onRetype: () => void;
+  onDelete: () => void;
   onDetachMaterial: (attachmentId: string) => void;
   onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
 };
 
-export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, onDetachMaterial, onUpdateMaterial }: Props) {
+export default function DraggableLessonRow({
+  lesson,
+  onUpdateTitle,
+  onUpdateDuration,
+  onRetype,
+  onDelete,
+  onDetachMaterial,
+  onUpdateMaterial,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
   const {
     attributes,
@@ -147,12 +157,33 @@ export default function DraggableLessonRow({ lesson, onUpdateTitle, onRetype, on
               from docs
             </span>
           )}
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 shrink-0 flex items-center gap-0.5">
+            <InlineEdit
+              value={lesson.durationMinutes != null ? String(lesson.durationMinutes) : ""}
+              onSave={(v) => {
+                const n = parseInt(v, 10);
+                if (Number.isInteger(n) && n >= 1 && n <= 1440) onUpdateDuration(n);
+              }}
+              placeholder="—"
+              className="text-[10px] text-zinc-400 dark:text-zinc-500"
+            />
+            m
+          </span>
           <button
             onClick={onRetype}
             className="text-[10px] text-zinc-300 dark:text-zinc-600 hover:text-amber-500 dark:hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all ml-1"
             title="Convert to assessment"
           >
             make assessment
+          </button>
+          <button
+            onClick={onDelete}
+            className="text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+            title="Delete lesson"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
           </button>
         </div>
       </div>

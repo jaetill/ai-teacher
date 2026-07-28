@@ -49,6 +49,9 @@ type Props = {
   onRetypeAssessment: (assessmentId: string) => void;
   onDetachMaterial: (attachmentId: string) => void;
   onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
+  onAddLesson: () => void;
+  onDeleteUnit: () => void;
+  onDeleteLesson: (lessonId: string) => void;
 };
 
 export default function UnitColumn({
@@ -60,8 +63,12 @@ export default function UnitColumn({
   onRetypeAssessment,
   onDetachMaterial,
   onUpdateMaterial,
+  onAddLesson,
+  onDeleteUnit,
+  onDeleteLesson,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `unit-drop-${unit.id}`,
@@ -141,6 +148,28 @@ export default function UnitColumn({
       {/* ── Collapsible content ─── */}
       {!collapsed && (
         <div className="px-5 pb-5 pt-1 space-y-4">
+          {/* Editable summary + duration */}
+          <div className="space-y-1.5">
+            <InlineEdit
+              value={unit.summary || ""}
+              onSave={(summary) => onUpdateUnit({ summary })}
+              placeholder="Add a unit summary…"
+              className="text-xs text-zinc-600 dark:text-zinc-400 block leading-snug"
+            />
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+              <span>Duration:</span>
+              <InlineEdit
+                value={String(unit.durationWeeks)}
+                onSave={(v) => {
+                  const n = parseInt(v, 10);
+                  if (Number.isInteger(n) && n >= 1 && n <= 52) onUpdateUnit({ durationWeeks: n });
+                }}
+                className="text-xs text-zinc-600 dark:text-zinc-300 font-medium"
+              />
+              <span>weeks</span>
+            </div>
+          </div>
+
           {/* Lessons */}
           {unit.lessons.length > 0 && (
             <div>
@@ -157,7 +186,11 @@ export default function UnitColumn({
                       key={lesson.id}
                       lesson={lesson}
                       onUpdateTitle={(title) => onUpdateLesson(lesson.id, { title })}
+                      onUpdateDuration={(durationMinutes) =>
+                        onUpdateLesson(lesson.id, { durationMinutes })
+                      }
                       onRetype={() => onRetypeLesson(lesson.id)}
+                      onDelete={() => onDeleteLesson(lesson.id)}
                       onDetachMaterial={onDetachMaterial}
                       onUpdateMaterial={onUpdateMaterial}
                     />
@@ -205,6 +238,43 @@ export default function UnitColumn({
               </p>
             </div>
           )}
+
+          {/* Unit actions */}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              onClick={onAddLesson}
+              className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+            >
+              + Add lesson
+            </button>
+            {confirmingDelete ? (
+              <span className="flex items-center gap-2 text-[11px]">
+                <span className="text-zinc-500 dark:text-zinc-400">Delete unit?</span>
+                <button
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    onDeleteUnit();
+                  }}
+                  className="font-semibold text-white bg-red-600 hover:bg-red-700 rounded px-2 py-0.5 transition-colors"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="text-[11px] font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              >
+                Delete unit
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
