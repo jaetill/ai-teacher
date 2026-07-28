@@ -55,6 +55,7 @@ export async function POST(req: Request) {
   const reqBody = await readJson<{
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
+    referenceText?: string; // optional pacing guide / class schedule
   }>(req);
   if (!reqBody) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -70,6 +71,11 @@ export async function POST(req: Request) {
   ) {
     return Response.json({ error: "grade and quarter required" }, { status: 400 });
   }
+
+  // Optional reference material (pacing guide, schedule) the teacher pastes to
+  // inform pacing/ordering/standards. Capped to keep the prompt bounded.
+  const referenceText =
+    typeof reqBody.referenceText === "string" ? reqBody.referenceText.slice(0, 10_000).trim() : "";
 
   // ── 1. Find materials in this quarter's folders ───
   const categories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
@@ -111,6 +117,30 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
 
+  // ── 1b. Faithful mode: if the teacher's own unit grouping was captured at
+  // import (materials.sourceUnit), build units FROM her folders and let the AI
+  // only fill the gaps (lessons/standards/durations). If no material carries a
+  // sourceUnit (legacy imports), fall back to AI-invented grouping. ──
+  const distinctUnits: string[] = [];
+  const seenUnit = new Set<string>();
+  const materialsByUnit = new Map<string, typeof quarterMaterials>();
+  const unassignedMaterials: typeof quarterMaterials = [];
+  for (const m of quarterMaterials) {
+    const su = m.sourceUnit?.trim();
+    if (su) {
+      const key = su.toLowerCase();
+      if (!seenUnit.has(key)) {
+        seenUnit.add(key);
+        distinctUnits.push(su);
+        materialsByUnit.set(key, []);
+      }
+      materialsByUnit.get(key)!.push(m);
+    } else {
+      unassignedMaterials.push(m);
+    }
+  }
+  const faithful = distinctUnits.length > 0;
+
   // ── 2. Load standards for this grade ───
   const gradeStandards = await db
     .select({ id: standards.id, description: standards.description })
@@ -118,30 +148,36 @@ export async function POST(req: Request) {
     .where(eq(standards.grade, grade))
     .orderBy(asc(standards.id));
 
-  // ── 3. Build AI prompt ───
-  const materialList = quarterMaterials
-    .map((m) => {
-      const cat = driveIdToCategory.get(m.driveFolderId ?? "") ?? "unknown";
-      return `- "${m.title}" (type: ${m.materialType}, folder: ${cat})`;
-    })
-    .join("\n");
-
+  // ── 3. Build AI prompt (mode-aware) ───
+  const describeMaterial = (m: (typeof quarterMaterials)[number]) => {
+    const cat = driveIdToCategory.get(m.driveFolderId ?? "") ?? "unknown";
+    return `- "${m.title}" (type: ${m.materialType}, folder: ${cat})`;
+  };
   const standardsList = gradeStandards
     .map((s) => `${s.id}: ${s.description}`)
     .join("\n");
+  const referenceBlock = referenceText
+    ? `\n\nTeacher's reference material (pacing guide / schedule). Use it to inform pacing, ordering, and standards coverage:\n${referenceText}`
+    : "";
 
-  const message = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16384,
-    system: `You are building a curriculum for ONE quarter from a set of teaching materials (files).
-A quarter contains ONE OR MORE units — usually one unit per novel or major topic. Analyze the
-file names, types, and folder categories, and GROUP the materials into distinct units.
+  // Shared lesson/standard/material rules used in both modes.
+  const sharedRules = `- Generate 15-25 lessons TOTAL across the whole quarter (NOT per unit). Size each unit to its
+  scope: a full novel ~6-10 lessons, a short/intro unit ~2-4. Do not exceed 25 lessons total.
+- Units are NOT equal length. Set each unit's durationWeeks to reflect its real scope — a major
+  novel spans several weeks, a short unit only 1-2 — and give it a lesson count to match.
+- Keep lesson objectives and activities concise (1-3 each).
+- lessons[].sortOrder restarts at 1 within EACH unit.
+- Every material must be linked to at least one lesson in the unit it belongs to.
+- materials[].title must exactly match one of the provided filenames.
+- standards[].id must be from the provided standards list.
+- coverageType: "introduces" | "teaches" | "reinforces" | "assesses"
+- role: "primary" | "supporting" | "teacher_reference"
+- unitStandards: all unique standards covered across that unit's lessons`;
 
-Return ONLY valid JSON (no markdown fencing) with this structure:
-{
+  const jsonShape = `{
   "units": [
     {
-      "title": "Unit title — a descriptive thematic name (often the novel or topic)",
+      "title": "Unit title",
       "durationWeeks": 4,
       "summary": "2-3 sentence summary of what students learn",
       "essentialQuestions": "Key questions separated by newlines",
@@ -161,37 +197,76 @@ Return ONLY valid JSON (no markdown fencing) with this structure:
       "unitStandards": ["7.RL.1.A", "7.RL.2.B"]
     }
   ]
-}
+}`;
+
+  let systemPrompt: string;
+  let userContent: string;
+
+  if (faithful) {
+    // The teacher already grouped her files into units. Preserve that grouping
+    // exactly; the AI's job is enrichment (lessons/standards/durations) only.
+    const unitBlocks = distinctUnits
+      .map((name, i) => {
+        const mats = materialsByUnit.get(name.toLowerCase()) ?? [];
+        return `Unit ${i + 1}: "${name}"\n${mats.map(describeMaterial).join("\n") || "  (no files)"}`;
+      })
+      .join("\n\n");
+    const unassignedBlock =
+      unassignedMaterials.length > 0
+        ? `\n\nUnassigned materials (not in a unit folder — attach each to the unit where it best fits):\n${unassignedMaterials.map(describeMaterial).join("\n")}`
+        : "";
+
+    systemPrompt = `You are enriching a teacher's EXISTING unit structure for ONE quarter. The units and their
+titles are FIXED and given to you. Do NOT add, remove, rename, merge, split, or reorder units —
+return exactly the given units, in the given order, with titles copied verbatim.
+
+For EACH given unit, produce enrichment: a summary, essential questions, anchor texts, content
+warnings, its lessons, and the standards each lesson covers.
+
+Return ONLY valid JSON (no markdown fencing) with this structure:
+${jsonShape}
+
+Rules:
+- Return one object per given unit, "title" copied EXACTLY from the given unit title.
+${sharedRules}`;
+
+    userContent = `Grade ${grade} English, ${quarter}. The teacher organized these materials into the following
+units (FIXED — enrich each, do not change the set):
+
+${unitBlocks}${unassignedBlock}
+
+Available standards for Grade ${grade}:
+${standardsList}${referenceBlock}`;
+  } else {
+    // Legacy path: no captured unit structure, so the AI groups the materials.
+    const materialList = quarterMaterials.map(describeMaterial).join("\n");
+    systemPrompt = `You are building a curriculum for ONE quarter from a set of teaching materials (files).
+A quarter contains ONE OR MORE units — usually one unit per novel or major topic. Analyze the
+file names, types, and folder categories, and GROUP the materials into distinct units.
+
+Return ONLY valid JSON (no markdown fencing) with this structure:
+${jsonShape}
 
 Rules:
 - Group the materials into 1-4 units per quarter — usually one unit per novel or major topic.
   A small topic (e.g. a 1-2 week media-literacy or intro unit) can be its own short unit.
-- Generate 15-25 lessons TOTAL across the whole quarter (NOT per unit). Size each unit to its
-  scope: a full novel ~6-10 lessons, a short/intro unit ~2-4. Do not exceed 25 lessons total.
-- Units are NOT equal length. Set each unit's durationWeeks to reflect its real scope — a major
-  novel spans several weeks, a short unit only 1-2 — and give it a lesson count to match. Do not
-  split the quarter evenly across units.
-- Keep lesson objectives and activities concise (1-3 each).
-- lessons[].sortOrder restarts at 1 within EACH unit.
 - Order the units array in a sensible teaching sequence for the quarter.
-- Every material must be linked to at least one lesson in the unit it belongs to.
-- materials[].title must exactly match one of the provided filenames.
-- standards[].id must be from the provided standards list.
-- coverageType: "introduces" | "teaches" | "reinforces" | "assesses"
-- role: "primary" | "supporting" | "teacher_reference"
-- unitStandards: all unique standards covered across that unit's lessons`,
-    messages: [
-      {
-        role: "user",
-        content: `Build a Grade ${grade} English ${quarter} unit from these materials:
+${sharedRules}`;
+
+    userContent = `Build a Grade ${grade} English ${quarter} unit from these materials:
 
 Materials (${quarterMaterials.length} files):
 ${materialList}
 
 Available standards for Grade ${grade}:
-${standardsList}`,
-      },
-    ],
+${standardsList}${referenceBlock}`;
+  }
+
+  const message = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 16384,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userContent }],
   });
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
@@ -214,7 +289,7 @@ ${standardsList}`,
     }>;
     unitStandards: string[];
   };
-  let parsed: { units: ParsedUnit[] };
+  let parsed: { units: ParsedUnit[] } = { units: [] };
 
   // Models sometimes wrap the JSON in ```json fences or add stray prose despite
   // being told not to. Slice to the outermost braces so parsing is robust to that.
@@ -227,15 +302,25 @@ ${standardsList}`,
     parsed = JSON.parse(jsonText);
   } catch {
     console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
-    return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
+    // In faithful mode the teacher's units come from her folders, not the AI, so
+    // a parse failure only loses enrichment — proceed instead of failing her build.
+    if (!faithful) {
+      return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
+    }
   }
 
   const parsedUnits = Array.isArray(parsed.units) ? parsed.units : [];
-  if (parsedUnits.length === 0) {
+  if (!faithful && parsedUnits.length === 0) {
     return Response.json(
       { error: "The AI did not return any units for this quarter." },
       { status: 500 },
     );
+  }
+
+  // Map AI enrichment back to the teacher's units by title (faithful mode).
+  const enrichmentByTitle = new Map<string, ParsedUnit>();
+  for (const u of parsedUnits) {
+    if (u && typeof u.title === "string") enrichmentByTitle.set(u.title.trim().toLowerCase(), u);
   }
 
   // Clamp AI-supplied numbers to the smallint columns' safe ranges so an
@@ -282,6 +367,8 @@ ${standardsList}`,
         subject: "ELA",
         schoolYearId: currentYear?.id ?? null,
         ownerEmail,
+        // Keep the pacing guide / schedule with the course for provenance.
+        teacherNotes: referenceText || null,
       })
       .onConflictDoNothing()
       .returning({ id: courses.id });
@@ -318,6 +405,17 @@ ${standardsList}`,
   const validStdIds = new Set(gradeStandards.map((s) => s.id));
   const materialByTitle = new Map(quarterMaterials.map((m) => [m.title.toLowerCase(), m.id]));
 
+  // The units to create. Faithful mode: one per the teacher's folder (source
+  // "human"), enriched by matching AI output on title. Fallback: the AI's own
+  // grouping (source "ai"). Both feed one persistence loop below.
+  const unitsToCreate: Array<{ title: string; source: "human" | "ai"; enr?: ParsedUnit }> = faithful
+    ? distinctUnits.map((name) => ({
+        title: name,
+        source: "human" as const,
+        enr: enrichmentByTitle.get(name.trim().toLowerCase()),
+      }))
+    : parsedUnits.map((u) => ({ title: u.title, source: "ai" as const, enr: u }));
+
   // ── 6-8. Create each unit, its standards, lessons, and material links ───
   const createdUnits: Array<{ id: string; title: string }> = [];
   let lessonCount = 0;
@@ -325,29 +423,30 @@ ${standardsList}`,
   let lessonStdCount = 0;
   let standardCount = 0;
 
-  for (let i = 0; i < parsedUnits.length; i++) {
-    const u = parsedUnits[i];
+  for (let i = 0; i < unitsToCreate.length; i++) {
+    const item = unitsToCreate[i];
+    const enr = item.enr;
 
     const [createdUnit] = await db
       .insert(units)
       .values({
         courseId,
-        title: u.title,
+        title: item.title,
         sortOrder: baseSortOrder + i,
         quarter,
-        durationWeeks: clampWeeks(u.durationWeeks),
-        summary: u.summary,
-        essentialQuestions: u.essentialQuestions || null,
-        anchorTexts: u.anchorTexts || null,
-        contentWarnings: u.contentWarnings || null,
+        durationWeeks: clampWeeks(enr?.durationWeeks),
+        summary: enr?.summary || "",
+        essentialQuestions: enr?.essentialQuestions || null,
+        anchorTexts: enr?.anchorTexts || null,
+        contentWarnings: enr?.contentWarnings || null,
         userId: session.user?.id,
-        source: "ai",
+        source: item.source,
       })
       .returning({ id: units.id });
-    createdUnits.push({ id: createdUnit.id, title: u.title });
+    createdUnits.push({ id: createdUnit.id, title: item.title });
 
     // Unit standards
-    const unitStdCodes = (u.unitStandards ?? []).filter((s) => validStdIds.has(s));
+    const unitStdCodes = (enr?.unitStandards ?? []).filter((s) => validStdIds.has(s));
     if (unitStdCodes.length > 0) {
       await db.insert(unitStandards).values(
         unitStdCodes.map((s) => ({
@@ -360,7 +459,7 @@ ${standardsList}`,
     }
 
     // Lessons + lesson standards + material attachments
-    for (const lessonData of u.lessons ?? []) {
+    for (const lessonData of enr?.lessons ?? []) {
       const [createdLesson] = await db
         .insert(lessons)
         .values({
@@ -406,6 +505,8 @@ ${standardsList}`,
 
   return Response.json({
     courseId,
+    // "faithful" = units came from the teacher's own folders; "ai" = grouped by AI.
+    mode: faithful ? "faithful" : "ai",
     unitCount: createdUnits.length,
     units: createdUnits,
     lessonCount,
