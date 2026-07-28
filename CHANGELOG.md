@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.2.0](https://github.com/jaetill/ai-teacher/compare/v1.1.0...v1.2.0) (2026-07-28)
+
+
+### Features
+
+* **build:** build units from the teacher's folders + reference input ([#587](https://github.com/jaetill/ai-teacher/issues/587)) ([eec66ac](https://github.com/jaetill/ai-teacher/commit/eec66ac417ee525a5a1347dea69a9b608af8bd35))
+* **build:** generate multiple units per quarter ([#579](https://github.com/jaetill/ai-teacher/issues/579)) ([1cf756f](https://github.com/jaetill/ai-teacher/commit/1cf756f8b69362cc9a2423f378293b37eff8dc87))
+* **curriculum:** edit title and delete a curriculum from the editor ([#571](https://github.com/jaetill/ai-teacher/issues/571)) ([104dc09](https://github.com/jaetill/ai-teacher/commit/104dc09f865d931b8470d70869452f2c79551de5))
+* **curriculum:** editable titles for import + move import into the year-plan form ([#570](https://github.com/jaetill/ai-teacher/issues/570)) ([6cdf6b9](https://github.com/jaetill/ai-teacher/commit/6cdf6b9f61433436d36c1d42369d3f0970297a20))
+* **curriculum:** import a previous year as a baseline for a new year ([#569](https://github.com/jaetill/ai-teacher/issues/569)) ([2c86a3d](https://github.com/jaetill/ai-teacher/commit/2c86a3dfda56a5dca71042bd6f2f025be4a8ecc9))
+* **editor:** add/remove units and lessons, edit summary and durations ([#588](https://github.com/jaetill/ai-teacher/issues/588)) ([6009c16](https://github.com/jaetill/ai-teacher/commit/6009c166a23a7c47e7d9e77b77aa6af773e6ba8c))
+* **import:** build a quarter directly from the imported-materials panel ([#580](https://github.com/jaetill/ai-teacher/issues/580)) ([563b36b](https://github.com/jaetill/ai-teacher/commit/563b36b82e3980ad414094c1112cc2efdc38cc0e))
+* **import:** capture the teacher's unit folders at import ([#585](https://github.com/jaetill/ai-teacher/issues/585)) ([83026c5](https://github.com/jaetill/ai-teacher/commit/83026c54204cee4df5755040e638ac936c1252bf))
+* **import:** non-destructive retrofit of existing imports ([#586](https://github.com/jaetill/ai-teacher/issues/586)) ([744f377](https://github.com/jaetill/ai-teacher/commit/744f3776c8443592907019dfdc4e739a6f8b5548))
+* **import:** show imported materials by quarter on the Import page ([#578](https://github.com/jaetill/ai-teacher/issues/578)) ([4880f0e](https://github.com/jaetill/ai-teacher/commit/4880f0e0f684f16e137713a20d957d6a74734bde))
+
+
+### Bug Fixes
+
+* **ai:** replace retired claude-sonnet-4-20250514 model ([#575](https://github.com/jaetill/ai-teacher/issues/575)) ([ba55b78](https://github.com/jaetill/ai-teacher/commit/ba55b78ce9cbef6e1504f60a57d99d698edf72d8))
+* apply migrations over neon-http (websocket migrate silently no-ops) ([dc5dedf](https://github.com/jaetill/ai-teacher/commit/dc5dedf6950e44a74992ddbb552a93d134504d5f))
+* **build:** lower max_tokens to 16384 to avoid SDK non-streaming guard ([#581](https://github.com/jaetill/ai-teacher/issues/581)) ([3842c9a](https://github.com/jaetill/ai-teacher/commit/3842c9a1af2049a6ca2fd14a11f70205acd9e9f2))
+* **build:** raise timeout and size units by scope to avoid 504 ([#582](https://github.com/jaetill/ai-teacher/issues/582)) ([635bf0a](https://github.com/jaetill/ai-teacher/commit/635bf0a3b0080e0633ec39b2054377a232023244))
+* **build:** tolerate markdown-fenced JSON in AI response ([#584](https://github.com/jaetill/ai-teacher/issues/584)) ([72f82de](https://github.com/jaetill/ai-teacher/commit/72f82de233296716e6857c2b9b01c56a86cad77e))
+* **ci:** release caller uses secrets: inherit + rides [@main](https://github.com/main) (closes [#64](https://github.com/jaetill/ai-teacher/issues/64)) ([#548](https://github.com/jaetill/ai-teacher/issues/548)) ([35e0b02](https://github.com/jaetill/ai-teacher/commit/35e0b027264b59d600aa69c36edae5ce4dfab598))
+* **curriculum:** make editor title rename tappable on touch devices ([#573](https://github.com/jaetill/ai-teacher/issues/573)) ([05d4f91](https://github.com/jaetill/ai-teacher/commit/05d4f9177dd100dad6642882c03a5f085486a30e))
+* **drive/import:** align early-exit folder error format with catch-block sanitization ([#567](https://github.com/jaetill/ai-teacher/issues/567)) ([c0db4da](https://github.com/jaetill/ai-teacher/commit/c0db4da55c79c005d92355ad1577de119b17f409))
+* **drive/import:** sanitize per-file Drive error messages in POST handler ([#560](https://github.com/jaetill/ai-teacher/issues/560)) ([dfd78be](https://github.com/jaetill/ai-teacher/commit/dfd78be416f588acce162d3a734acd09a3adaa73)), closes [#555](https://github.com/jaetill/ai-teacher/issues/555)
+* full-eval remediation across API, client, and migrations ([0f8be6a](https://github.com/jaetill/ai-teacher/commit/0f8be6aac115963ab7ed6e8064390854d0d7b6bc))
+* **year-plan/save:** batch all unit inserts atomically to prevent partial writes ([#114](https://github.com/jaetill/ai-teacher/issues/114)) ([#556](https://github.com/jaetill/ai-teacher/issues/556)) ([54d8da4](https://github.com/jaetill/ai-teacher/commit/54d8da422cd1d5190f8c24912d327f04968dab35))
+* **year-plan/save:** scope course lookup and insert to schoolYear (closes [#113](https://github.com/jaetill/ai-teacher/issues/113)) ([#564](https://github.com/jaetill/ai-teacher/issues/564)) ([717d5d9](https://github.com/jaetill/ai-teacher/commit/717d5d9e3e229ce0066ee495d0043c4d7159677d))
+
 ## [1.1.0](https://github.com/jaetill/ai-teacher/compare/v1.0.2...v1.1.0) (2026-06-27)
 
 
