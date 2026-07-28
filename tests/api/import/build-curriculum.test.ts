@@ -264,6 +264,22 @@ describe("POST /api/import/build-curriculum", () => {
     expect(body.error).toBeTruthy();
   });
 
+  it("parses an AI response wrapped in ```json markdown fences (#582)", async () => {
+    // The model sometimes ignores "no fencing" and wraps the JSON in a code
+    // block. The route slices to the outermost braces, so this must still work.
+    mockMessagesCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "```json\n" + JSON.stringify(AI_RESPONSE) + "\n```" }],
+    });
+    setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.unitCount).toBe(1);
+    expect(body.units[0].id).toBe(CREATED_UNIT.id);
+  });
+
   describe("course select-first / insert race paths", () => {
     it("uses the existing course from the select-first lookup without inserting a course", async () => {
       setupMocks({ courseSelectReturn: [{ id: "c1" }] });
