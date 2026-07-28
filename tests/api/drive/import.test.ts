@@ -137,6 +137,54 @@ describe("GET /api/drive/import", () => {
     expect(body.files[0].name).toBe("notes.pdf");
     expect(body.count).toBe(1);
   });
+
+  it("captures the teacher's subfolder as sourceUnit; root files have none", async () => {
+    // Top-level scan: one subfolder ("The Giver") + one file at the root.
+    mockDriveFilesList.mockResolvedValueOnce({
+      data: {
+        files: [
+          {
+            id: "sub-1",
+            name: "The Giver",
+            mimeType: "application/vnd.google-apps.folder",
+            parents: ["folder-1"],
+          },
+          {
+            id: "root-note",
+            name: "syllabus.pdf",
+            mimeType: "application/pdf",
+            parents: ["folder-1"],
+          },
+        ],
+        nextPageToken: null,
+      },
+    });
+    // Recursion into "The Giver": one file inside it.
+    mockDriveFilesList.mockResolvedValueOnce({
+      data: {
+        files: [
+          {
+            id: "giver-ch1",
+            name: "giver-ch1.pdf",
+            mimeType: "application/pdf",
+            parents: ["sub-1"],
+          },
+        ],
+        nextPageToken: null,
+      },
+    });
+    const req = new Request("http://localhost/api/drive/import?folderId=folder-1");
+
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const byName = Object.fromEntries(
+      body.files.map((f: { name: string; sourceUnit: string | null }) => [f.name, f.sourceUnit]),
+    );
+    expect(byName["giver-ch1.pdf"]).toBe("The Giver"); // nested → her unit
+    expect(byName["syllabus.pdf"]).toBe(null); // root → no unit
+  });
 });
 
 describe("POST /api/drive/import", () => {
@@ -229,5 +277,43 @@ describe("POST /api/drive/import", () => {
     const body = await res.json();
     expect(body.results[0].status).toBe("copied");
     expect(body.results[0].driveWebUrl).toContain("new-file-id");
+  });
+
+  it("persists the teacher's sourceUnit on the imported material", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok",
+      user: { email: "teacher@school.edu" },
+    });
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ driveId: "folder-id" }]));
+    mockDriveFilesCopy.mockResolvedValueOnce({
+      data: {
+        id: "new-file-id",
+        mimeType: "application/pdf",
+        webViewLink: "https://drive.google.com/file/d/new-file-id/view",
+      },
+    });
+    const valuesSpy = vi.fn().mockResolvedValue(undefined);
+    mockDbInsert.mockReturnValueOnce({ values: valuesSpy });
+
+    await POST(
+      makePostRequest(
+        makePostBody({
+          files: [
+            {
+              sourceFileId: "src-file-1",
+              name: "giver-ch1.pdf",
+              category: "Lessons",
+              materialType: "reading",
+              grade: 7,
+              destination: "Q1",
+              sourceUnit: "The Giver",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(valuesSpy).toHaveBeenCalled();
+    expect(valuesSpy.mock.calls[0][0]).toMatchObject({ sourceUnit: "The Giver" });
   });
 });

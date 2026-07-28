@@ -24,6 +24,13 @@ export const materials = pgTable(
     driveWebUrl: text("drive_web_url"),
     driveFolderId: text("drive_folder_id"),
 
+    // The teacher's own unit grouping, captured from the source Drive subfolder
+    // this file lived in at import time (e.g. "The Giver"). Nullable: legacy
+    // imports and files dropped at the root of the scanned folder have none.
+    // Used by build-curriculum to create units from her structure rather than
+    // inventing them.
+    sourceUnit: text("source_unit"),
+
     // ── Non-Drive fields ───
     url: text("url"),
     inlineContent: text("inline_content"),

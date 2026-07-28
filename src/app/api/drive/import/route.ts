@@ -36,10 +36,20 @@ export async function GET(req: Request) {
 
   const drive = getDriveClient(accessToken);
 
-  // List all files in the shared folder (recursive into subfolders)
-  const allFiles: Array<{ id: string; name: string; mimeType: string; parents: string[] }> = [];
+  // List all files in the shared folder (recursive into subfolders).
+  // `sourceUnit` is the name of the immediate subfolder a file was found in —
+  // the teacher's own unit grouping. Files at the root of the scanned folder
+  // have no unit (sourceUnit: null); only files nested one or more levels deep
+  // carry the name of the subfolder directly containing them.
+  const allFiles: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    parents: string[];
+    sourceUnit: string | null;
+  }> = [];
 
-  async function listFolder(parentId: string) {
+  async function listFolder(parentId: string, sourceUnit: string | null) {
     let pageToken: string | undefined;
     do {
       const res = await drive.files.list({
@@ -52,13 +62,15 @@ export async function GET(req: Request) {
       });
       for (const file of res.data.files ?? []) {
         if (file.mimeType === "application/vnd.google-apps.folder") {
-          await listFolder(file.id!);
+          // This subfolder becomes the unit for everything inside it.
+          await listFolder(file.id!, file.name ?? null);
         } else {
           allFiles.push({
             id: file.id!,
             name: file.name!,
             mimeType: file.mimeType!,
             parents: file.parents ?? [],
+            sourceUnit,
           });
         }
       }
@@ -67,7 +79,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    await listFolder(folderId);
+    // The top-level folder being scanned is not itself a unit.
+    await listFolder(folderId, null);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // Log the upstream Drive error server-side, but return a generic message —
@@ -102,6 +115,7 @@ export async function POST(req: Request) {
       materialType: string;
       grade: number;
       destination: string;
+      sourceUnit?: string | null;
     }>;
   }>(req);
   if (!body) {
@@ -168,6 +182,7 @@ export async function POST(req: Request) {
         driveMimeType: copied.data.mimeType!,
         driveWebUrl: copied.data.webViewLink!,
         driveFolderId: folder.driveId,
+        sourceUnit: file.sourceUnit?.trim() || null,
         source: "human",
       });
 

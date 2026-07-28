@@ -20,6 +20,8 @@ type DriveFile = {
   destination: string;
   category: string;
   materialType: string;
+  // The teacher's own unit, captured from the Drive subfolder this file lived in.
+  sourceUnit: string | null;
   status: "pending" | "copying" | "done" | "error";
   driveWebUrl?: string;
 };
@@ -79,14 +81,17 @@ export default function ImportFromDrive() {
         throw new Error(data.error || "Failed to scan folder");
       }
       setFiles(
-        data.files.map((f: { id: string; name: string; mimeType: string }) => ({
-          ...f,
-          grade: defaultGrade,
-          destination: defaultQuarter,
-          category: "Activities",
-          materialType: "other",
-          status: "pending",
-        }))
+        data.files.map(
+          (f: { id: string; name: string; mimeType: string; sourceUnit?: string | null }) => ({
+            ...f,
+            grade: defaultGrade,
+            destination: defaultQuarter,
+            category: "Activities",
+            materialType: "other",
+            sourceUnit: f.sourceUnit ?? null,
+            status: "pending",
+          })
+        )
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to scan folder");
@@ -216,6 +221,7 @@ export default function ImportFromDrive() {
             materialType: f.materialType,
             grade: f.grade,
             destination: f.destination,
+            sourceUnit: f.sourceUnit,
           })),
         }),
       });
@@ -325,14 +331,29 @@ export default function ImportFromDrive() {
               <div className="mt-6">
                 <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">
                   Found {files.length} files
+                  {(() => {
+                    const units = [...new Set(files.map((f) => f.sourceUnit).filter(Boolean))];
+                    return units.length > 0 ? (
+                      <span className="text-zinc-400">
+                        {" "}
+                        · recognized {units.length} unit{units.length === 1 ? "" : "s"} from your
+                        folders
+                      </span>
+                    ) : null;
+                  })()}
                 </p>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
                   {files.map((f) => (
                     <div
                       key={f.id}
-                      className="text-xs text-zinc-500 dark:text-zinc-400 py-0.5 truncate"
+                      className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 py-0.5"
                     >
-                      {f.name}
+                      <span className="truncate">{f.name}</span>
+                      {f.sourceUnit && (
+                        <span className="shrink-0 rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                          {f.sourceUnit}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -360,6 +381,9 @@ export default function ImportFromDrive() {
                     <th className="text-left px-3 py-2 font-medium text-zinc-600 dark:text-zinc-300">
                       File
                     </th>
+                    <th className="text-left px-3 py-2 font-medium text-zinc-600 dark:text-zinc-300 w-32">
+                      Unit
+                    </th>
                     <th className="text-left px-3 py-2 font-medium text-zinc-600 dark:text-zinc-300 w-20">
                       Grade
                     </th>
@@ -382,6 +406,15 @@ export default function ImportFromDrive() {
                     >
                       <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 truncate max-w-xs">
                         {f.name}
+                      </td>
+                      <td className="px-3 py-2">
+                        {f.sourceUnit ? (
+                          <span className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300">
+                            {f.sourceUnit}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <select
