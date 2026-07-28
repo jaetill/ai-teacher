@@ -51,7 +51,7 @@ export default function ImportFromDrive() {
   const [classifying, setClassifying] = useState(false);
   const [importing, setImporting] = useState(false);
   const [building, setBuilding] = useState(false);
-  const [buildResult, setBuildResult] = useState<{ unitId: string; unitTitle: string; lessonCount: number } | null>(null);
+  const [buildResult, setBuildResult] = useState<{ courseId: string; unitCount: number; lessonCount: number; units: Array<{ id: string; title: string }> } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // ── Step 1: Scan folder ───
@@ -173,9 +173,10 @@ export default function ImportFromDrive() {
         throw new Error(data.error || "Failed to build curriculum");
       }
       setBuildResult({
-        unitId: data.unitId,
-        unitTitle: data.unitTitle,
+        courseId: data.courseId,
+        unitCount: data.unitCount,
         lessonCount: data.lessonCount,
+        units: data.units ?? [],
       });
       setStep("build");
     } catch (err) {
@@ -581,16 +582,23 @@ export default function ImportFromDrive() {
         {step === "build" && buildResult && (
           <div>
             <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300 mb-4">
-              Created &quot;{buildResult.unitTitle}&quot; with{" "}
-              {buildResult.lessonCount} lessons
+              Created {buildResult.unitCount}{" "}
+              {buildResult.unitCount === 1 ? "unit" : "units"} with {buildResult.lessonCount} lessons:
+              {buildResult.units.length > 0 && (
+                <ul className="mt-1.5 list-disc list-inside space-y-0.5">
+                  {buildResult.units.map((u) => (
+                    <li key={u.id}>{u.title}</li>
+                  ))}
+                </ul>
+              )}
             </div>
             <button
               onClick={() =>
-                router.push(`/curriculum/${buildResult.unitId}`)
+                router.push(`/curriculum/edit/${buildResult.courseId}`)
               }
               className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
             >
-              View Unit
+              View Curriculum
             </button>
           </div>
         )}

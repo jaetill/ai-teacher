@@ -132,43 +132,49 @@ export async function POST(req: Request) {
 
   const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 16384,
-    system: `You are building a curriculum unit from a set of teaching materials (files).
-Analyze the file names, types, and folder categories to understand the unit's content.
-Generate a complete unit structure with lessons, and map standards and materials to lessons.
+    max_tokens: 32000,
+    system: `You are building a curriculum for ONE quarter from a set of teaching materials (files).
+A quarter contains ONE OR MORE units — usually one unit per novel or major topic. Analyze the
+file names, types, and folder categories, and GROUP the materials into distinct units.
 
 Return ONLY valid JSON (no markdown fencing) with this structure:
 {
-  "unit": {
-    "title": "Unit title — descriptive thematic name",
-    "durationWeeks": 7,
-    "summary": "2-3 sentence summary of what students learn",
-    "essentialQuestions": "Key questions separated by newlines",
-    "anchorTexts": "Primary texts used",
-    "contentWarnings": "Any sensitive content notes, or null"
-  },
-  "lessons": [
+  "units": [
     {
-      "sortOrder": 1,
-      "title": "Lesson title",
-      "durationMinutes": 45,
-      "objectives": ["objective 1", "objective 2"],
-      "activities": ["activity 1", "activity 2"],
-      "standards": [{"id": "8.RL.1.A", "coverageType": "teaches"}],
-      "materials": [{"title": "exact filename.docx", "role": "primary"}]
+      "title": "Unit title — a descriptive thematic name (often the novel or topic)",
+      "durationWeeks": 4,
+      "summary": "2-3 sentence summary of what students learn",
+      "essentialQuestions": "Key questions separated by newlines",
+      "anchorTexts": "Primary texts used",
+      "contentWarnings": "Any sensitive content notes, or null",
+      "lessons": [
+        {
+          "sortOrder": 1,
+          "title": "Lesson title",
+          "durationMinutes": 45,
+          "objectives": ["objective 1", "objective 2"],
+          "activities": ["activity 1", "activity 2"],
+          "standards": [{"id": "7.RL.1.A", "coverageType": "teaches"}],
+          "materials": [{"title": "exact filename.docx", "role": "primary"}]
+        }
+      ],
+      "unitStandards": ["7.RL.1.A", "7.RL.2.B"]
     }
-  ],
-  "unitStandards": ["8.RL.1.A", "8.RL.2.B"]
+  ]
 }
 
 Rules:
-- Generate 15-25 lessons (typical quarter is ~7 weeks, 3 lessons/week)
-- Every material should be linked to at least one lesson
-- materials[].title must exactly match one of the provided filenames
-- standards[].id must be from the provided standards list
+- Group the materials into 1-4 units per quarter — usually one unit per novel or major topic.
+  A small topic (e.g. a 1-2 week media-literacy or intro unit) can be its own short unit.
+- Each unit's lessons: ~10-15 for a full novel, ~3-6 for a short unit.
+- lessons[].sortOrder restarts at 1 within EACH unit.
+- Order the units array in a sensible teaching sequence for the quarter.
+- Every material must be linked to at least one lesson in the unit it belongs to.
+- materials[].title must exactly match one of the provided filenames.
+- standards[].id must be from the provided standards list.
 - coverageType: "introduces" | "teaches" | "reinforces" | "assesses"
 - role: "primary" | "supporting" | "teacher_reference"
-- unitStandards: all unique standards covered across lessons`,
+- unitStandards: all unique standards covered across that unit's lessons`,
     messages: [
       {
         role: "user",
@@ -185,15 +191,13 @@ ${standardsList}`,
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
 
-  let parsed: {
-    unit: {
-      title: string;
-      durationWeeks: number;
-      summary: string;
-      essentialQuestions: string;
-      anchorTexts: string;
-      contentWarnings: string | null;
-    };
+  type ParsedUnit = {
+    title: string;
+    durationWeeks: number;
+    summary: string;
+    essentialQuestions: string;
+    anchorTexts: string;
+    contentWarnings: string | null;
     lessons: Array<{
       sortOrder: number;
       title: string;
@@ -205,15 +209,29 @@ ${standardsList}`,
     }>;
     unitStandards: string[];
   };
+  let parsed: { units: ParsedUnit[] };
 
   try {
     parsed = JSON.parse(text);
   } catch {
+    console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
+    return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
+  }
+
+  const parsedUnits = Array.isArray(parsed.units) ? parsed.units : [];
+  if (parsedUnits.length === 0) {
     return Response.json(
-      { error: "Failed to parse AI response", raw: text.substring(0, 500) },
-      { status: 500 }
+      { error: "The AI did not return any units for this quarter." },
+      { status: 500 },
     );
   }
+
+  // Clamp AI-supplied numbers to the smallint columns' safe ranges so an
+  // out-of-range value can't throw an uncaught DB error mid-build (#eval-2026-07).
+  const clampWeeks = (n: unknown) =>
+    Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 20 ? (n as number) : 2;
+  const clampMinutes = (n: unknown) =>
+    Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 600 ? (n as number) : 45;
 
   // ── 4. Find or create course ───
   const [currentYear] = await db
@@ -275,112 +293,109 @@ ${standardsList}`,
 
   const courseId = course.id;
 
-  // ── 5. Determine sort order for new unit ───
+  // ── 5. Determine the starting sort order (append after any existing units) ───
   const existingUnits = await db
     .select({ sortOrder: units.sortOrder })
     .from(units)
     .where(eq(units.courseId, courseId))
     .orderBy(asc(units.sortOrder));
 
-  const sortOrder = existingUnits.length > 0
-    ? Math.max(...existingUnits.map((u) => u.sortOrder)) + 1
-    : 1;
+  const baseSortOrder =
+    existingUnits.length > 0 ? Math.max(...existingUnits.map((u) => u.sortOrder)) + 1 : 1;
 
-  // ── 6. Create unit ───
-  const [createdUnit] = await db
-    .insert(units)
-    .values({
-      courseId,
-      title: parsed.unit.title,
-      sortOrder,
-      quarter,
-      durationWeeks: parsed.unit.durationWeeks,
-      summary: parsed.unit.summary,
-      essentialQuestions: parsed.unit.essentialQuestions || null,
-      anchorTexts: parsed.unit.anchorTexts || null,
-      contentWarnings: parsed.unit.contentWarnings || null,
-      userId: session.user?.id,
-      source: "ai",
-    })
-    .returning({ id: units.id });
-
-  // ── 7. Link unit standards ───
   const validStdIds = new Set(gradeStandards.map((s) => s.id));
-  const unitStdCodes = (parsed.unitStandards ?? []).filter((s) => validStdIds.has(s));
-  let standardCount = 0;
+  const materialByTitle = new Map(quarterMaterials.map((m) => [m.title.toLowerCase(), m.id]));
 
-  if (unitStdCodes.length > 0) {
-    await db.insert(unitStandards).values(
-      unitStdCodes.map((s) => ({
-        unitId: createdUnit.id,
-        standardId: s,
-        emphasis: "primary" as const,
-      }))
-    );
-    standardCount = unitStdCodes.length;
-  }
-
-  // ── 8. Create lessons + lesson standards + material attachments ───
-  const materialByTitle = new Map(
-    quarterMaterials.map((m) => [m.title.toLowerCase(), m.id])
-  );
-
+  // ── 6-8. Create each unit, its standards, lessons, and material links ───
+  const createdUnits: Array<{ id: string; title: string }> = [];
   let lessonCount = 0;
   let materialLinkCount = 0;
   let lessonStdCount = 0;
+  let standardCount = 0;
 
-  for (const lessonData of parsed.lessons) {
-    const [createdLesson] = await db
-      .insert(lessons)
+  for (let i = 0; i < parsedUnits.length; i++) {
+    const u = parsedUnits[i];
+
+    const [createdUnit] = await db
+      .insert(units)
       .values({
-        unitId: createdUnit.id,
-        title: lessonData.title,
-        sortOrder: lessonData.sortOrder,
-        durationMinutes: lessonData.durationMinutes || 45,
-        objectives: lessonData.objectives ?? [],
-        lessonPlan: { activities: lessonData.activities ?? [] },
+        courseId,
+        title: u.title,
+        sortOrder: baseSortOrder + i,
+        quarter,
+        durationWeeks: clampWeeks(u.durationWeeks),
+        summary: u.summary,
+        essentialQuestions: u.essentialQuestions || null,
+        anchorTexts: u.anchorTexts || null,
+        contentWarnings: u.contentWarnings || null,
+        userId: session.user?.id,
         source: "ai",
       })
-      .returning({ id: lessons.id });
-    lessonCount++;
+      .returning({ id: units.id });
+    createdUnits.push({ id: createdUnit.id, title: u.title });
 
-    // Lesson standards
-    for (const std of lessonData.standards ?? []) {
-      if (!validStdIds.has(std.id)) continue;
-      const coverageType = std.coverageType || "teaches";
-      if (!VALID_COVERAGE_TYPES.has(coverageType)) continue;
-      await db
-        .insert(lessonStandards)
-        .values({
-          lessonId: createdLesson.id,
-          standardId: std.id,
-          coverageType,
-        })
-        .onConflictDoNothing();
-      lessonStdCount++;
+    // Unit standards
+    const unitStdCodes = (u.unitStandards ?? []).filter((s) => validStdIds.has(s));
+    if (unitStdCodes.length > 0) {
+      await db.insert(unitStandards).values(
+        unitStdCodes.map((s) => ({
+          unitId: createdUnit.id,
+          standardId: s,
+          emphasis: "primary" as const,
+        })),
+      );
+      standardCount += unitStdCodes.length;
     }
 
-    // Material attachments
-    for (const mat of lessonData.materials ?? []) {
-      const materialId = materialByTitle.get(mat.title.toLowerCase());
-      if (!materialId) continue;
-      await db
-        .insert(materialAttachments)
+    // Lessons + lesson standards + material attachments
+    for (const lessonData of u.lessons ?? []) {
+      const [createdLesson] = await db
+        .insert(lessons)
         .values({
-          materialId,
-          attachableType: "lesson",
-          attachableId: createdLesson.id,
-          role: normalizeMaterialRole(mat.role),
-          sortOrder: 0,
+          unitId: createdUnit.id,
+          title: lessonData.title,
+          sortOrder: lessonData.sortOrder,
+          durationMinutes: clampMinutes(lessonData.durationMinutes),
+          objectives: lessonData.objectives ?? [],
+          lessonPlan: { activities: lessonData.activities ?? [] },
+          source: "ai",
         })
-        .onConflictDoNothing();
-      materialLinkCount++;
+        .returning({ id: lessons.id });
+      lessonCount++;
+
+      for (const std of lessonData.standards ?? []) {
+        if (!validStdIds.has(std.id)) continue;
+        const coverageType = std.coverageType || "teaches";
+        if (!VALID_COVERAGE_TYPES.has(coverageType)) continue;
+        await db
+          .insert(lessonStandards)
+          .values({ lessonId: createdLesson.id, standardId: std.id, coverageType })
+          .onConflictDoNothing();
+        lessonStdCount++;
+      }
+
+      for (const mat of lessonData.materials ?? []) {
+        const materialId = materialByTitle.get(mat.title.toLowerCase());
+        if (!materialId) continue;
+        await db
+          .insert(materialAttachments)
+          .values({
+            materialId,
+            attachableType: "lesson",
+            attachableId: createdLesson.id,
+            role: normalizeMaterialRole(mat.role),
+            sortOrder: 0,
+          })
+          .onConflictDoNothing();
+        materialLinkCount++;
+      }
     }
   }
 
   return Response.json({
-    unitId: createdUnit.id,
-    unitTitle: parsed.unit.title,
+    courseId,
+    unitCount: createdUnits.length,
+    units: createdUnits,
     lessonCount,
     standardCount,
     lessonStdCount,
