@@ -33,15 +33,17 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
   const [confirmingBuild, setConfirmingBuild] = useState<string | null>(null);
   const [buildingQuarter, setBuildingQuarter] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
+  // Optional pacing guide / schedule the teacher can paste to steer the build.
+  const [referenceText, setReferenceText] = useState("");
 
-  async function buildQuarter(grade: number, quarter: string) {
+  async function buildQuarter(grade: number, quarter: string, reference: string) {
     setBuildingQuarter(quarter);
     setBuildError(null);
     try {
       const res = await fetch("/api/import/build-curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ grade, quarter }),
+        body: JSON.stringify({ grade, quarter, referenceText: reference.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -201,11 +203,19 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                         <strong>once per quarter</strong> — running it again creates
                         duplicate units.
                       </p>
+                      <textarea
+                        value={referenceText}
+                        onChange={(e) => setReferenceText(e.target.value)}
+                        placeholder="Optional: paste a pacing guide or class schedule to guide pacing and ordering…"
+                        rows={2}
+                        className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-[11px] text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
                             setConfirmingBuild(null);
-                            buildQuarter(grade.grade, qk);
+                            buildQuarter(grade.grade, qk, referenceText);
+                            setReferenceText("");
                           }}
                           className="text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 transition-colors"
                         >

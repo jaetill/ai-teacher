@@ -280,6 +280,128 @@ describe("POST /api/import/build-curriculum", () => {
     expect(body.units[0].id).toBe(CREATED_UNIT.id);
   });
 
+  describe("faithful mode (teacher's unit folders)", () => {
+    it("builds units from sourceUnit folders with source 'human', AI fills the gaps", async () => {
+      mockMessagesCreate.mockResolvedValueOnce({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              units: [
+                {
+                  title: "The Giver",
+                  durationWeeks: 5,
+                  summary: "Students read The Giver.",
+                  essentialQuestions: "",
+                  anchorTexts: "The Giver",
+                  contentWarnings: null,
+                  lessons: [
+                    {
+                      sortOrder: 1,
+                      title: "Intro",
+                      durationMinutes: 45,
+                      objectives: ["o"],
+                      activities: ["a"],
+                      standards: [{ id: "5.RL.1", coverageType: "teaches" }],
+                      materials: [{ title: "Giver Ch1", role: "primary" }],
+                    },
+                  ],
+                  unitStandards: ["5.RL.1"],
+                },
+              ],
+            }),
+          },
+        ],
+      });
+
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: "mat1",
+              title: "Giver Ch1",
+              materialType: "reading",
+              driveFolderId: "drive1",
+              sourceUnit: "The Giver",
+            },
+          ]),
+        )
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // course found
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+
+      const unitChain = makeChain([CREATED_UNIT]);
+      const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
+      unitChain.values = unitValuesSpy;
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(unitChain) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValueOnce(makeChain([])) // lessonStandards
+        .mockReturnValueOnce(makeChain([])); // materialAttachments
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.mode).toBe("faithful");
+      expect(body.unitCount).toBe(1);
+      expect(body.units[0].title).toBe("The Giver");
+      // The unit's title/boundary is hers → source 'human', not 'ai'.
+      expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ title: "The Giver", source: "human" });
+    });
+
+    it("forwards referenceText into the AI prompt and stores it on a new course", async () => {
+      // Fallback grouping (no sourceUnit) keeps this focused on the reference plumbing.
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])) // course select-first → not found
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+
+      const courseChain = makeChain([{ id: "c1" }]);
+      const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+      courseChain.values = courseValuesSpy;
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(courseChain) // courses
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValue(makeChain([])); // lessonStandards + materialAttachments
+
+      const res = await POST(
+        new Request("http://localhost/api/import/build-curriculum", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            grade: 5,
+            quarter: "Q1",
+            referenceText: "PACING: 2 weeks per novel.",
+          }),
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      // Reference text reached the model prompt…
+      const userContent = mockMessagesCreate.mock.calls[0][0].messages[0].content as string;
+      expect(userContent).toContain("PACING: 2 weeks per novel.");
+      // …and was stored on the new course for provenance.
+      expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({
+        teacherNotes: "PACING: 2 weeks per novel.",
+      });
+    });
+  });
+
   describe("course select-first / insert race paths", () => {
     it("uses the existing course from the select-first lookup without inserting a course", async () => {
       setupMocks({ courseSelectReturn: [{ id: "c1" }] });
