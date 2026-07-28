@@ -132,7 +132,7 @@ export async function POST(req: Request) {
 
   const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 32000,
+    max_tokens: 16384,
     system: `You are building a curriculum for ONE quarter from a set of teaching materials (files).
 A quarter contains ONE OR MORE units — usually one unit per novel or major topic. Analyze the
 file names, types, and folder categories, and GROUP the materials into distinct units.
