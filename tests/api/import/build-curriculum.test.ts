@@ -87,26 +87,28 @@ const CREATED_UNIT = { id: "u1" };
 const CREATED_LESSON = { id: "l1" };
 
 const AI_RESPONSE = {
-  unit: {
-    title: "Reading Unit",
-    durationWeeks: 4,
-    summary: "Students read and analyze literature.",
-    essentialQuestions: "What is the main idea?",
-    anchorTexts: "Unit Overview",
-    contentWarnings: null,
-  },
-  lessons: [
+  units: [
     {
-      sortOrder: 1,
-      title: "Introduction",
-      durationMinutes: 45,
-      objectives: ["Identify main idea"],
-      activities: ["Read aloud"],
-      standards: [{ id: "5.RL.1", coverageType: "teaches" }],
-      materials: [{ title: "Unit Overview", role: "primary" }],
+      title: "Reading Unit",
+      durationWeeks: 4,
+      summary: "Students read and analyze literature.",
+      essentialQuestions: "What is the main idea?",
+      anchorTexts: "Unit Overview",
+      contentWarnings: null,
+      lessons: [
+        {
+          sortOrder: 1,
+          title: "Introduction",
+          durationMinutes: 45,
+          objectives: ["Identify main idea"],
+          activities: ["Read aloud"],
+          standards: [{ id: "5.RL.1", coverageType: "teaches" }],
+          materials: [{ title: "Unit Overview", role: "primary" }],
+        },
+      ],
+      unitStandards: ["5.RL.1"],
     },
   ],
-  unitStandards: ["5.RL.1"],
 };
 
 /**
@@ -270,7 +272,8 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.unitId).toBe(CREATED_UNIT.id);
+      expect(body.unitCount).toBe(1);
+      expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // 6 selects: folders, materials, standards, schoolYears, courses, existingUnits
       expect(mockDbSelect).toHaveBeenCalledTimes(6);
       // No courses insert — units, unitStandards, lessons, lessonStandards, materialAttachments
@@ -284,7 +287,8 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.unitId).toBe(CREATED_UNIT.id);
+      expect(body.unitCount).toBe(1);
+      expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT should NOT have been called — 6 selects total
       // (folders, materials, standards, schoolYears, courses select-first, existingUnits)
       expect(mockDbSelect).toHaveBeenCalledTimes(6);
@@ -312,7 +316,8 @@ describe("POST /api/import/build-curriculum", () => {
 
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.unitId).toBe(CREATED_UNIT.id);
+      expect(body.unitCount).toBe(1);
+      expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT must have been called — 7 selects total
       expect(mockDbSelect).toHaveBeenCalledTimes(7);
     });
@@ -420,8 +425,14 @@ describe("POST /api/import/build-curriculum", () => {
 
     function setupCoverageTypeTest(coverageType: string) {
       const response = {
-        ...AI_RESPONSE,
-        lessons: [{ ...AI_RESPONSE.lessons[0], standards: [{ id: "5.RL.1", coverageType }] }],
+        units: [
+          {
+            ...AI_RESPONSE.units[0],
+            lessons: [
+              { ...AI_RESPONSE.units[0].lessons[0], standards: [{ id: "5.RL.1", coverageType }] },
+            ],
+          },
+        ],
       };
       mockMessagesCreate.mockResolvedValueOnce({
         content: [{ type: "text", text: JSON.stringify(response) }],
