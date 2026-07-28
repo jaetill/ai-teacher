@@ -13,7 +13,7 @@ import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { buildFolderKey } from "@/lib/upload-utils";
-import { escapeDriveQueryValue } from "@/lib/drive";
+import { scanFolderUnits } from "@/lib/drive";
 import { readJson } from "@/lib/api-utils";
 
 function getDriveClient(accessToken: string) {
@@ -34,53 +34,11 @@ export async function GET(req: Request) {
     return Response.json({ error: "folderId required" }, { status: 400 });
   }
 
-  const drive = getDriveClient(accessToken);
-
-  // List all files in the shared folder (recursive into subfolders).
-  // `sourceUnit` is the name of the immediate subfolder a file was found in —
-  // the teacher's own unit grouping. Files at the root of the scanned folder
-  // have no unit (sourceUnit: null); only files nested one or more levels deep
-  // carry the name of the subfolder directly containing them.
-  const allFiles: Array<{
-    id: string;
-    name: string;
-    mimeType: string;
-    parents: string[];
-    sourceUnit: string | null;
-  }> = [];
-
-  async function listFolder(parentId: string, sourceUnit: string | null) {
-    let pageToken: string | undefined;
-    do {
-      const res = await drive.files.list({
-        q: `'${escapeDriveQueryValue(parentId)}' in parents and trashed = false`,
-        fields: "nextPageToken, files(id, name, mimeType, parents)",
-        pageSize: 200,
-        pageToken,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      for (const file of res.data.files ?? []) {
-        if (file.mimeType === "application/vnd.google-apps.folder") {
-          // This subfolder becomes the unit for everything inside it.
-          await listFolder(file.id!, file.name ?? null);
-        } else {
-          allFiles.push({
-            id: file.id!,
-            name: file.name!,
-            mimeType: file.mimeType!,
-            parents: file.parents ?? [],
-            sourceUnit,
-          });
-        }
-      }
-      pageToken = res.data.nextPageToken ?? undefined;
-    } while (pageToken);
-  }
-
+  // Recursively list the shared folder, capturing each file's `sourceUnit`
+  // (the teacher's own subfolder grouping). Shared with the unit retrofit.
+  let allFiles;
   try {
-    // The top-level folder being scanned is not itself a unit.
-    await listFolder(folderId, null);
+    allFiles = await scanFolderUnits(accessToken, folderId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // Log the upstream Drive error server-side, but return a generic message —
