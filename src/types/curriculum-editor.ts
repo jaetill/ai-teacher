@@ -88,6 +88,7 @@ export type UpdateItemPayload = {
     durationMinutes?: number;
     durationWeeks?: number;
     quarter?: string;
+    summary?: string;
   };
 };
 
@@ -120,4 +121,8 @@ export type EditAction =
   | "attach_material"
   | "detach_material"
   | "update_material_role"
-  | "update_material_type";
+  | "update_material_type"
+  | "create_unit"
+  | "delete_unit"
+  | "create_lesson"
+  | "delete_lesson";

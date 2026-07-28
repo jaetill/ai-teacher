@@ -373,15 +373,26 @@ export default function CurriculumEditorPage() {
                   onUpdateMaterial={(attachmentId, fields) =>
                     editor.updateMaterial(attachmentId, fields)
                   }
+                  onAddLesson={() => editor.createLesson(unit.id)}
+                  onDeleteUnit={() => editor.deleteUnit(unit.id)}
+                  onDeleteLesson={(lessonId) => editor.deleteLesson(lessonId)}
                 />
               ))
             ) : (
               <div className="text-center py-16">
                 <p className="text-sm text-zinc-400">
-                  No units found for this course.
+                  No units yet. Add one to start building this curriculum.
                 </p>
               </div>
             )}
+
+            {/* Add a unit */}
+            <button
+              onClick={() => editor.createUnit()}
+              className="w-full rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 py-3 text-sm font-medium text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+            >
+              + Add unit
+            </button>
           </div>
 
           {/* Right panel: Content pool */}

@@ -257,6 +257,49 @@ export function useCurriculumEditor(courseId: string) {
     }
   }
 
+  // ── Create / delete units and lessons (structural — full reload after) ───
+
+  async function createUnit() {
+    try {
+      await apiCall("create-unit", { courseId });
+      await fetchData();
+    } catch {
+      await fetchData();
+    }
+  }
+
+  async function deleteUnit(unitId: string) {
+    // Optimistic remove so the column disappears immediately.
+    setUnits((prev) => prev.filter((u) => u.id !== unitId));
+    try {
+      await apiCall("delete-unit", { unitId });
+      await fetchData();
+    } catch {
+      await fetchData();
+    }
+  }
+
+  async function createLesson(unitId: string) {
+    try {
+      await apiCall("create-lesson", { unitId });
+      await fetchData();
+    } catch {
+      await fetchData();
+    }
+  }
+
+  async function deleteLesson(lessonId: string) {
+    setUnits((prev) =>
+      prev.map((u) => ({ ...u, lessons: u.lessons.filter((l) => l.id !== lessonId) })),
+    );
+    try {
+      await apiCall("delete-lesson", { lessonId });
+      await fetchData();
+    } catch {
+      await fetchData();
+    }
+  }
+
   // ── Retype content (lesson ↔ assessment) ───
 
   async function retypeContent(
@@ -385,6 +428,10 @@ export function useCurriculumEditor(courseId: string) {
     attachMaterial,
     detachMaterial,
     updateMaterial,
+    createUnit,
+    deleteUnit,
+    createLesson,
+    deleteLesson,
     renameCourse,
     deleteCourse,
     refresh: fetchData,

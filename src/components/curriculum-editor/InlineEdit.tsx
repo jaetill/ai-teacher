@@ -7,9 +7,16 @@ type Props = {
   onSave: (value: string) => void;
   className?: string;
   inputClassName?: string;
+  placeholder?: string;
 };
 
-export default function InlineEdit({ value, onSave, className = "", inputClassName = "" }: Props) {
+export default function InlineEdit({
+  value,
+  onSave,
+  className = "",
+  inputClassName = "",
+  placeholder = "",
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,10 +46,12 @@ export default function InlineEdit({ value, onSave, className = "", inputClassNa
     return (
       <span
         onClick={() => setEditing(true)}
-        className={`cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-1 -mx-1 ${className}`}
+        className={`cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-1 -mx-1 ${className} ${
+          value ? "" : "text-zinc-400 dark:text-zinc-500 italic"
+        }`}
         title="Click to edit"
       >
-        {value}
+        {value || placeholder}
       </span>
     );
   }
