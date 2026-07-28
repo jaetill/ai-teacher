@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ImportFromComputer from "@/components/ImportFromComputer";
 import ImportFromDrive from "@/components/ImportFromDrive";
+import ImportedSummary from "@/components/ImportedSummary";
 
 type Source = "drive" | "computer";
 
@@ -37,6 +38,9 @@ export default function ImportPage() {
         <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
           AI classifies your files and organizes them into the right Drive folders
         </p>
+
+        {/* What's already imported, by quarter — so you can see where you left off */}
+        <ImportedSummary />
 
         {/* ── Source tabs ─── */}
         <div className="flex gap-1 mb-8">
