@@ -6,6 +6,7 @@ import Link from "next/link";
 import ImportFromComputer from "@/components/ImportFromComputer";
 import ImportFromDrive from "@/components/ImportFromDrive";
 import ImportedSummary from "@/components/ImportedSummary";
+import RetrofitUnits from "@/components/RetrofitUnits";
 
 type Source = "drive" | "computer";
 
@@ -41,6 +42,9 @@ export default function ImportPage() {
 
         {/* What's already imported, by quarter — so you can see where you left off */}
         <ImportedSummary />
+
+        {/* Backfill units for material imported before unit-capture existed */}
+        <RetrofitUnits />
 
         {/* ── Source tabs ─── */}
         <div className="flex gap-1 mb-8">

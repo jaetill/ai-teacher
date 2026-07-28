@@ -104,6 +104,59 @@ export async function uploadFile(
   return res.data;
 }
 
+// Recursively lists every file under `folderId`, tagging each with `sourceUnit`
+// — the name of the immediate subfolder it was found in (the teacher's own unit
+// grouping). Files directly under the scanned folder carry sourceUnit: null.
+// Used both by the initial import scan and by the non-destructive unit retrofit.
+export type ScannedFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  parents: string[];
+  sourceUnit: string | null;
+};
+
+export async function scanFolderUnits(
+  accessToken: string,
+  folderId: string
+): Promise<ScannedFile[]> {
+  const drive = getDriveClient(accessToken);
+  const allFiles: ScannedFile[] = [];
+
+  async function listFolder(parentId: string, sourceUnit: string | null) {
+    let pageToken: string | undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${escapeDriveQueryValue(parentId)}' in parents and trashed = false`,
+        fields: "nextPageToken, files(id, name, mimeType, parents)",
+        pageSize: 200,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      for (const file of res.data.files ?? []) {
+        if (file.mimeType === "application/vnd.google-apps.folder") {
+          // This subfolder becomes the unit for everything inside it.
+          await listFolder(file.id!, file.name ?? null);
+        } else {
+          allFiles.push({
+            id: file.id!,
+            name: file.name!,
+            mimeType: file.mimeType!,
+            parents: file.parents ?? [],
+            sourceUnit,
+          });
+        }
+      }
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
+  }
+
+  // The top-level folder being scanned is not itself a unit.
+  await listFolder(folderId, null);
+  return allFiles;
+}
+
 export async function listFilesInFolder(accessToken: string, folderId: string) {
   const drive = getDriveClient(accessToken);
   const res = await drive.files.list({
