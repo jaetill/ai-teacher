@@ -216,8 +216,15 @@ ${standardsList}`,
   };
   let parsed: { units: ParsedUnit[] };
 
+  // Models sometimes wrap the JSON in ```json fences or add stray prose despite
+  // being told not to. Slice to the outermost braces so parsing is robust to that.
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  const jsonText =
+    firstBrace !== -1 && lastBrace > firstBrace ? text.slice(firstBrace, lastBrace + 1) : text;
+
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(jsonText);
   } catch {
     console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
     return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
