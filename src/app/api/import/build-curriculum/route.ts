@@ -35,7 +35,7 @@ const VALID_COVERAGE_TYPES = new Set([
   "assesses",
 ]);
 
-export const maxDuration = 120; // Allow up to 2 minutes for this endpoint
+export const maxDuration = 300; // Allow up to 5 minutes (capped to the plan max)
 
 export async function POST(req: Request) {
   try {
@@ -166,7 +166,12 @@ Return ONLY valid JSON (no markdown fencing) with this structure:
 Rules:
 - Group the materials into 1-4 units per quarter — usually one unit per novel or major topic.
   A small topic (e.g. a 1-2 week media-literacy or intro unit) can be its own short unit.
-- Each unit's lessons: ~10-15 for a full novel, ~3-6 for a short unit.
+- Generate 15-25 lessons TOTAL across the whole quarter (NOT per unit). Size each unit to its
+  scope: a full novel ~6-10 lessons, a short/intro unit ~2-4. Do not exceed 25 lessons total.
+- Units are NOT equal length. Set each unit's durationWeeks to reflect its real scope — a major
+  novel spans several weeks, a short unit only 1-2 — and give it a lesson count to match. Do not
+  split the quarter evenly across units.
+- Keep lesson objectives and activities concise (1-3 each).
 - lessons[].sortOrder restarts at 1 within EACH unit.
 - Order the units array in a sensible teaching sequence for the quarter.
 - Every material must be linked to at least one lesson in the unit it belongs to.
