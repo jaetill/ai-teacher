@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 type FileRow = { title: string; materialType: string; category: string };
 type QuarterSummary = {
@@ -23,10 +24,39 @@ const QUARTER_STYLES: Record<string, string> = {
 // Shows what the signed-in teacher has already imported, grouped by quarter,
 // so they can see progress and what's still missing before building.
 export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: number }) {
+  const router = useRouter();
   const [grades, setGrades] = useState<GradeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeGrade, setActiveGrade] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Build-from-this-quarter state (turns imported files into units).
+  const [confirmingBuild, setConfirmingBuild] = useState<string | null>(null);
+  const [buildingQuarter, setBuildingQuarter] = useState<string | null>(null);
+  const [buildError, setBuildError] = useState<string | null>(null);
+
+  async function buildQuarter(grade: number, quarter: string) {
+    setBuildingQuarter(quarter);
+    setBuildError(null);
+    try {
+      const res = await fetch("/api/import/build-curriculum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade, quarter }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBuildError(data.error ?? `Build failed (error ${res.status}).`);
+        setBuildingQuarter(null);
+        return;
+      }
+      // Land in the editor with the newly built units.
+      router.push(`/curriculum/edit/${data.courseId}`);
+    } catch (err) {
+      console.error("Build failed", err);
+      setBuildError("Something went wrong during the build. Please try again.");
+      setBuildingQuarter(null);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -143,18 +173,65 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                         </div>
                       ))}
                   </div>
-                  <button
-                    onClick={() => setExpanded(isOpen ? null : qk)}
-                    className="mt-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-                  >
-                    {isOpen ? "Hide files" : "See files"}
-                  </button>
+                  <div className="mt-2 flex items-center justify-between">
+                    <button
+                      onClick={() => setExpanded(isOpen ? null : qk)}
+                      className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                    >
+                      {isOpen ? "Hide files" : "See files"}
+                    </button>
+                    {buildingQuarter === qk ? (
+                      <span className="text-[11px] font-medium text-zinc-400 animate-pulse">
+                        Building…
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingBuild(qk)}
+                        disabled={buildingQuarter !== null}
+                        className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 disabled:opacity-40 transition-colors"
+                      >
+                        Build →
+                      </button>
+                    )}
+                  </div>
+                  {confirmingBuild === qk && buildingQuarter === null && (
+                    <div className="mt-2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 space-y-1.5">
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-snug">
+                        Build {qk}&apos;s {total} files into units? Do this{" "}
+                        <strong>once per quarter</strong> — running it again creates
+                        duplicate units.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setConfirmingBuild(null);
+                            buildQuarter(grade.grade, qk);
+                          }}
+                          className="text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 transition-colors"
+                        >
+                          Build {qk}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingBuild(null)}
+                          className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           );
         })}
       </div>
+
+      {buildError && (
+        <div className="mt-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-2.5 text-xs text-red-700 dark:text-red-300">
+          {buildError}
+        </div>
+      )}
 
       {expanded && byQuarter.get(expanded) && (
         <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 max-h-56 overflow-y-auto">
