@@ -18,7 +18,7 @@ const TYPE_COLORS: Record<string, string> = {
 function DraggableMaterial({ material, onDetach }: { material: PoolMaterial; onDetach?: (attachmentId: string) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `pool-${material.id}`,
-    data: { type: "pool-material", materialId: material.id },
+    data: { type: "pool-material", materialId: material.id, label: material.title },
   });
 
   const isAttached = material.attachment !== null;

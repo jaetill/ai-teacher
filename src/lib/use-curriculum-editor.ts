@@ -331,6 +331,29 @@ export function useCurriculumEditor(courseId: string) {
     }
   }
 
+  // ── Move an attached material from one lesson/assessment/unit to another ───
+  // Attach to the new target first, then detach the old link, so a mid-flight
+  // failure never leaves the material homeless. A full reload follows.
+
+  async function moveAttachment(
+    materialId: string,
+    fromAttachmentId: string,
+    toType: "lesson" | "assessment" | "unit",
+    toId: string
+  ) {
+    try {
+      await apiCall("attach-material", {
+        materialId,
+        attachableType: toType,
+        attachableId: toId,
+      });
+      await apiCall("detach-material", { materialAttachmentId: fromAttachmentId });
+      await fetchData();
+    } catch {
+      await fetchData();
+    }
+  }
+
   // ── Update material attachment role or material type ───
 
   async function updateMaterial(
@@ -427,6 +450,7 @@ export function useCurriculumEditor(courseId: string) {
     updateItem,
     retypeContent,
     attachMaterial,
+    moveAttachment,
     detachMaterial,
     updateMaterial,
     createUnit,
