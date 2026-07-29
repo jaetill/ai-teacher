@@ -16,7 +16,14 @@ vi.mock("@/lib/rate-limit", () => ({
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
-    messages = { create: mockMessagesCreate };
+    // The route now streams: getAnthropic().messages.stream(cfg).finalMessage().
+    // Route the config through mockMessagesCreate so the existing .mockResolvedValue
+    // response setup and the call-arg assertions keep working unchanged.
+    messages = {
+      stream: (...args: unknown[]) => ({
+        finalMessage: () => mockMessagesCreate(...args),
+      }),
+    };
   },
 }));
 

@@ -262,12 +262,19 @@ Available standards for Grade ${grade}:
 ${standardsList}${referenceBlock}`;
   }
 
-  const message = await getAnthropic().messages.create({
+  // Stream the response. A quarter with a large novel (e.g. Roll of Thunder,
+  // 40+ materials) needs more than the non-streaming create() call can produce:
+  // raising its max_tokens past ~16k trips the SDK's ">10 min, must stream" guard,
+  // and 16k itself truncates the JSON for big quarters (→ empty units). Streaming
+  // lifts both limits — no guard, and room for the full enrichment. We still
+  // accumulate the whole message server-side and parse it exactly as before.
+  const stream = getAnthropic().messages.stream({
     model: "claude-sonnet-4-6",
-    max_tokens: 16384,
+    max_tokens: 32000,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
   });
+  const message = await stream.finalMessage();
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
 
