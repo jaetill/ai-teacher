@@ -27,6 +27,8 @@ export default function CurriculumEditorPage() {
   const router = useRouter();
   const editor = useCurriculumEditor(courseId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // What to show in the drag overlay — the item's own name, not "Moving item".
+  const [activeLabel, setActiveLabel] = useState<string | null>(null);
 
   // Title editing + delete confirmation (course-level, in the toolbar).
   const [editingTitle, setEditingTitle] = useState(false);
@@ -70,7 +72,7 @@ export default function CurriculumEditorPage() {
   const collisionDetection: CollisionDetection = useCallback((args) => {
     const activeType = activeDataRef.current?.type;
 
-    if (activeType === "pool-material") {
+    if (activeType === "pool-material" || activeType === "attached-material") {
       // pointerWithin works better for cross-panel — detects what's under the cursor
       const pointerCollisions = pointerWithin(args);
       if (pointerCollisions.length > 0) return pointerCollisions;
@@ -95,15 +97,40 @@ export default function CurriculumEditorPage() {
     [editor.units]
   );
 
+  // ── Resolve where a material was dropped → { type, id } or null ───
+  // Shared by the pool-material and attached-material drop paths so both
+  // recognise the same drop zones (unit / lesson / assessment).
+
+  const resolveDropTarget = useCallback(
+    (
+      overData: Record<string, unknown> | undefined,
+      overId: string
+    ): { type: "unit" | "lesson" | "assessment"; id: string } | null => {
+      if (overData?.type === "unit-drop" && overData?.unitId) {
+        return { type: "unit", id: overData.unitId as string };
+      }
+      if (overData?.lessonId) return { type: "lesson", id: overData.lessonId as string };
+      if (overData?.assessmentId) return { type: "assessment", id: overData.assessmentId as string };
+      if (overData?.type === "lesson") return { type: "lesson", id: overId };
+      if (overData?.type === "assessment") return { type: "assessment", id: overId };
+      const targetUnit = findUnitForItem(overId);
+      if (targetUnit) return { type: "unit", id: targetUnit.id };
+      return null;
+    },
+    [findUnitForItem]
+  );
+
   // ── DnD handlers ───
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as string);
+    setActiveLabel((event.active.data.current?.label as string) ?? null);
     activeDataRef.current = event.active.data.current ?? null;
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
+    setActiveLabel(null);
     activeDataRef.current = null;
     const { active, over } = event;
     if (!over) return;
@@ -113,43 +140,24 @@ export default function CurriculumEditorPage() {
 
     // Pool material dropped on a unit, lesson, or assessment
     if (activeData?.type === "pool-material") {
-      const overData = over.data.current;
+      const target = resolveDropTarget(over.data.current, overId);
+      if (target) editor.attachMaterial(activeData.materialId, target.type, target.id);
+      return;
+    }
 
-      // Dropped on unit drop zone (id: "unit-drop-{id}")
-      if (overData?.unitId) {
-        editor.attachMaterial(activeData.materialId, "unit", overData.unitId);
-        return;
-      }
-
-      // Dropped on a lesson droppable (id: "lesson-drop-{id}")
-      if (overData?.lessonId) {
-        editor.attachMaterial(activeData.materialId, "lesson", overData.lessonId);
-        return;
-      }
-
-      // Dropped on an assessment droppable (id: "assessment-drop-{id}")
-      if (overData?.assessmentId) {
-        editor.attachMaterial(activeData.materialId, "assessment", overData.assessmentId);
-        return;
-      }
-
-      // Dropped on a sortable lesson/assessment item directly
-      if (overData?.type === "lesson") {
-        editor.attachMaterial(activeData.materialId, "lesson", overId);
-        return;
-      }
-      if (overData?.type === "assessment") {
-        editor.attachMaterial(activeData.materialId, "assessment", overId);
-        return;
-      }
-
-      // Dropped on a unit card area — find the unit
-      const targetUnit = findUnitForItem(overId);
-      if (targetUnit) {
-        editor.attachMaterial(activeData.materialId, "unit", targetUnit.id);
-        return;
-      }
-
+    // A material already attached to a lesson/assessment, dragged to another one
+    // (no unlink-to-pool round-trip). Re-home it: attach to target, detach source.
+    if (activeData?.type === "attached-material") {
+      const target = resolveDropTarget(over.data.current, overId);
+      if (!target) return;
+      // Dropped back on its own source → nothing to do.
+      if (target.type === activeData.fromType && target.id === activeData.fromId) return;
+      editor.moveAttachment(
+        activeData.materialId,
+        activeData.attachmentId,
+        target.type,
+        target.id
+      );
       return;
     }
 
@@ -404,8 +412,16 @@ export default function CurriculumEditorPage() {
         {/* Drag overlay */}
         <DragOverlay>
           {activeId ? (
-            <div className="rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950 px-4 py-2.5 text-sm font-medium text-blue-700 dark:text-blue-300 shadow-xl shadow-blue-500/10">
-              Moving item...
+            <div className="flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950 px-4 py-2.5 text-sm font-medium text-blue-700 dark:text-blue-300 shadow-xl shadow-blue-500/10 max-w-xs">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" className="shrink-0 opacity-60">
+                <rect x="2" y="1" width="3.5" height="1.5" rx="0.5" />
+                <rect x="8.5" y="1" width="3.5" height="1.5" rx="0.5" />
+                <rect x="2" y="4.5" width="3.5" height="1.5" rx="0.5" />
+                <rect x="8.5" y="4.5" width="3.5" height="1.5" rx="0.5" />
+                <rect x="2" y="8" width="3.5" height="1.5" rx="0.5" />
+                <rect x="8.5" y="8" width="3.5" height="1.5" rx="0.5" />
+              </svg>
+              <span className="truncate">{activeLabel ?? "Moving item…"}</span>
             </div>
           ) : null}
         </DragOverlay>

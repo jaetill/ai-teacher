@@ -6,40 +6,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { EditorLesson } from "@/types/curriculum-editor";
 import InlineEdit from "./InlineEdit";
-
-const ROLE_OPTIONS = [
-  { value: "primary", label: "Primary" },
-  { value: "supporting", label: "Supporting" },
-  { value: "teacher_reference", label: "Reference" },
-];
-
-const TYPE_COLORS: Record<string, string> = {
-  reading: "text-rose-700 dark:text-rose-300",
-  activity: "text-blue-700 dark:text-blue-300",
-  rubric: "text-violet-700 dark:text-violet-300",
-  lesson: "text-orange-700 dark:text-orange-300",
-  assessment: "text-teal-700 dark:text-teal-300",
-  resource: "text-cyan-700 dark:text-cyan-300",
-  curriculum: "text-emerald-700 dark:text-emerald-300",
-  other: "text-zinc-500 dark:text-zinc-400",
-};
-
-const ROLE_COLORS: Record<string, string> = {
-  primary: "text-blue-600 dark:text-blue-400",
-  supporting: "text-zinc-500 dark:text-zinc-400",
-  teacher_reference: "text-violet-600 dark:text-violet-400",
-};
-
-const MATERIAL_TYPE_OPTIONS = [
-  { value: "reading", label: "Reading" },
-  { value: "activity", label: "Activity" },
-  { value: "rubric", label: "Rubric" },
-  { value: "lesson", label: "Lesson" },
-  { value: "assessment", label: "Assessment" },
-  { value: "resource", label: "Resource" },
-  { value: "curriculum", label: "Curriculum" },
-  { value: "other", label: "Other" },
-];
+import AttachedMaterialRow from "./AttachedMaterialRow";
 
 type Props = {
   lesson: EditorLesson;
@@ -68,7 +35,7 @@ export default function DraggableLessonRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: lesson.id, data: { type: "lesson", unitId: null } });
+  } = useSortable({ id: lesson.id, data: { type: "lesson", unitId: null, label: lesson.title } });
 
   // Also register as a droppable target for pool materials
   const { setNodeRef: setDropRef, isOver: isDropTarget } = useDroppable({
@@ -192,53 +159,15 @@ export default function DraggableLessonRow({
       {expanded && lesson.materials.length > 0 && (
         <div className="ml-[62px] mr-3 mb-2 space-y-1">
           {lesson.materials.map((mat) => (
-            <div
+            <AttachedMaterialRow
               key={mat.attachmentId}
-              className="flex items-center gap-2 py-1 px-2.5 rounded-md bg-zinc-50 dark:bg-zinc-800/60 text-[12px]"
-            >
-              <select
-                value={mat.role}
-                onChange={(e) => onUpdateMaterial(mat.attachmentId, { role: e.target.value })}
-                className={`text-[9px] font-medium uppercase tracking-wider bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer ${ROLE_COLORS[mat.role] ?? ROLE_COLORS.supporting}`}
-              >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <span className="flex-1 min-w-0 truncate text-zinc-700 dark:text-zinc-300">
-                {mat.driveWebUrl ? (
-                  <a
-                    href={mat.driveWebUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {mat.title}
-                  </a>
-                ) : (
-                  mat.title
-                )}
-              </span>
-              <select
-                value={mat.materialType}
-                onChange={(e) => onUpdateMaterial(mat.attachmentId, { materialType: e.target.value })}
-                className={`text-[9px] font-medium bg-transparent border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer shrink-0 ${TYPE_COLORS[mat.materialType] ?? TYPE_COLORS.other}`}
-              >
-                {MATERIAL_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => onDetachMaterial(mat.attachmentId)}
-                className="text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 shrink-0 transition-colors"
-                title="Unlink this material"
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M4 4l8 8M12 4l-8 8" />
-                </svg>
-              </button>
-            </div>
+              material={mat}
+              fromType="lesson"
+              fromId={lesson.id}
+              variant="lesson"
+              onDetach={onDetachMaterial}
+              onUpdate={onUpdateMaterial}
+            />
           ))}
         </div>
       )}
