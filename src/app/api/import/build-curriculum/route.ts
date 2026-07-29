@@ -13,6 +13,7 @@ import {
   courses,
   units,
   lessons,
+  assessments,
   standards,
   unitStandards,
   lessonStandards,
@@ -56,11 +57,15 @@ export async function POST(req: Request) {
     grade: number;
     quarter: string; // "Q1", "Q2", etc.
     referenceText?: string; // optional pacing guide / class schedule
+    rebuild?: boolean; // explicit "replace this quarter's build" opt-in
   }>(req);
   if (!reqBody) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const { grade, quarter } = reqBody;
+  // Re-running Build on a quarter is a no-op by default (see the guard below);
+  // rebuild:true means "throw away this quarter's units and build them again."
+  const rebuild = reqBody.rebuild === true;
 
   if (
     typeof grade !== "number" ||
@@ -399,15 +404,80 @@ ${standardsList}${referenceBlock}`;
 
   const courseId = course.id;
 
-  // ── 5. Determine the starting sort order (append after any existing units) ───
+  // ── 5. Idempotency guard + starting sort order ───
+  // Load the course's existing units so we can (a) refuse to silently duplicate
+  // a quarter that's already been built, and (b) append new units after any that
+  // remain in OTHER quarters.
   const existingUnits = await db
-    .select({ sortOrder: units.sortOrder })
+    .select({ id: units.id, sortOrder: units.sortOrder, quarter: units.quarter })
     .from(units)
     .where(eq(units.courseId, courseId))
     .orderBy(asc(units.sortOrder));
 
+  const unitsThisQuarter = existingUnits.filter((u) => u.quarter === quarter);
+
+  // A second Build on an already-built quarter used to append a whole duplicate
+  // set of units (The Giver twice, etc.). Now it refuses unless the caller
+  // explicitly asks to rebuild, and hands back the course so the client can open
+  // it in the editor instead.
+  if (unitsThisQuarter.length > 0 && !rebuild) {
+    return Response.json({
+      alreadyBuilt: true,
+      courseId,
+      quarter,
+      unitCount: unitsThisQuarter.length,
+    });
+  }
+
+  // Explicit rebuild: clear THIS quarter's units first (other quarters untouched),
+  // mirroring delete-unit's polymorphic-attachment cleanup before the cascade.
+  if (unitsThisQuarter.length > 0 && rebuild) {
+    const staleUnitIds = unitsThisQuarter.map((u) => u.id);
+    const [staleLessons, staleAssessments] = await Promise.all([
+      db.select({ id: lessons.id }).from(lessons).where(inArray(lessons.unitId, staleUnitIds)),
+      db
+        .select({ id: assessments.id })
+        .from(assessments)
+        .where(inArray(assessments.unitId, staleUnitIds)),
+    ]);
+    const staleLessonIds = staleLessons.map((l) => l.id);
+    const staleAssessmentIds = staleAssessments.map((a) => a.id);
+    await db
+      .delete(materialAttachments)
+      .where(
+        and(
+          eq(materialAttachments.attachableType, "unit"),
+          inArray(materialAttachments.attachableId, staleUnitIds),
+        ),
+      );
+    if (staleLessonIds.length > 0) {
+      await db
+        .delete(materialAttachments)
+        .where(
+          and(
+            eq(materialAttachments.attachableType, "lesson"),
+            inArray(materialAttachments.attachableId, staleLessonIds),
+          ),
+        );
+    }
+    if (staleAssessmentIds.length > 0) {
+      await db
+        .delete(materialAttachments)
+        .where(
+          and(
+            eq(materialAttachments.attachableType, "assessment"),
+            inArray(materialAttachments.attachableId, staleAssessmentIds),
+          ),
+        );
+    }
+    await db.delete(units).where(inArray(units.id, staleUnitIds));
+  }
+
+  // Append after units in OTHER quarters (this quarter's are either absent or,
+  // on rebuild, just cleared above).
+  const otherUnits = existingUnits.filter((u) => u.quarter !== quarter);
   const baseSortOrder =
-    existingUnits.length > 0 ? Math.max(...existingUnits.map((u) => u.sortOrder)) + 1 : 1;
+    otherUnits.length > 0 ? Math.max(...otherUnits.map((u) => u.sortOrder)) + 1 : 1;
 
   const validStdIds = new Set(gradeStandards.map((s) => s.id));
   const materialByTitle = new Map(quarterMaterials.map((m) => [m.title.toLowerCase(), m.id]));
