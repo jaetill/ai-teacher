@@ -8,6 +8,9 @@ type Props = {
   className?: string;
   inputClassName?: string;
   placeholder?: string;
+  // Render a full-width, multi-row textarea instead of a single-line input.
+  // Use for prose fields like a unit summary.
+  multiline?: boolean;
 };
 
 export default function InlineEdit({
@@ -16,17 +19,26 @@ export default function InlineEdit({
   className = "",
   inputClassName = "",
   placeholder = "",
+  multiline = false,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (editing) {
+    if (!editing) return;
+    if (multiline) {
+      // Focus at the end (no select-all — replacing a whole paragraph by
+      // accident is worse than repositioning the cursor).
+      const el = textareaRef.current;
+      el?.focus();
+      if (el) el.selectionStart = el.selectionEnd = el.value.length;
+    } else {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [editing]);
+  }, [editing, multiline]);
 
   useEffect(() => {
     setDraft(value);
@@ -53,6 +65,26 @@ export default function InlineEdit({
       >
         {value || placeholder}
       </span>
+    );
+  }
+
+  if (multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          // Enter makes a new line here; Escape cancels; click-away (blur) saves.
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        rows={4}
+        className={`w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-sm leading-snug resize-y focus:outline-none focus:ring-1 focus:ring-zinc-400 ${inputClassName}`}
+      />
     );
   }
 

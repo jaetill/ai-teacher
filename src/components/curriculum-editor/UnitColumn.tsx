@@ -159,6 +159,7 @@ export default function UnitColumn({
               value={unit.summary || ""}
               onSave={(summary) => onUpdateUnit({ summary })}
               placeholder="Add a unit summary…"
+              multiline
               className="text-xs text-zinc-600 dark:text-zinc-400 block leading-snug"
             />
             <div className="flex items-center gap-1.5 text-xs text-zinc-400">
