@@ -101,4 +101,30 @@ describe("GET /api/materials/summary", () => {
     const data = await res.json();
     expect(data.grades).toEqual([]);
   });
+
+  it("orders the Summer bucket before the quarters", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(
+      chain([
+        {
+          title: "Q1 Lesson",
+          materialType: "lesson",
+          folderKey: "grade_7_Q1_Lessons",
+          createdAt: 2,
+        },
+        {
+          title: "Summer Novel",
+          materialType: "reading",
+          folderKey: "grade_7_Summer_Lessons",
+          createdAt: 1,
+        },
+      ]),
+    );
+
+    const res = await GET();
+    const data = await res.json();
+    const g7 = data.grades[0];
+    // Summer is a pre-year bucket → sorts ahead of Q1.
+    expect(g7.quarters.map((q: { quarter: string }) => q.quarter)).toEqual(["Summer", "Q1"]);
+  });
 });
