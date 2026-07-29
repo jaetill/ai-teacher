@@ -102,13 +102,18 @@ type Props = {
 
 export default function ContentPool({ materials, onDetachMaterial }: Props) {
   const [filter, setFilter] = useState<string>("all");
-  const [showAttached, setShowAttached] = useState(true);
+  const [unitFilter, setUnitFilter] = useState<string>("all");
+  // Default to unlinked-only: on open, show what still needs a home.
+  const [showAttached, setShowAttached] = useState(false);
   const [search, setSearch] = useState("");
 
   const types = [...new Set(materials.map((m) => m.materialType))].sort();
+  // The teacher's own units, present only once material carries sourceUnit.
+  const units = [...new Set(materials.map((m) => m.sourceUnit).filter(Boolean))].sort() as string[];
 
   const filtered = materials.filter((m) => {
     if (filter !== "all" && m.materialType !== filter) return false;
+    if (unitFilter !== "all" && m.sourceUnit !== unitFilter) return false;
     if (!showAttached && m.attachment) return false;
     if (search && !m.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -145,6 +150,22 @@ export default function ContentPool({ materials, onDetachMaterial }: Props) {
           placeholder="Search files..."
           className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600"
         />
+        {units.length > 0 && (
+          <select
+            value={unitFilter}
+            onChange={(e) => setUnitFilter(e.target.value)}
+            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-600 dark:text-zinc-400 focus:outline-none"
+          >
+            <option value="all">
+              All units ({materials.filter((m) => m.sourceUnit).length})
+            </option>
+            {units.map((u) => (
+              <option key={u} value={u}>
+                {u} ({materials.filter((m) => m.sourceUnit === u).length})
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-2">
           <select
             value={filter}

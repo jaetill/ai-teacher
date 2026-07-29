@@ -9,10 +9,12 @@ import {
   materials,
   materialAttachments,
   units,
+  lessons,
+  assessments,
   driveFolders,
   courses,
 } from "@/db/schema";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
 
 export async function GET(req: Request) {
@@ -58,9 +60,14 @@ export async function GET(req: Request) {
     .limit(1);
   const grade = courseRow?.grade;
 
-  const exactFolderKeys = grade != null
-    ? quarters.map((q) => `grade_${grade}_${q}_Curriculum`)
-    : [];
+  // Load materials from ALL of the course's quarter category folders (not just
+  // Curriculum) so the pool reflects everything the teacher imported. The UI
+  // filters by type and unit on top of this full set.
+  const CATEGORIES = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
+  const exactFolderKeys =
+    grade != null
+      ? quarters.flatMap((q) => CATEGORIES.map((c) => `grade_${grade}_${q}_${c}`))
+      : [];
 
   // Scope the driveFolders query to exact keys for this course's grade+quarter combination.
   // Using inArray with exact keys (not a full table scan + substring filter) ensures we
@@ -92,15 +99,26 @@ export async function GET(req: Request) {
       .from(materials)
       .where(inArray(materials.driveFolderId, relevantFolderDriveIds));
   } else {
-    // Fallback: get all materials that are attached to this course's units
+    // Fallback (rare — only when the course's quarter folders aren't registered):
+    // gather every material attached to the course's units, lessons, or
+    // assessments. The build attaches to lessons, so a unit-only match missed them.
     const unitIds = courseUnits.map((u) => u.id);
-    const attachedMaterialIds = await db
-      .select({ materialId: materialAttachments.materialId })
-      .from(materialAttachments)
-      .where(
-        sql`${materialAttachments.attachableType} = 'unit' AND ${materialAttachments.attachableId} IN ${unitIds}`
-      );
-    const materialIds = attachedMaterialIds.map((r) => r.materialId);
+    const [unitLessons, unitAssessments] = await Promise.all([
+      db.select({ id: lessons.id }).from(lessons).where(inArray(lessons.unitId, unitIds)),
+      db.select({ id: assessments.id }).from(assessments).where(inArray(assessments.unitId, unitIds)),
+    ]);
+    const attachableIds = [
+      ...unitIds,
+      ...unitLessons.map((l) => l.id),
+      ...unitAssessments.map((a) => a.id),
+    ];
+    const attachedMaterialIds = attachableIds.length
+      ? await db
+          .select({ materialId: materialAttachments.materialId })
+          .from(materialAttachments)
+          .where(inArray(materialAttachments.attachableId, attachableIds))
+      : [];
+    const materialIds = [...new Set(attachedMaterialIds.map((r) => r.materialId))];
     courseMaterials = materialIds.length
       ? await db.select().from(materials).where(inArray(materials.id, materialIds))
       : [];
@@ -132,6 +150,7 @@ export async function GET(req: Request) {
       id: m.id,
       title: m.title,
       materialType: m.materialType,
+      sourceUnit: m.sourceUnit,
       driveWebUrl: m.driveWebUrl,
       driveMimeType: m.driveMimeType,
       attachments: atts.map((a) => ({
