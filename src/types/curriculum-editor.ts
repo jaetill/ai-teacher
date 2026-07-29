@@ -46,6 +46,8 @@ export type PoolMaterial = {
   id: string;
   title: string;
   materialType: string;
+  // The teacher's own unit this material belongs to (from import), or null.
+  sourceUnit: string | null;
   driveWebUrl: string | null;
   driveMimeType: string | null;
   // Where it's currently attached (if anywhere)

@@ -54,6 +54,7 @@ export function useCurriculumEditor(courseId: string) {
             id: m.id,
             title: m.title,
             materialType: m.materialType,
+            sourceUnit: m.sourceUnit ?? null,
             driveWebUrl: m.driveWebUrl,
             driveMimeType: m.driveMimeType,
             attachment: m.attachments?.[0] ?? null,
