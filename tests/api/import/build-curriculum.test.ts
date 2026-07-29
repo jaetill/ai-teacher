@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks (must be initialized before any import runs) ──────────
-const { mockDbSelect, mockDbInsert, mockMessagesCreate } = vi.hoisted(() => ({
+const { mockDbSelect, mockDbInsert, mockDbDelete, mockMessagesCreate } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
+  mockDbDelete: vi.fn(),
   mockMessagesCreate: vi.fn(),
 }));
 
@@ -27,11 +28,14 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }));
 
-vi.mock("@/db", () => ({ db: { select: mockDbSelect, insert: mockDbInsert } }));
+vi.mock("@/db", () => ({
+  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete },
+}));
 vi.mock("@/db/schema", () => ({
   courses: {},
   units: {},
   lessons: {},
+  assessments: {},
   standards: {},
   unitStandards: {},
   lessonStandards: {},
@@ -621,5 +625,71 @@ describe("POST /api/import/build-curriculum", () => {
         expect(mockDbInsert).toHaveBeenCalledTimes(6);
       },
     );
+  });
+
+  describe("idempotency (re-running Build)", () => {
+    it("refuses to duplicate an already-built quarter and inserts nothing", async () => {
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // course found
+        // existingUnits: this quarter already has a unit → already built
+        .mockReturnValueOnce(makeChain([{ id: "u-old", sortOrder: 1, quarter: "Q1" }]));
+
+      mockDbInsert.mockReset();
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.alreadyBuilt).toBe(true);
+      expect(body.courseId).toBe("c1");
+      expect(body.unitCount).toBe(1);
+      // The whole point of the guard: no duplicate units created.
+      expect(mockDbInsert).not.toHaveBeenCalled();
+    });
+
+    it("rebuild:true clears the quarter's existing units, then builds fresh", async () => {
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // course found
+        .mockReturnValueOnce(makeChain([{ id: "u-old", sortOrder: 1, quarter: "Q1" }])) // existingUnits
+        .mockReturnValueOnce(makeChain([])) // staleLessons (none)
+        .mockReturnValueOnce(makeChain([])); // staleAssessments (none)
+
+      mockDbDelete.mockReset();
+      mockDbDelete.mockReturnValue(makeChain([])); // unit-attachment delete + units delete
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValueOnce(makeChain([])) // lessonStandards
+        .mockReturnValueOnce(makeChain([])); // materialAttachments
+
+      const res = await POST(
+        new Request("http://localhost/api/import/build-curriculum", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grade: 5, quarter: "Q1", rebuild: true }),
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.alreadyBuilt).toBeUndefined();
+      expect(body.unitCount).toBe(1);
+      // Stale units cleared: unit-attachment delete + units delete both fired
+      // (lesson/assessment attachment deletes are skipped when there are none).
+      expect(mockDbDelete).toHaveBeenCalledTimes(2);
+    });
   });
 });

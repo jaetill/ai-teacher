@@ -35,21 +35,43 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
   const [confirmingBuild, setConfirmingBuild] = useState<string | null>(null);
   const [buildingQuarter, setBuildingQuarter] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
+  // When a quarter is already built, the server returns { alreadyBuilt } instead
+  // of duplicating it. We surface Open / Rebuild here rather than silently acting.
+  const [alreadyBuilt, setAlreadyBuilt] = useState<{ quarter: string; courseId: string } | null>(
+    null,
+  );
   // Optional pacing guide / schedule the teacher can paste to steer the build.
   const [referenceText, setReferenceText] = useState("");
 
-  async function buildQuarter(grade: number, quarter: string, reference: string) {
+  async function buildQuarter(
+    grade: number,
+    quarter: string,
+    reference: string,
+    rebuild = false,
+  ) {
     setBuildingQuarter(quarter);
     setBuildError(null);
+    setAlreadyBuilt(null);
     try {
       const res = await fetch("/api/import/build-curriculum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ grade, quarter, referenceText: reference.trim() || undefined }),
+        body: JSON.stringify({
+          grade,
+          quarter,
+          referenceText: reference.trim() || undefined,
+          rebuild: rebuild || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setBuildError(data.error ?? `Build failed (error ${res.status}).`);
+        setBuildingQuarter(null);
+        return;
+      }
+      // This quarter was already built — don't duplicate it. Offer Open / Rebuild.
+      if (data.alreadyBuilt) {
+        setAlreadyBuilt({ quarter, courseId: data.courseId });
         setBuildingQuarter(null);
         return;
       }
@@ -201,9 +223,8 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                   {confirmingBuild === qk && buildingQuarter === null && (
                     <div className="mt-2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2 space-y-1.5">
                       <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-snug">
-                        Build {qk}&apos;s {total} files into units? Do this{" "}
-                        <strong>once per quarter</strong> — running it again creates
-                        duplicate units.
+                        Build {qk}&apos;s {total} files into units? You can rebuild
+                        later to replace it if the result needs a redo.
                       </p>
                       <textarea
                         value={referenceText}
@@ -225,6 +246,34 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                         </button>
                         <button
                           onClick={() => setConfirmingBuild(null)}
+                          className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {alreadyBuilt?.quarter === qk && (
+                    <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 p-2 space-y-1.5">
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                        {qk} is already built. Open it to edit, or rebuild to replace
+                        it — rebuilding discards the current {qk} units and lessons.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => router.push(`/curriculum/edit/${alreadyBuilt.courseId}`)}
+                          className="text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 transition-colors"
+                        >
+                          Open {qk}
+                        </button>
+                        <button
+                          onClick={() => buildQuarter(grade.grade, qk, "", true)}
+                          className="text-[11px] font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                        >
+                          Rebuild (replaces)
+                        </button>
+                        <button
+                          onClick={() => setAlreadyBuilt(null)}
                           className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
                         >
                           Cancel
