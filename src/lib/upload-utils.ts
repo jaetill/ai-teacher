@@ -42,6 +42,9 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number];
 
 export const DESTINATIONS = [
+  // "Summer" is a pre-year bucket (summer reading), not a graded quarter — it
+  // sorts before Q1. Same folder mechanics as a quarter: grade_N_Summer_Category.
+  "Summer",
   "Q1",
   "Q2",
   "Q3",

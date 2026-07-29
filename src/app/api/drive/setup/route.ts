@@ -13,7 +13,8 @@ import { driveFolders } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 
 const GRADES = [6, 7, 8];
-const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
+// "Summer" is the pre-year summer-reading bucket, created like a quarter.
+const QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"];
 const UNIT_SUBFOLDERS = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
 
 type FolderEntry = { key: string; driveId: string; name: string; parentKey: string | null };

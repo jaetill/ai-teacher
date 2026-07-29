@@ -12,9 +12,11 @@ type QuarterSummary = {
 };
 type GradeSummary = { grade: number; total: number; quarters: QuarterSummary[] };
 
-const ALL_QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
+const ALL_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"];
 
 const QUARTER_STYLES: Record<string, string> = {
+  // Summer = pre-year bucket; warm orange sets it apart from the graded quarters.
+  Summer: "border-l-orange-400 dark:border-l-orange-500",
   Q1: "border-l-blue-400 dark:border-l-blue-500",
   Q2: "border-l-violet-400 dark:border-l-violet-500",
   Q3: "border-l-teal-400 dark:border-l-teal-500",
@@ -131,7 +133,7 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {ALL_QUARTERS.map((qk) => {
           const q = byQuarter.get(qk);
           const total = q?.total ?? 0;

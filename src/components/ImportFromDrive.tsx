@@ -39,6 +39,13 @@ function extractFolderId(input: string): string | null {
   return null;
 }
 
+// Friendly labels for buckets whose stored value is terse (value → label).
+function destinationLabel(d: string): string {
+  if (d === "YearPlan") return "Year Plan";
+  if (d === "Summer") return "Summer Reading";
+  return d;
+}
+
 // ── Component ───
 
 export default function ImportFromDrive() {
@@ -304,7 +311,7 @@ export default function ImportFromDrive() {
                 >
                   {DESTINATIONS.filter((d) => d !== "YearPlan").map((d) => (
                     <option key={d} value={d}>
-                      {d}
+                      {destinationLabel(d)}
                     </option>
                   ))}
                 </select>
@@ -441,7 +448,7 @@ export default function ImportFromDrive() {
                         >
                           {DESTINATIONS.map((d) => (
                             <option key={d} value={d}>
-                              {d === "YearPlan" ? "Year Plan" : d}
+                              {destinationLabel(d)}
                             </option>
                           ))}
                         </select>

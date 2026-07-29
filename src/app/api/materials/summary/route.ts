@@ -20,7 +20,7 @@ type QuarterSummary = {
 };
 type GradeSummary = { grade: number; total: number; quarters: QuarterSummary[] };
 
-const QUARTER_ORDER = ["Q1", "Q2", "Q3", "Q4", "YearPlan"];
+const QUARTER_ORDER = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"];
 
 export async function GET() {
   const session = await getServerSession(authOptions);

@@ -12,6 +12,11 @@ import DraggableAssessmentRow from "./DraggableAssessmentRow";
 import InlineEdit from "./InlineEdit";
 
 const QUARTER_STYLES: Record<string, { border: string; bg: string; badge: string }> = {
+  Summer: {
+    border: "border-l-orange-400 dark:border-l-orange-500",
+    bg: "bg-orange-50/40 dark:bg-orange-950/10",
+    badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  },
   Q1: {
     border: "border-l-blue-400 dark:border-l-blue-500",
     bg: "bg-blue-50/40 dark:bg-blue-950/10",
