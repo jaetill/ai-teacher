@@ -129,6 +129,7 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
           id: materials.id,
           title: materials.title,
           materialType: materials.materialType,
+          description: materials.description,
           driveFolderId: materials.driveFolderId,
         })
         .from(materials)
@@ -136,19 +137,25 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
     : [];
   const attachedOnlyMaterials = attachedMatIds.length > 0
     ? await db
-        .select({ id: materials.id, title: materials.title, materialType: materials.materialType })
+        .select({ id: materials.id, title: materials.title, materialType: materials.materialType, description: materials.description })
         .from(materials)
         .where(inArray(materials.id, attachedMatIds))
     : [];
-  const matById = new Map<string, { title: string; materialType: string }>();
+  const matById = new Map<string, { title: string; materialType: string; description: string | null }>();
   for (const m of [...folderMaterials, ...attachedOnlyMaterials]) matById.set(m.id, m);
+
+  // Render a material with its AI summary when one exists (written by the
+  // summarize pass) — this is what lets the model speak to what's INSIDE
+  // her documents, not just their titles.
+  const renderMat = (m: { title: string; materialType: string; description: string | null }) =>
+    `${m.title} (${m.materialType})${m.description ? ` — ${m.description.slice(0, 240)}` : ""}`;
 
   const materialsFor = (type: string, id: string) =>
     attachments
       .filter((a) => a.attachableType === type && a.attachableId === id)
       .map((a) => matById.get(a.materialId))
       .filter(Boolean)
-      .map((m) => `${m!.title} (${m!.materialType})`);
+      .map((m) => renderMat(m!));
 
   // Standards descriptions
   const stdIds = new Set([
@@ -209,7 +216,7 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
       const MAX_POOL_LINES = 120;
       const listed = courseFolderMats.slice(0, MAX_POOL_LINES);
       ctx += `\nUnlinked files in the Grade ${course.grade} material pool (title (type)):\n`;
-      for (const m of listed) ctx += `  ${m.title} (${m.materialType})\n`;
+      for (const m of listed) ctx += `  ${renderMat(m)}\n`;
       if (courseFolderMats.length > MAX_POOL_LINES) {
         ctx += `  ...and ${courseFolderMats.length - MAX_POOL_LINES} more\n`;
       }

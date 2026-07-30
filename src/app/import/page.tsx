@@ -6,6 +6,7 @@ import Link from "next/link";
 import ImportFromComputer from "@/components/ImportFromComputer";
 import ImportFromDrive from "@/components/ImportFromDrive";
 import ImportedSummary from "@/components/ImportedSummary";
+import SummarizeMaterials from "@/components/SummarizeMaterials";
 import RetrofitUnits from "@/components/RetrofitUnits";
 
 type Source = "drive" | "computer";
@@ -42,6 +43,8 @@ export default function ImportPage() {
 
         {/* What's already imported, by quarter — so you can see where you left off */}
         <ImportedSummary />
+
+        <SummarizeMaterials />
 
         {/* Backfill units for material imported before unit-capture existed */}
         <RetrofitUnits />
