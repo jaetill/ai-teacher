@@ -114,11 +114,34 @@ export default function UnitColumn({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
-            {unit.quarter && (
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${qs.badge}`}>
-                {unit.quarter}
-              </span>
-            )}
+            {/* Quarter picker — a unit created in the editor starts with no
+                quarter and previously had NO way to get one (the badge was
+                display-only). Renders as the familiar badge when set, and a
+                subtle "quarter?" pill when unset. */}
+            <span
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <select
+                value={unit.quarter ?? ""}
+                onChange={(e) =>
+                  onUpdateUnit({ quarter: e.target.value === "" ? null : e.target.value })
+                }
+                title="Assign quarter"
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border-0 cursor-pointer appearance-none focus:outline-none focus:ring-1 focus:ring-zinc-400 ${
+                  unit.quarter
+                    ? qs.badge
+                    : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+                }`}
+              >
+                <option value="">quarter?</option>
+                <option value="Summer">Summer</option>
+                <option value="Q1">Q1</option>
+                <option value="Q2">Q2</option>
+                <option value="Q3">Q3</option>
+                <option value="Q4">Q4</option>
+              </select>
+            </span>
             <span className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50 leading-snug" onClick={(e) => e.stopPropagation()}>
               <InlineEdit
                 value={unit.title}
