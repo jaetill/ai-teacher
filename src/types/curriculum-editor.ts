@@ -89,7 +89,7 @@ export type UpdateItemPayload = {
     assessmentType?: string;
     durationMinutes?: number;
     durationWeeks?: number;
-    quarter?: string;
+    quarter?: string | null; // null clears the quarter (update-item validator allows it)
     summary?: string;
   };
 };
