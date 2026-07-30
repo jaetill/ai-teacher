@@ -10,6 +10,10 @@ import AttachedMaterialRow from "./AttachedMaterialRow";
 
 type Props = {
   lesson: EditorLesson;
+  // Position within the unit (1-based). Shown as the lesson number so it stays
+  // gap-free after a delete/move — the stored sortOrder can have gaps, which is
+  // fine for ordering but reads wrong as a visible "1, 3, 4".
+  displayNumber: number;
   onUpdateTitle: (title: string) => void;
   onUpdateDuration: (durationMinutes: number) => void;
   onRetype: () => void;
@@ -20,6 +24,7 @@ type Props = {
 
 export default function DraggableLessonRow({
   lesson,
+  displayNumber,
   onUpdateTitle,
   onUpdateDuration,
   onRetype,
@@ -84,7 +89,7 @@ export default function DraggableLessonRow({
 
         {/* Sort order badge */}
         <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 rounded-md w-6 h-6 flex items-center justify-center shrink-0">
-          {lesson.sortOrder}
+          {displayNumber}
         </span>
 
         {/* Title */}

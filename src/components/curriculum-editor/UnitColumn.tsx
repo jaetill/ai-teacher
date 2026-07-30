@@ -187,10 +187,11 @@ export default function UnitColumn({
               </div>
               <SortableContext items={lessonIds} strategy={verticalListSortingStrategy}>
                 <div className="space-y-1">
-                  {unit.lessons.map((lesson) => (
+                  {unit.lessons.map((lesson, i) => (
                     <DraggableLessonRow
                       key={lesson.id}
                       lesson={lesson}
+                      displayNumber={i + 1}
                       onUpdateTitle={(title) => onUpdateLesson(lesson.id, { title })}
                       onUpdateDuration={(durationMinutes) =>
                         onUpdateLesson(lesson.id, { durationMinutes })
