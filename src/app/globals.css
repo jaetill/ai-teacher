@@ -25,3 +25,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Native form widgets (select popups, scrollbars) follow the page theme.
+   Without this, Chrome renders <select> dropdowns as a LIGHT popup even on
+   the dark UI, and options that inherit a decorative select text color
+   (the cyan/orange type and role selects) become unreadable on white. */
+:root {
+  color-scheme: light dark;
+}
+
+/* Belt and suspenders: explicit option colors for every select app-wide,
+   so options never inherit a decorative color from their select. */
+option {
+  background-color: #ffffff;
+  color: #18181b;
+}
+
+@media (prefers-color-scheme: dark) {
+  option {
+    background-color: #18181b;
+    color: #fafafa;
+  }
+}
