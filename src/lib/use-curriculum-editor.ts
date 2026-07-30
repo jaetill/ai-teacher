@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { placeUnitInQuarter } from "@/lib/unit-order";
 import type {
   EditorUnit,
   EditorLesson,
@@ -258,6 +259,37 @@ export function useCurriculumEditor(courseId: string) {
     }
   }
 
+  // ── Set a unit's quarter and move it into that quarter's group ───
+  // Changing the quarter from the picker also repositions the unit (a fresh
+  // unit is appended at the bottom by create-unit and would otherwise stay
+  // there). Optimistically reorders locally, then persists the quarter plus
+  // every shifted sortOrder; any failure falls back to a full reload.
+  async function setUnitQuarter(unitId: string, quarter: string | null) {
+    const before = units;
+    const next = placeUnitInQuarter(units, unitId, quarter);
+    if (next === before) return;
+    setUnits(next);
+    try {
+      await apiCall("update-item", {
+        entityType: "unit",
+        entityId: unitId,
+        fields: { quarter },
+      });
+      for (const u of next) {
+        const prev = before.find((p) => p.id === u.id);
+        if (prev && prev.sortOrder !== u.sortOrder) {
+          await apiCall("update-item", {
+            entityType: "unit",
+            entityId: u.id,
+            fields: { sortOrder: u.sortOrder },
+          });
+        }
+      }
+    } catch {
+      await fetchData();
+    }
+  }
+
   // ── Create / delete units and lessons (structural — full reload after) ───
 
   async function createUnit() {
@@ -448,6 +480,7 @@ export function useCurriculumEditor(courseId: string) {
     moveLesson,
     moveAssessment,
     updateItem,
+    setUnitQuarter,
     retypeContent,
     attachMaterial,
     moveAttachment,
