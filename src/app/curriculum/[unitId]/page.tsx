@@ -4,25 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useCopilot } from "@/components/CopilotProvider";
-
-// Group lessons into weeks by distributing evenly across the unit duration.
-// e.g. 20 lessons across 7 weeks → ~3 per week
-function groupLessonsByWeek(
-  lessons: Lesson[],
-  durationWeeks: number
-): { week: number; lessons: Lesson[] }[] {
-  if (lessons.length === 0 || durationWeeks === 0) return [];
-  const perWeek = Math.ceil(lessons.length / durationWeeks);
-  const weeks: { week: number; lessons: Lesson[] }[] = [];
-  for (let w = 0; w < durationWeeks; w++) {
-    const start = w * perWeek;
-    const weekLessons = lessons.slice(start, start + perWeek);
-    if (weekLessons.length > 0) {
-      weeks.push({ week: w + 1, lessons: weekLessons });
-    }
-  }
-  return weeks;
-}
+import { groupLessonsByWeek } from "@/lib/group-lessons";
 
 function LessonCard({ lesson }: { lesson: Lesson }) {
   const [expanded, setExpanded] = useState(false);
@@ -265,14 +247,14 @@ function WeekGroup({ week }: { week: { week: number; lessons: Lesson[] } }) {
             Week {week.week}
           </span>
           <span className="text-[11px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-full px-2 py-0.5">
-            {week.lessons.length} lessons
+            {week.lessons.length === 0 ? "unscheduled" : `${week.lessons.length} lessons`}
           </span>
           {noteCount > 0 && (
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title={`${noteCount} with notes`} />
           )}
         </div>
         <div className="text-xs text-zinc-400/70 dark:text-zinc-500/70 truncate max-w-[50%] text-right">
-          {week.lessons.map((l) => l.title).join("  /  ")}
+          {week.lessons.length === 0 ? "\u2014" : week.lessons.map((l) => l.title).join("  /  ")}
         </div>
       </button>
       {open && (
