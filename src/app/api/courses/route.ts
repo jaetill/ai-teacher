@@ -7,7 +7,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, units, schoolYears } from "@/db/schema";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, desc, inArray, eq } from "drizzle-orm";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -20,11 +20,18 @@ export async function GET() {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
-  const [currentYear] = await db
-    .select()
+  // All years, newest first — feeds the client's year switcher. The legacy
+  // top-level schoolYear (current year's name) stays for existing consumers.
+  const allYears = await db
+    .select({
+      id: schoolYears.id,
+      name: schoolYears.name,
+      isCurrent: schoolYears.isCurrent,
+    })
     .from(schoolYears)
-    .where(eq(schoolYears.isCurrent, true))
-    .limit(1);
+    .orderBy(desc(schoolYears.name));
+
+  const currentYear = allYears.find((y) => y.isCurrent);
 
   const allCourses = await db
     .select()
@@ -60,6 +67,7 @@ export async function GET() {
 
   return Response.json({
     schoolYear: currentYear?.name ?? null,
+    schoolYears: allYears,
     courses: result,
   });
 }
