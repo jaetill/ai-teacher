@@ -7,6 +7,8 @@ import { useCopilot } from "./CopilotProvider";
 
 const NAV_ITEMS = [
   { href: "/curriculum", label: "Curriculum" },
+  { href: "/standards", label: "Standards" },
+  { href: "/search", label: "Search" },
   { href: "/differentiation", label: "Differentiation" },
   { href: "/communications", label: "Communications" },
   { href: "/import", label: "Import" },

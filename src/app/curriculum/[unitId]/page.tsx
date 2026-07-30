@@ -7,6 +7,7 @@ import { useCopilot } from "@/components/CopilotProvider";
 import { groupLessonsByWeek } from "@/lib/group-lessons";
 
 function LessonCard({ lesson }: { lesson: Lesson }) {
+  const { unitId } = useParams<{ unitId: string }>();
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(lesson.teacherNotes ?? "");
   const [saving, setSaving] = useState(false);
@@ -73,6 +74,15 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
       </div>
       {expanded && (
         <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+          <div className="flex justify-end">
+            <Link
+              href={`/curriculum/${unitId}/sub/${lesson.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Sub plan →
+            </Link>
+          </div>
           {lesson.objectives && lesson.objectives.length > 0 && (
             <div>
               <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
