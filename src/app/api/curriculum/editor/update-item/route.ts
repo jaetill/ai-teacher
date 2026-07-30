@@ -86,10 +86,10 @@ export async function POST(req: Request) {
     if (forbidden) return forbidden;
 
     // Map camelCase to snake_case for raw update
-    const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
+    const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
-    if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
-    if ("durationMinutes" in updates) dbUpdates.duration_minutes = updates.durationMinutes;
+    if ("sortOrder" in updates) dbUpdates.sortOrder = updates.sortOrder;
+    if ("durationMinutes" in updates) dbUpdates.durationMinutes = updates.durationMinutes;
     await db.update(lessons).set(dbUpdates as never).where(eq(lessons.id, entityId));
   } else if (entityType === "assessment") {
     const [current] = await db.select().from(assessments).where(eq(assessments.id, entityId)).limit(1);
@@ -102,10 +102,10 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
+    const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
-    if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
-    if ("assessmentType" in updates) dbUpdates.assessment_type = updates.assessmentType;
+    if ("sortOrder" in updates) dbUpdates.sortOrder = updates.sortOrder;
+    if ("assessmentType" in updates) dbUpdates.assessmentType = updates.assessmentType;
     await db.update(assessments).set(dbUpdates as never).where(eq(assessments.id, entityId));
   } else {
     const [current] = await db.select().from(units).where(eq(units.id, entityId)).limit(1);
@@ -116,10 +116,10 @@ export async function POST(req: Request) {
     const forbidden = await assertCourseOwnership(courseId, session.user?.email);
     if (forbidden) return forbidden;
 
-    const dbUpdates: Record<string, unknown> = { updated_at: new Date() };
+    const dbUpdates: Record<string, unknown> = { updatedAt: new Date() };
     if ("title" in updates) dbUpdates.title = updates.title;
-    if ("sortOrder" in updates) dbUpdates.sort_order = updates.sortOrder;
-    if ("durationWeeks" in updates) dbUpdates.duration_weeks = updates.durationWeeks;
+    if ("sortOrder" in updates) dbUpdates.sortOrder = updates.sortOrder;
+    if ("durationWeeks" in updates) dbUpdates.durationWeeks = updates.durationWeeks;
     if ("quarter" in updates) dbUpdates.quarter = updates.quarter;
     if ("summary" in updates) dbUpdates.summary = updates.summary;
     await db.update(units).set(dbUpdates as never).where(eq(units.id, entityId));
