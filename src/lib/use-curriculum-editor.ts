@@ -292,9 +292,9 @@ export function useCurriculumEditor(courseId: string) {
 
   // ── Create / delete units and lessons (structural — full reload after) ───
 
-  async function createUnit() {
+  async function createUnit(quarter?: string | null) {
     try {
-      await apiCall("create-unit", { courseId });
+      await apiCall("create-unit", quarter ? { courseId, quarter } : { courseId });
       await fetchData();
     } catch {
       await fetchData();

@@ -429,14 +429,21 @@ export default function CurriculumPage() {
                           key={q}
                           className={`rounded-xl border border-l-4 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 ${qs?.border ?? ""}`}
                         >
-                          <div className="flex items-center gap-2 mb-3">
+                          <Link
+                            href={`/curriculum/quarter/${course.id}/${q}`}
+                            className="group flex items-center gap-2 mb-3"
+                            title={`Open ${q}`}
+                          >
                             <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${qs?.badge ?? "bg-zinc-100 text-zinc-500"}`}>
                               {q}
                             </span>
-                            <span className="text-xs text-zinc-400">
+                            <span className="text-xs text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">
                               {quarterUnits.length} {quarterUnits.length === 1 ? "unit" : "units"}
                             </span>
-                          </div>
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 dark:group-hover:text-zinc-400 transition-colors">
+                              <path d="M3 1l5 4-5 4V1z" />
+                            </svg>
+                          </Link>
                           {quarterUnits.length > 0 ? (
                             <div className="space-y-2">
                               {quarterUnits.map((unit) => (
