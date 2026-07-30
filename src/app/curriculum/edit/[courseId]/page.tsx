@@ -361,7 +361,12 @@ export default function CurriculumEditorPage() {
                   key={unit.id}
                   unit={unit}
                   onUpdateUnit={(fields) =>
-                    editor.updateItem("unit", unit.id, fields)
+                    "quarter" in fields
+                      ? editor.setUnitQuarter(
+                          unit.id,
+                          fields.quarter as string | null
+                        )
+                      : editor.updateItem("unit", unit.id, fields)
                   }
                   onUpdateLesson={(lessonId, fields) =>
                     editor.updateItem("lesson", lessonId, fields)

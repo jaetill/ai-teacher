@@ -134,12 +134,12 @@ export default function UnitColumn({
                     : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
                 }`}
               >
-                <option value="">quarter?</option>
-                <option value="Summer">Summer</option>
-                <option value="Q1">Q1</option>
-                <option value="Q2">Q2</option>
-                <option value="Q3">Q3</option>
-                <option value="Q4">Q4</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="">quarter?</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="Summer">Summer</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="Q1">Q1</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="Q2">Q2</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="Q3">Q3</option>
+                <option className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 font-normal normal-case" value="Q4">Q4</option>
               </select>
             </span>
             <span className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50 leading-snug" onClick={(e) => e.stopPropagation()}>
