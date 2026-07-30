@@ -9,6 +9,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useCopilot } from "@/components/CopilotProvider";
 
 const VALID_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"];
 
@@ -63,11 +64,22 @@ export default function QuarterPage() {
     })();
   }, [courseId]);
 
+  const { setPageContext } = useCopilot();
   const q = VALID_QUARTERS.includes(quarter) ? quarter : null;
   const qs = q ? QUARTER_STYLES[q] : undefined;
   const units = course && q ? course.units.filter((u) => u.quarter === q) : [];
   const totalWeeks = units.reduce((sum, u) => sum + (u.durationWeeks || 0), 0);
   const yearName = years.find((y) => y.id === course?.schoolYearId)?.name ?? null;
+
+  useEffect(() => {
+    if (course && q) {
+      setPageContext(
+        `Teacher is browsing ${q} of Grade ${course.grade} — ${course.title}${yearName ? ` (${yearName})` : ""}: ${units.length} unit(s): ${units.map((u) => u.title).join("; ").slice(0, 500)}`
+      );
+    }
+    return () => setPageContext("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course, q, yearName, units.length, setPageContext]);
 
   if (loading) {
     return (

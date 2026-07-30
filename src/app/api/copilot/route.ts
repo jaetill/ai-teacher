@@ -22,8 +22,11 @@ import {
   unitStandards,
   lessonStandards,
   standards,
+  materials,
+  materialAttachments,
+  driveFolders,
 } from "@/db/schema";
-import { eq, sql, asc, inArray } from "drizzle-orm";
+import { and, eq, sql, asc, inArray, isNull, or } from "drizzle-orm";
 
 const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with full access to this teacher's curriculum database. You help teachers with:
 - Creating rubrics, lesson plans, unit maps, and pacing guides
@@ -36,6 +39,8 @@ const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with fu
 Be concise and practical. Produce ready-to-use outputs when asked. When generating structured content like rubrics or lesson plans, use clear formatting.
 
 You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.
+
+When an "Additional context" section is present, it describes the page the teacher is looking at RIGHT NOW. Anchor your answer there: "this", "here", and informal phrasings map onto the items it names — especially when it names a specific standard, answer about THAT standard by its exact ID and language before generalizing. When discussing where something is taught or assessed, cite her actual materials by title from the curriculum data (e.g. name the specific quiz or handout) rather than speaking generically.
 ${DRAFT_SYSTEM_INSTRUCTIONS}`;
 
 async function buildCurriculumContext(ownerEmail: string): Promise<string> {
@@ -82,6 +87,69 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
         .where(inArray(lessonStandards.lessonId, lessonIds))
     : [];
 
+  // ── Materials: linked (per lesson/unit) and pool (per course) ───
+  const attachableIds = [...unitIds, ...lessonIds];
+  const attachments = attachableIds.length > 0
+    ? await db
+        .select({
+          materialId: materialAttachments.materialId,
+          attachableType: materialAttachments.attachableType,
+          attachableId: materialAttachments.attachableId,
+        })
+        .from(materialAttachments)
+        .where(inArray(materialAttachments.attachableId, attachableIds))
+    : [];
+
+  // Pool scoping mirrors editor/pool/route.ts: materials living in this
+  // owner's grade/quarter category Drive folders.
+  const CATEGORIES = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
+  const folderKeys = allCourses.flatMap((c) => {
+    const qs = [...new Set(allUnits.filter((u) => u.courseId === c.id).map((u) => u.quarter).filter(Boolean))];
+    return qs.flatMap((q) => CATEGORIES.map((cat) => `grade_${c.grade}_${q}_${cat}`));
+  });
+  const folderIds = folderKeys.length > 0
+    ? (
+        await db
+          .select({ driveId: driveFolders.driveId })
+          .from(driveFolders)
+          .where(
+            and(
+              inArray(driveFolders.folderKey, folderKeys),
+              or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail))
+            )
+          )
+      ).map((f) => f.driveId)
+    : [];
+
+  const attachedMatIds = [...new Set(attachments.map((a) => a.materialId))];
+  const matIdFilter = new Set(attachedMatIds);
+  const folderMaterials = folderIds.length > 0
+    ? await db
+        .select({
+          id: materials.id,
+          title: materials.title,
+          materialType: materials.materialType,
+          driveFolderId: materials.driveFolderId,
+        })
+        .from(materials)
+        .where(inArray(materials.driveFolderId, folderIds))
+    : [];
+  const attachedOnlyMaterials = attachedMatIds.length > 0
+    ? await db
+        .select({ id: materials.id, title: materials.title, materialType: materials.materialType })
+        .from(materials)
+        .where(inArray(materials.id, attachedMatIds))
+    : [];
+  const matById = new Map<string, { title: string; materialType: string }>();
+  for (const m of [...folderMaterials, ...attachedOnlyMaterials]) matById.set(m.id, m);
+
+  const materialsFor = (type: string, id: string) =>
+    attachments
+      .filter((a) => a.attachableType === type && a.attachableId === id)
+      .map((a) => matById.get(a.materialId))
+      .filter(Boolean)
+      .map((m) => `${m!.title} (${m!.materialType})`);
+
   // Standards descriptions
   const stdIds = new Set([
     ...allUnitStds.map(s => s.standardId),
@@ -122,6 +190,28 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
         if (lesson.objectives?.length) {
           ctx += `    Objectives: ${lesson.objectives.join("; ")}\n`;
         }
+        const lessonMats = materialsFor("lesson", lesson.id);
+        if (lessonMats.length > 0) {
+          ctx += `    Materials: ${lessonMats.join("; ")}\n`;
+        }
+      }
+      const unitMats = materialsFor("unit", unit.id);
+      if (unitMats.length > 0) {
+        ctx += `  Unit materials: ${unitMats.join("; ")}\n`;
+      }
+    }
+
+    // Unlinked pool files — lets the model reference/search her documents by
+    // title ("find vocab-related assessments") even when nothing is attached.
+    const attachedSet = matIdFilter;
+    const courseFolderMats = folderMaterials.filter((m) => !attachedSet.has(m.id));
+    if (courseFolderMats.length > 0) {
+      const MAX_POOL_LINES = 120;
+      const listed = courseFolderMats.slice(0, MAX_POOL_LINES);
+      ctx += `\nUnlinked files in the Grade ${course.grade} material pool (title (type)):\n`;
+      for (const m of listed) ctx += `  ${m.title} (${m.materialType})\n`;
+      if (courseFolderMats.length > MAX_POOL_LINES) {
+        ctx += `  ...and ${courseFolderMats.length - MAX_POOL_LINES} more\n`;
       }
     }
     ctx += "\n";

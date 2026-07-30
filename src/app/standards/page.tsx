@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useCopilot } from "@/components/CopilotProvider";
 
 type CoverageUnit = { unitId: string; unitTitle: string; quarter: string | null; grade: number | null };
 type CoverageLesson = CoverageUnit & { lessonId: string; lessonTitle: string; coverageType: string | null };
@@ -24,6 +25,7 @@ type StandardCoverage = {
 };
 
 export default function StandardsPage() {
+  const { setPageContext } = useCopilot();
   const [rows, setRows] = useState<StandardCoverage[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"coverage" | "vertical">("coverage");
@@ -47,6 +49,31 @@ export default function StandardsPage() {
 
   const grades = [6, 7, 8];
   const gradeRows = rows.filter((s) => s.grade === grade);
+
+  // Keep the copilot aware of exactly what the teacher is looking at: which
+  // grade's coverage, which filter, and — most importantly — the specific
+  // standard she has expanded, in the standard's own language. "This gap"
+  // in her question should resolve to THIS standard.
+  useEffect(() => {
+    const expandedStd = rows.find((r) => r.id === expanded);
+    const gaps = rows.filter((r) => r.grade === grade && !r.covered);
+    let ctx = `Teacher is on the Standards ${view === "coverage" ? "coverage" : "vertical alignment"} page`;
+    if (view === "coverage") {
+      ctx += ` for Grade ${grade}${onlyGaps ? ", filtered to uncovered standards (gaps) only" : ""}.`;
+      if (gaps.length > 0 && gaps.length <= 12) {
+        ctx += ` Current Grade ${grade} gaps: ${gaps.map((g) => g.id).join(", ")}.`;
+      }
+    } else {
+      ctx += ".";
+    }
+    if (expandedStd) {
+      ctx += ` She has expanded standard ${expandedStd.id} ("${expandedStd.description.slice(0, 300)}") — ${
+        expandedStd.covered ? "currently covered" : "currently NOT covered (a gap)"
+      }. Questions like "this standard" or informal paraphrases of it refer to ${expandedStd.id}.`;
+    }
+    setPageContext(ctx.slice(0, 2000));
+    return () => setPageContext("");
+  }, [rows, grade, view, onlyGaps, expanded, setPageContext]);
   const shown = onlyGaps ? gradeRows.filter((s) => !s.covered) : gradeRows;
   const coveredCount = gradeRows.filter((s) => s.covered).length;
 
