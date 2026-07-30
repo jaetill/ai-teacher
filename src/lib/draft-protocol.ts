@@ -1,0 +1,116 @@
+// Draft protocol — shared between the copilot API route (which instructs the
+// model to emit draft blocks) and the copilot UI (which parses them into
+// DraftCard components with copy / Accept & Create actions).
+//
+// A draft block is a fenced code block with language `draft`:
+//
+//   ```draft
+//   TITLE: Animal Farm Ch. 1–4 Quiz
+//   TYPE: assessment
+//   GRADE: 8
+//   QUARTER: Q1
+//   UNIT: Animal Farm
+//   LESSON: Animal Farm: Ch. 1–4
+//   ---
+//   <plain-text deliverable>
+//   ```
+//
+// TITLE and the `---` separator are required; everything else is optional.
+// The block is only ever a PROPOSAL — nothing touches the teacher's Drive
+// until she explicitly clicks Accept & Create (see
+// /api/copilot/accept-draft). Revisions are new drafts (new versions), never
+// in-place edits of an existing file.
+
+import { MATERIAL_TYPES, type MaterialType } from "@/lib/upload-utils";
+
+export type ParsedDraft = {
+  title: string;
+  materialType: MaterialType;
+  grade: number | null;
+  quarter: string | null;
+  unitTitle: string | null;
+  lessonTitle: string | null;
+  content: string;
+};
+
+const VALID_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"] as const;
+
+export function normalizeMaterialType(value: unknown): MaterialType {
+  return typeof value === "string" &&
+    (MATERIAL_TYPES as readonly string[]).includes(value.toLowerCase())
+    ? (value.toLowerCase() as MaterialType)
+    : "other";
+}
+
+export function normalizeQuarter(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = VALID_QUARTERS.find(
+    (q) => q.toLowerCase() === value.trim().toLowerCase()
+  );
+  return match ?? null;
+}
+
+/**
+ * Parse the inside of a ```draft fenced block. Returns null when the text
+ * doesn't contain a complete header (TITLE + `---` separator) — e.g. while
+ * the block is still streaming in.
+ */
+export function parseDraftBlock(raw: string): ParsedDraft | null {
+  const sepIndex = raw.search(/^\s*---\s*$/m);
+  if (sepIndex === -1) return null;
+
+  const sepMatch = raw.slice(sepIndex).match(/^\s*---\s*$/m);
+  const headerText = raw.slice(0, sepIndex);
+  const content = raw
+    .slice(sepIndex + (sepMatch ? sepMatch[0].length : 3))
+    .replace(/^\r?\n/, "")
+    .trimEnd();
+
+  const header: Record<string, string> = {};
+  for (const rawLine of headerText.split(/\r?\n/)) {
+    // A dangling \r can survive the split (JS multiline ^ also matches after
+    // \r, so the separator match can start mid-CRLF) — strip it before
+    // matching, since `.` won't cross a line terminator.
+    const m = rawLine.replace(/\r+$/, "").match(/^([A-Z]+):\s*(.*)$/);
+    if (m) header[m[1]] = m[2].trim();
+  }
+
+  const title = header.TITLE;
+  if (!title || content.length === 0) return null;
+
+  const gradeNum = header.GRADE ? parseInt(header.GRADE, 10) : NaN;
+
+  return {
+    title: title.slice(0, 200),
+    materialType: normalizeMaterialType(header.TYPE),
+    grade: [6, 7, 8].includes(gradeNum) ? gradeNum : null,
+    quarter: normalizeQuarter(header.QUARTER),
+    unitTitle: header.UNIT || null,
+    lessonTitle: header.LESSON || null,
+    content,
+  };
+}
+
+// Appended to the copilot system prompt. Kept here so route and tests share
+// one source of truth.
+export const DRAFT_SYSTEM_INSTRUCTIONS = `
+── CREATABLE DRAFTS ──
+When the teacher asks you to produce a concrete artifact (a quiz, rubric, checklist, activity sheet, handout, letter, or similar deliverable), present the finished deliverable inside a fenced code block with language "draft" so the app can offer her copy/paste and one-click creation in her Google Drive. Exact format:
+
+\`\`\`draft
+TITLE: <short title — used as the Google Doc filename>
+TYPE: <one of: reading | activity | rubric | lesson | assessment | resource | other>
+GRADE: <6 | 7 | 8 — the grade this is for, from the curriculum data>
+QUARTER: <Summer | Q1 | Q2 | Q3 | Q4 — where this belongs in the year>
+UNIT: <exact unit title from the curriculum data, if this belongs to a unit>
+LESSON: <exact lesson title from the curriculum data — ONLY if the teacher asked for it to be placed into a specific lesson>
+---
+<the deliverable itself, as plain ready-to-use text>
+\`\`\`
+
+Rules:
+- Keep all discussion, options, and questions OUTSIDE the block. The block holds only the final deliverable.
+- The deliverable must be plain printable text: no markdown tables, no interactive elements. Concise by default; expand only when asked.
+- Ground everything in the teacher's actual curriculum and materials. Never invent page numbers, quotes, or chapter details you are not certain of — say what you'd need instead.
+- When the teacher asks for changes, emit a complete fresh draft block (it becomes a new version; existing files are never edited in place).
+- Nothing is written to Drive unless the teacher explicitly clicks Accept & Create — a draft block is a proposal, not an action.`;

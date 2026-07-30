@@ -9,6 +9,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropic } from "@/lib/anthropic";
+import { DRAFT_SYSTEM_INSTRUCTIONS } from "@/lib/draft-protocol";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson, UUID_RE } from "@/lib/api-utils";
 import { db } from "@/db";
@@ -34,7 +35,8 @@ const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with fu
 
 Be concise and practical. Produce ready-to-use outputs when asked. When generating structured content like rubrics or lesson plans, use clear formatting.
 
-You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.`;
+You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.
+${DRAFT_SYSTEM_INSTRUCTIONS}`;
 
 async function buildCurriculumContext(ownerEmail: string): Promise<string> {
   const allCourses = await db
