@@ -50,7 +50,6 @@ type Props = {
   onUpdateUnit: (fields: Record<string, unknown>) => void;
   onUpdateLesson: (lessonId: string, fields: Record<string, unknown>) => void;
   onUpdateAssessment: (assessmentId: string, fields: Record<string, unknown>) => void;
-  onRetypeLesson: (lessonId: string) => void;
   onRetypeAssessment: (assessmentId: string) => void;
   onDetachMaterial: (attachmentId: string) => void;
   onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
@@ -64,7 +63,6 @@ export default function UnitColumn({
   onUpdateUnit,
   onUpdateLesson,
   onUpdateAssessment,
-  onRetypeLesson,
   onRetypeAssessment,
   onDetachMaterial,
   onUpdateMaterial,
@@ -219,7 +217,6 @@ export default function UnitColumn({
                       onUpdateDuration={(durationMinutes) =>
                         onUpdateLesson(lesson.id, { durationMinutes })
                       }
-                      onRetype={() => onRetypeLesson(lesson.id)}
                       onDelete={() => onDeleteLesson(lesson.id)}
                       onDetachMaterial={onDetachMaterial}
                       onUpdateMaterial={onUpdateMaterial}
