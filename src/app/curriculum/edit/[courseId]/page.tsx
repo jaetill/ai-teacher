@@ -403,9 +403,6 @@ export default function CurriculumEditorPage() {
                   onUpdateAssessment={(assessmentId, fields) =>
                     editor.updateItem("assessment", assessmentId, fields)
                   }
-                  onRetypeLesson={(lessonId) =>
-                    editor.retypeContent("lesson", lessonId, "assessment")
-                  }
                   onRetypeAssessment={(assessmentId) =>
                     editor.retypeContent("assessment", assessmentId, "lesson")
                   }

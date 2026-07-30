@@ -16,7 +16,6 @@ type Props = {
   displayNumber: number;
   onUpdateTitle: (title: string) => void;
   onUpdateDuration: (durationMinutes: number) => void;
-  onRetype: () => void;
   onDelete: () => void;
   onDetachMaterial: (attachmentId: string) => void;
   onUpdateMaterial: (attachmentId: string, fields: { role?: string; materialType?: string }) => void;
@@ -27,7 +26,6 @@ export default function DraggableLessonRow({
   displayNumber,
   onUpdateTitle,
   onUpdateDuration,
-  onRetype,
   onDelete,
   onDetachMaterial,
   onUpdateMaterial,
@@ -141,13 +139,6 @@ export default function DraggableLessonRow({
             />
             m
           </span>
-          <button
-            onClick={onRetype}
-            className="text-[10px] text-zinc-300 dark:text-zinc-600 hover:text-amber-500 dark:hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all ml-1"
-            title="Convert to assessment"
-          >
-            make assessment
-          </button>
           <button
             onClick={onDelete}
             className="text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
