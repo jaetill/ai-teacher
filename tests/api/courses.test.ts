@@ -9,7 +9,7 @@ vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect } }));
 vi.mock("@/db/schema", () => ({ courses: {}, units: {}, schoolYears: {} }));
-vi.mock("drizzle-orm", () => ({ eq: vi.fn(), asc: vi.fn(), inArray: vi.fn() }));
+vi.mock("drizzle-orm", () => ({ eq: vi.fn(), asc: vi.fn(), desc: vi.fn(), inArray: vi.fn() }));
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
 import { getServerSession } from "next-auth";
@@ -62,7 +62,9 @@ describe("GET /api/courses", () => {
     });
 
     // schoolYears → courses → units
-    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ name: "2024-2025" }]));
+    mockDbSelect.mockReturnValueOnce(
+      makeSelectChain([{ id: "y1", name: "2024-2025", isCurrent: true }]),
+    );
     mockDbSelect.mockReturnValueOnce(
       makeSelectChain([{ id: "c1", ownerEmail: "owner@school.edu", grade: 8, title: "ELA 8" }]),
     );
@@ -75,6 +77,7 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.schoolYear).toBe("2024-2025");
+    expect(body.schoolYears).toEqual([{ id: "y1", name: "2024-2025", isCurrent: true }]);
     expect(body.courses).toHaveLength(1);
     expect(body.courses[0].id).toBe("c1");
     expect(body.courses[0].units).toHaveLength(1);

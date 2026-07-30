@@ -22,7 +22,14 @@ type Course = {
   id: string;
   title: string;
   grade: number;
+  schoolYearId: string | null;
   units: UnitSummary[];
+};
+
+type SchoolYearOption = {
+  id: string;
+  name: string;
+  isCurrent: boolean;
 };
 
 type CloneSource = {
@@ -95,6 +102,8 @@ export default function CurriculumPage() {
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [schoolYear, setSchoolYear] = useState<string | null>(null);
+  const [years, setYears] = useState<SchoolYearOption[]>([]);
+  const [selectedYearId, setSelectedYearId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -116,6 +125,14 @@ export default function CurriculumPage() {
       const data = await res.json();
       setCourses(data.courses ?? []);
       setSchoolYear(data.schoolYear ?? null);
+      const yearList: SchoolYearOption[] = data.schoolYears ?? [];
+      setYears(yearList);
+      // Default to the current (planning) year; else the newest year listed.
+      // Preserve an existing selection across refetches.
+      setSelectedYearId((prev) => {
+        if (prev && yearList.some((y) => y.id === prev)) return prev;
+        return yearList.find((y) => y.isCurrent)?.id ?? yearList[0]?.id ?? null;
+      });
     } catch (err) {
       console.error("Failed to load courses", err);
     } finally {
@@ -299,12 +316,47 @@ export default function CurriculumPage() {
         {/* ── Header ─── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               Curriculum Compiler
-              {schoolYear && (
-                <span className="ml-2 text-sm font-normal text-zinc-400">
-                  {schoolYear}
-                </span>
+              {years.length > 0 ? (
+                <>
+                  <select
+                    value={selectedYearId ?? ""}
+                    onChange={(e) => setSelectedYearId(e.target.value)}
+                    className="text-sm font-normal text-zinc-500 dark:text-zinc-400 bg-transparent border border-zinc-200 dark:border-zinc-700 rounded-md px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    title="School year"
+                  >
+                    {years.map((y) => (
+                      <option key={y.id} value={y.id}>
+                        {y.name}
+                      </option>
+                    ))}
+                  </select>
+                  {(() => {
+                    const sel = years.find((y) => y.id === selectedYearId);
+                    if (!sel) return null;
+                    const current = years.find((y) => y.isCurrent);
+                    if (sel.isCurrent) {
+                      return (
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 rounded-full px-2 py-0.5">
+                          planning
+                        </span>
+                      );
+                    }
+                    if (current && sel.name < current.name) {
+                      return (
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-full px-2 py-0.5">
+                          captured
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </>
+              ) : (
+                schoolYear && (
+                  <span className="text-sm font-normal text-zinc-400">{schoolYear}</span>
+                )
               )}
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -321,10 +373,27 @@ export default function CurriculumPage() {
           )}
         </div>
 
-        {/* ── Existing courses ─── */}
+        {/* ── Existing courses (scoped to the selected school year; courses
+             with no year yet are always shown, flagged, so they never
+             silently vanish) ─── */}
         {courses.length > 0 && !showForm && (
           <div className="space-y-10">
-            {courses.map((course) => {
+            {courses.filter(
+              (c) =>
+                years.length === 0 ||
+                c.schoolYearId === selectedYearId ||
+                c.schoolYearId === null
+            ).length === 0 && (
+              <p className="text-sm text-zinc-400 dark:text-zinc-500">
+                No courses in this school year yet.
+              </p>
+            )}
+            {courses.filter(
+              (c) =>
+                years.length === 0 ||
+                c.schoolYearId === selectedYearId ||
+                c.schoolYearId === null
+            ).map((course) => {
               const quarters = ["Q1", "Q2", "Q3", "Q4"];
 
               return (
@@ -332,6 +401,11 @@ export default function CurriculumPage() {
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                       Grade {course.grade} — {course.title}
+                      {years.length > 0 && course.schoolYearId === null && (
+                        <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-full px-2 py-0.5 align-middle">
+                          no school year assigned
+                        </span>
+                      )}
                     </h2>
                     <Link
                       href={`/curriculum/edit/${course.id}`}
