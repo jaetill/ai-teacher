@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/curriculum", label: "Curriculum" },
   { href: "/standards", label: "Standards" },
   { href: "/search", label: "Search" },
+  { href: "/glossary", label: "Glossary" },
   { href: "/differentiation", label: "Differentiation" },
   { href: "/communications", label: "Communications" },
   { href: "/import", label: "Import" },
