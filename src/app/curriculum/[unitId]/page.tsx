@@ -340,6 +340,7 @@ type Lesson = {
 
 type UnitDetail = {
   id: string;
+  courseId: string;
   title: string;
   grade: number;
   courseTitle: string;
@@ -499,10 +500,10 @@ export default function UnitDetailPage() {
           </Link>
           <span>/</span>
           <Link
-            href="/curriculum"
+            href={unit.quarter ? `/curriculum/quarter/${unit.courseId}/${unit.quarter}` : "/curriculum"}
             className="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
           >
-            Q{unit.quarter?.replace("Q", "") ?? "?"}
+            {unit.quarter ?? "No quarter"}
           </Link>
           <span>/</span>
           <span className="text-zinc-600 dark:text-zinc-300 truncate">
@@ -526,6 +527,15 @@ export default function UnitDetailPage() {
                   AI generated
                 </span>
               )}
+              <Link
+                href={`/curriculum/edit/${unit.courseId}?unit=${unit.id}`}
+                className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="opacity-60">
+                  <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
+                </svg>
+                Edit this unit
+              </Link>
             </div>
             <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
               {unit.title}

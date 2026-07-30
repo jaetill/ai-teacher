@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   DndContext,
@@ -24,8 +24,20 @@ import SaveIndicator from "@/components/curriculum-editor/SaveIndicator";
 
 export default function CurriculumEditorPage() {
   const { courseId } = useParams<{ courseId: string }>();
+  // Scoped editing (#633 flow): ?quarter=Q2 or ?unit=<id> narrows the editor
+  // to one slice of the year. Same editor, filtered view — a chip offers the
+  // way back out to the full curriculum.
+  const searchParams = useSearchParams();
+  const scopeQuarter = searchParams.get("quarter");
+  const scopeUnit = searchParams.get("unit");
   const router = useRouter();
   const editor = useCurriculumEditor(courseId);
+
+  const visibleUnits = editor.units.filter((u) => {
+    if (scopeUnit) return u.id === scopeUnit;
+    if (scopeQuarter) return u.quarter === scopeQuarter;
+    return true;
+  });
   const [activeId, setActiveId] = useState<string | null>(null);
   // What to show in the drag overlay — the item's own name, not "Moving item".
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
@@ -303,8 +315,25 @@ export default function CurriculumEditorPage() {
                   </svg>
                 </button>
               )}
-              <p className="text-[11px] text-zinc-400 mt-0.5">
-                {editor.units.length} units &middot; {totalLessons} lessons &middot; {totalAssessments} assessments
+              <p className="text-[11px] text-zinc-400 mt-0.5 flex items-center gap-2">
+                <span>
+                  {editor.units.length} units &middot; {totalLessons} lessons &middot; {totalAssessments} assessments
+                </span>
+                {(scopeQuarter || scopeUnit) && (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-full px-2 py-0.5">
+                    showing{" "}
+                    {scopeQuarter ??
+                      editor.units.find((u) => u.id === scopeUnit)?.title ??
+                      "one unit"}{" "}
+                    only
+                    <Link
+                      href={`/curriculum/edit/${courseId}`}
+                      className="underline hover:no-underline"
+                    >
+                      show all
+                    </Link>
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -355,8 +384,8 @@ export default function CurriculumEditorPage() {
         <div className="flex h-[calc(100vh-61px)]">
           {/* Left panel: Unit tree */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-            {editor.units.length > 0 ? (
-              editor.units.map((unit) => (
+            {visibleUnits.length > 0 ? (
+              visibleUnits.map((unit) => (
                 <UnitColumn
                   key={unit.id}
                   unit={unit}
@@ -394,18 +423,22 @@ export default function CurriculumEditorPage() {
             ) : (
               <div className="text-center py-16">
                 <p className="text-sm text-zinc-400">
-                  No units yet. Add one to start building this curriculum.
+                  {scopeQuarter || scopeUnit
+                    ? "Nothing in this view."
+                    : "No units yet. Add one to start building this curriculum."}
                 </p>
               </div>
             )}
 
             {/* Add a unit */}
-            <button
-              onClick={() => editor.createUnit()}
-              className="w-full rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 py-3 text-sm font-medium text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
-            >
-              + Add unit
-            </button>
+            {!scopeUnit && (
+              <button
+                onClick={() => editor.createUnit(scopeQuarter)}
+                className="w-full rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 py-3 text-sm font-medium text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
+              >
+                + Add unit{scopeQuarter ? ` to ${scopeQuarter}` : ""}
+              </button>
+            )}
           </div>
 
           {/* Right panel: Content pool */}
