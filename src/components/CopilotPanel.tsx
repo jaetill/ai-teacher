@@ -1,9 +1,23 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, isValidElement } from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useCopilot } from "./CopilotProvider";
+import DraftCard from "./DraftCard";
+import { parseDraftBlock } from "@/lib/draft-protocol";
+
+// Extract the raw text of a ```draft code block from the <pre> renderer's
+// children, or null when this <pre> isn't a (complete) draft block.
+function draftFromPreChildren(children: ReactNode): string | null {
+  const child = Array.isArray(children) ? children[0] : children;
+  if (!isValidElement(child)) return null;
+  const props = child.props as { className?: string; children?: ReactNode };
+  if (!props.className?.includes("language-draft")) return null;
+  const raw = props.children;
+  return typeof raw === "string" ? raw : Array.isArray(raw) ? raw.join("") : null;
+}
 
 interface Message {
   role: "user" | "assistant";
@@ -181,7 +195,27 @@ export default function CopilotPanel() {
             >
               {msg.role === "assistant" ? (
                 <div className="prose prose-zinc dark:prose-invert prose-sm max-w-none [&_table]:text-xs [&_th]:px-2 [&_td]:px-2 [&_th]:py-1 [&_td]:py-1">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      pre: ({ children, ...props }) => {
+                        const raw = draftFromPreChildren(children);
+                        if (raw) {
+                          const draft = parseDraftBlock(raw);
+                          if (draft) {
+                            return (
+                              <DraftCard
+                                draft={draft}
+                                conversationId={conversationId}
+                                streaming={streaming && i === messages.length - 1}
+                              />
+                            );
+                          }
+                        }
+                        return <pre {...props}>{children}</pre>;
+                      },
+                    }}
+                  >{msg.content}</ReactMarkdown>
                   {streaming && i === messages.length - 1 && (
                     <span className="inline-block w-1.5 h-4 ml-0.5 bg-zinc-400 animate-pulse align-middle" />
                   )}

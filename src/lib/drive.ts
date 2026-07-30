@@ -65,13 +65,15 @@ export async function findOrCreateFolder(
 export async function createDoc(
   accessToken: string,
   name: string,
-  content: string
+  content: string,
+  parentId?: string
 ) {
   const drive = getDriveClient(accessToken);
   const res = await drive.files.create({
     requestBody: {
       name,
       mimeType: "application/vnd.google-apps.document",
+      ...(parentId ? { parents: [parentId] } : {}),
     },
     media: {
       mimeType: "text/plain",
