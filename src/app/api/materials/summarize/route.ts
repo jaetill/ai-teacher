@@ -20,6 +20,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAccessToken } from "@/lib/auth-helpers";
+import { checkAiRateLimit } from "@/lib/rate-limit";
 import { getAnthropic } from "@/lib/anthropic";
 import { getDriveClient } from "@/lib/drive";
 import { db } from "@/db";
@@ -42,6 +43,15 @@ function isExtractable(mime: string | null): boolean {
   return (
     mime === GOOGLE_DOC || mime === DOCX || TEXTLIKE.includes(mime ?? "")
   );
+}
+
+// #644: titles and types come from Drive metadata, which the teacher (or a
+// Drive share) controls — keep them inert inside the prompt: collapse to a
+// single line and bound the length so a hostile filename can't smuggle
+// multi-line instructions into the summarizer. (Not exported: Next route
+// files only allow handler/config exports; tests exercise it via the prompt.)
+function promptSafe(s: string, max = 160): string {
+  return s.replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 // Owner-scoped unsummarized Drive materials, via the same grade/quarter
@@ -154,6 +164,11 @@ export async function POST(req: Request) {
   if (!accessToken) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
+  // #643: this route spends Anthropic tokens — draw from the same shared
+  // per-user hourly AI budget as every other Anthropic-calling route. One
+  // check per batch (a batch = up to BATCH_SIZE small Haiku calls).
+  const rateLimited = await checkAiRateLimit(ownerEmail);
+  if (rateLimited) return rateLimited;
 
   const rows = await findUnsummarized(ownerEmail);
   const extractable = rows.filter((r) => isExtractable(r.driveMimeType) && r.driveFileId);
@@ -189,7 +204,7 @@ export async function POST(req: Request) {
         messages: [
           {
             role: "user",
-            content: `Summarize this teaching material in 2-3 plain sentences for an AI index. State what kind of document it is, what content it covers (texts, chapters, vocabulary words, skills), and notable components (word banks, rubric rows, question types and counts, answer keys). No preamble.\n\nTitle: ${m.title}\nCategorized as: ${m.materialType}\n\n--- DOCUMENT (may be truncated) ---\n${truncated}`,
+            content: `Summarize this teaching material in 2-3 plain sentences for an AI index. State what kind of document it is, what content it covers (texts, chapters, vocabulary words, skills), and notable components (word banks, rubric rows, question types and counts, answer keys). No preamble.\n\nTitle: ${promptSafe(m.title)}\nCategorized as: ${promptSafe(m.materialType, 40)}\n\n--- DOCUMENT (may be truncated) ---\n${truncated}`,
           },
         ],
       });
