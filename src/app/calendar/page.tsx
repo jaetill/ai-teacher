@@ -372,14 +372,14 @@ export default function CalendarPage() {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[900px]">
+          <div className="min-w-[1100px]">
             {/* Column headers */}
-            <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: "11rem repeat(5, 1fr)" }}>
+            <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: "11rem repeat(5, minmax(0, 1fr))" }}>
               <div />
               {weekDates.map((date, i) => (
                 <div
                   key={date}
-                  className={`text-xs font-bold px-1 ${
+                  className={`text-xs font-bold px-1 min-w-0 truncate ${
                     date === todayIso
                       ? "text-zinc-900 dark:text-zinc-50"
                       : "text-zinc-500 dark:text-zinc-400"
@@ -398,7 +398,7 @@ export default function CalendarPage() {
                   <div
                     key={row.key}
                     className="grid gap-2"
-                    style={{ gridTemplateColumns: "11rem repeat(5, 1fr)" }}
+                    style={{ gridTemplateColumns: "11rem repeat(5, minmax(0, 1fr))" }}
                   >
                     <div
                       className={`rounded-lg border border-l-4 ${GRADE_ROW_COLORS[row.course.grade] ?? "border-l-zinc-400"} border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 flex flex-col justify-center`}
@@ -421,7 +421,7 @@ export default function CalendarPage() {
                       return (
                         <div
                           key={date}
-                          className={`rounded-lg border min-h-16 p-1.5 space-y-1 ${
+                          className={`rounded-lg border min-h-16 min-w-0 overflow-hidden p-1.5 space-y-1 ${
                             date === todayIso
                               ? "border-zinc-400 dark:border-zinc-500"
                               : "border-zinc-200 dark:border-zinc-800"
@@ -459,7 +459,7 @@ export default function CalendarPage() {
                                   {(p.lesson.objectives ?? []).slice(0, 2).map((obj, i) => (
                                     <div
                                       key={i}
-                                      className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-snug truncate"
+                                      className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-snug line-clamp-2"
                                       title={obj}
                                     >
                                       · {obj}
