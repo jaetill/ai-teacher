@@ -188,7 +188,7 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
-                  {total} file{total === 1 ? "" : "s"} in curriculum
+                  in curriculum
                 </p>
                 <button
                   onClick={() =>

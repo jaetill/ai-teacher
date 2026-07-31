@@ -225,6 +225,28 @@ export async function POST(req: Request) {
     } catch (err) {
       console.error(`[summarize] failed for "${m.title}":`, err);
       failures.push(m.title);
+      // Classify: auth, rate-limit, and server hiccups are retryable — leave
+      // the row untouched so a later run picks it up. Everything else is a
+      // permanent content failure (seen in the wild: Google refuses to export
+      // image-heavy Docs over its export size cap), so write a marker; without
+      // it the file is re-offered on every run and fails forever (#642's
+      // sibling case — that fix only caught empty exports, not throwing ones).
+      const e = err as { code?: number; status?: number; message?: string };
+      const code = e?.code ?? e?.status ?? 0;
+      const msg = String(e?.message ?? err);
+      const retryable =
+        code === 401 || code === 429 || code >= 500 || /invalid_grant|rate.?limit/i.test(msg);
+      if (!retryable) {
+        await db
+          .update(materials)
+          .set({
+            description:
+              "[Could not be summarized — the file could not be read as text (likely image-based or too large to export).]",
+            updatedAt: new Date(),
+          })
+          .where(eq(materials.id, m.id));
+        processed++; // handled: it will stop being offered
+      }
     }
   }
 
