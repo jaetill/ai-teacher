@@ -114,48 +114,31 @@ describe("GET /api/schedule/[courseId]", () => {
 });
 
 describe("PUT /api/schedule/[courseId]", () => {
-  it("rejects an invalid quarter span", async () => {
-    mockDbSelect.mockImplementationOnce(() => chain([COURSE]));
-    const res = await PUT(
-      putReq({ quarterSpans: [{ name: "Q9", startDate: "2026-08-31", endDate: "2026-10-30" }] }),
-      params,
-    );
-    expect(res.status).toBe(400);
-    expect(mockDbDelete).not.toHaveBeenCalled();
-  });
-
-  it("rejects a reversed date range", async () => {
-    mockDbSelect.mockImplementationOnce(() => chain([COURSE]));
-    const res = await PUT(
-      putReq({ quarterSpans: [{ name: "Q1", startDate: "2026-10-30", endDate: "2026-08-31" }] }),
-      params,
-    );
-    expect(res.status).toBe(400);
-  });
-
+  // Year-level fields (quarter spans, no-school days) moved to
+  // /api/school-year so one edit covers every course; this route now owns
+  // exactly one thing: which weekdays THIS class meets.
   it("rejects invalid meetingDays", async () => {
     mockDbSelect.mockImplementationOnce(() => chain([COURSE]));
     expect((await PUT(putReq({ meetingDays: "0,9" }), params)).status).toBe(400);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
   });
 
-  it("replaces quarter terms and no-school days on a valid save", async () => {
+  it("400s when meetingDays is missing", async () => {
     mockDbSelect.mockImplementationOnce(() => chain([COURSE]));
-    const res = await PUT(
-      putReq({
-        meetingDays: "1,3,5",
-        quarterSpans: [{ name: "Q1", startDate: "2026-08-31", endDate: "2026-10-30" }],
-        noSchoolDays: [{ date: "2026-09-14", label: "Snow day" }],
-      }),
-      params,
-    );
-    expect(res.status).toBe(200);
-    expect(mockDbUpdate).toHaveBeenCalledTimes(1); // meetingDays
-    expect(mockDbDelete).toHaveBeenCalledTimes(2); // quarters + no_school replaced
-    expect(mockDbInsert).toHaveBeenCalledTimes(2);
+    expect((await PUT(putReq({}), params)).status).toBe(400);
   });
 
-  it("400s when the course has no school year", async () => {
-    mockDbSelect.mockImplementationOnce(() => chain([{ ...COURSE, schoolYearId: null }]));
-    expect((await PUT(putReq({ meetingDays: "1,2" }), params)).status).toBe(400);
+  it("404s when the course is not the caller's", async () => {
+    expect((await PUT(putReq({ meetingDays: "1,2" }), params)).status).toBe(404);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("saves meeting days and writes nothing to terms", async () => {
+    mockDbSelect.mockImplementationOnce(() => chain([COURSE]));
+    const res = await PUT(putReq({ meetingDays: "1,3,5" }), params);
+    expect(res.status).toBe(200);
+    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+    expect(mockDbDelete).not.toHaveBeenCalled();
+    expect(mockDbInsert).not.toHaveBeenCalled();
   });
 });

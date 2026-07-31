@@ -12,7 +12,7 @@
 // Per-course settings (quarter dates, snow days) live on the course
 // calendar — the row's "Open" link.
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   placeLessons,
@@ -91,9 +91,69 @@ export default function CalendarPage() {
     { courseId: "", name: "", period: "" },
   );
   const [busy, setBusy] = useState(false);
+  // Courses captured for reloads that happen outside the bootstrap effect.
+  const coursesRef = useRef<Course[]>([]);
   const [viewMonday, setViewMonday] = useState<string>(() =>
     weekStart(new Date().toISOString().slice(0, 10)),
   );
+
+  // School-year settings (#646 follow-up, Jason): year dates, quarter dates and
+  // no-school days are set ONCE here, not per course — they apply to every
+  // section. Which weekdays a class meets stays per course (its calendar page).
+  const [yearOpen, setYearOpen] = useState(false);
+  const [yearForm, setYearForm] = useState<{
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  } | null>(null);
+  const [yearQuarters, setYearQuarters] = useState<QuarterSpan[]>([]);
+  const [yearNoSchool, setYearNoSchool] = useState<{ date: string; label: string }[]>([]);
+  const [newNoSchool, setNewNoSchool] = useState({ date: "", label: "Snow day" });
+  const [yearSaveMsg, setYearSaveMsg] = useState<string | null>(null);
+
+  async function loadYearSettings() {
+    const res = await fetch("/api/school-year");
+    if (!res.ok) return;
+    const data = await res.json();
+    const sy = data.schoolYear;
+    if (!sy) return;
+    setYearForm({ id: sy.id, name: sy.name, startDate: sy.startDate, endDate: sy.endDate });
+    setYearQuarters(
+      (data.quarterSpans ?? []).length > 0
+        ? data.quarterSpans
+        : defaultQuarterSpans(sy.startDate, sy.endDate),
+    );
+    setYearNoSchool(data.noSchoolDays ?? []);
+  }
+
+  async function saveYearSettings() {
+    if (!yearForm) return;
+    setBusy(true);
+    setYearSaveMsg(null);
+    try {
+      const res = await fetch("/api/school-year", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schoolYearId: yearForm.id,
+          startDate: yearForm.startDate,
+          endDate: yearForm.endDate,
+          quarterSpans: yearQuarters,
+          noSchoolDays: yearNoSchool,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`);
+      setYearSaveMsg("Saved — applies to every section.");
+      // Recompute every row against the new year-level inputs.
+      await reloadCalendars();
+    } catch (err) {
+      setYearSaveMsg(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function loadSections() {
     const res = await fetch("/api/sections");
@@ -102,6 +162,55 @@ export default function CalendarPage() {
       setSectionsList(data.sections ?? []);
     }
   }
+
+  // Recompute every row's placement from the current server state. Called on
+  // mount and after year-level settings change (which move all sections).
+  const reloadCalendars = useCallback(async (forCourses?: Course[]) => {
+    const list = forCourses ?? coursesRef.current;
+    const cals = new Map<string, CourseCalendar>();
+    let firstStart = null as string | null;
+    await Promise.all(
+      list.map(async (c) => {
+        const [dataRes, schedRes] = await Promise.all([
+          fetch(`/api/curriculum/editor/data?courseId=${c.id}`),
+          fetch(`/api/schedule/${c.id}`),
+        ]);
+        if (!dataRes.ok || !schedRes.ok) return;
+        const data = await dataRes.json();
+        const sched = await schedRes.json();
+        const units: Unit[] = data.units ?? [];
+        let spans: QuarterSpan[] = sched.quarterSpans ?? [];
+        let estimated = false;
+        if (spans.length === 0 && sched.schoolYear) {
+          spans = defaultQuarterSpans(sched.schoolYear.startDate, sched.schoolYear.endDate);
+          estimated = true;
+        }
+        const meetingDays = parseMeetingDays(sched.meetingDays);
+        const noSchoolArr: { date: string; label: string }[] = sched.noSchoolDays ?? [];
+        const noSchoolSet = new Set(noSchoolArr.map((d) => d.date));
+        const placed = placeLessons(units, spans, meetingDays, noSchoolSet);
+        const byDate = new Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>();
+        for (const p of placed) {
+          p.dates.forEach((date, i) => {
+            const arr = byDate.get(date) ?? [];
+            arr.push({ p, dayIndex: i });
+            byDate.set(date, arr);
+          });
+        }
+        cals.set(c.id, {
+          byDate,
+          meetingDays,
+          noSchool: new Map(noSchoolArr.map((d) => [d.date, d.label])),
+          estimated,
+        });
+        if (spans[0]?.startDate && (!firstStart || spans[0].startDate < firstStart)) {
+          firstStart = spans[0].startDate;
+        }
+      }),
+    );
+    setCalendars(cals);
+    return firstStart;
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -120,52 +229,12 @@ export default function CalendarPage() {
           ? allCourses.filter((c) => c.schoolYearId === currentYearId)
           : allCourses;
         setCourses(currentCourses);
+        coursesRef.current = currentCourses;
         setYears(allYears);
         setSectionsList(sectionsData.sections ?? []);
 
-        // Per-course data → pure placement, computed once per course.
-        const cals = new Map<string, CourseCalendar>();
-        let firstStart = null as string | null;
-        await Promise.all(
-          currentCourses.map(async (c) => {
-            const [dataRes, schedRes] = await Promise.all([
-              fetch(`/api/curriculum/editor/data?courseId=${c.id}`),
-              fetch(`/api/schedule/${c.id}`),
-            ]);
-            if (!dataRes.ok || !schedRes.ok) return;
-            const data = await dataRes.json();
-            const sched = await schedRes.json();
-            const units: Unit[] = data.units ?? [];
-            let spans: QuarterSpan[] = sched.quarterSpans ?? [];
-            let estimated = false;
-            if (spans.length === 0 && sched.schoolYear) {
-              spans = defaultQuarterSpans(sched.schoolYear.startDate, sched.schoolYear.endDate);
-              estimated = true;
-            }
-            const meetingDays = parseMeetingDays(sched.meetingDays);
-            const noSchoolArr: { date: string; label: string }[] = sched.noSchoolDays ?? [];
-            const noSchoolSet = new Set(noSchoolArr.map((d) => d.date));
-            const placed = placeLessons(units, spans, meetingDays, noSchoolSet);
-            const byDate = new Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>();
-            for (const p of placed) {
-              p.dates.forEach((date, i) => {
-                const arr = byDate.get(date) ?? [];
-                arr.push({ p, dayIndex: i });
-                byDate.set(date, arr);
-              });
-            }
-            cals.set(c.id, {
-              byDate,
-              meetingDays,
-              noSchool: new Map(noSchoolArr.map((d) => [d.date, d.label])),
-              estimated,
-            });
-            if (spans[0]?.startDate && (!firstStart || spans[0].startDate < firstStart)) {
-              firstStart = spans[0].startDate;
-            }
-          }),
-        );
-        setCalendars(cals);
+        const firstStart = await reloadCalendars(currentCourses);
+        await loadYearSettings();
         // Land on the earliest scheduled week rather than an empty "today".
         const today = new Date().toISOString().slice(0, 10);
         if (firstStart && today < firstStart) setViewMonday(weekStart(firstStart));
@@ -175,6 +244,9 @@ export default function CalendarPage() {
         setLoading(false);
       }
     })();
+    // Mount-once bootstrap; reloadCalendars is stable and loadYearSettings
+    // only touches its own state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Rows: one per section; courses without sections get a course row ───
@@ -255,21 +327,191 @@ export default function CalendarPage() {
     <div className="max-w-7xl mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">Calendar</h1>
-        <button
-          onClick={() => setManageOpen((v) => !v)}
-          className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-1.5 transition-colors"
-        >
-          {manageOpen ? "Hide sections" : "Manage sections"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setYearOpen((v) => !v)}
+            className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            {yearOpen ? "Hide school year" : "School year dates"}
+          </button>
+          <button
+            onClick={() => setManageOpen((v) => !v)}
+            className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            {manageOpen ? "Hide sections" : "Manage sections"}
+          </button>
+        </div>
       </div>
       <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
         One row per section.{" "}
         {anyEstimated && (
           <span className="text-amber-600 dark:text-amber-400 font-medium">
-            Some quarter dates are estimates — set real dates from a row&apos;s Open link.
+            Quarter dates are an even-split estimate — set the real ones in{" "}
+            <button onClick={() => setYearOpen(true)} className="underline">
+              School year dates
+            </button>
+            .
           </span>
         )}
       </p>
+
+      {yearOpen && (
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-5 space-y-4">
+          <div>
+            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+              School year {yearForm ? `— ${yearForm.name}` : ""}
+            </h2>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+              Set once here; applies to every course and section. (Which weekdays a class
+              meets is per course — set that on its own calendar.)
+            </p>
+          </div>
+
+          {!yearForm ? (
+            <p className="text-xs text-zinc-500">No school year found.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Year starts
+                  <input
+                    type="date"
+                    value={yearForm.startDate}
+                    onChange={(e) => setYearForm((f) => (f ? { ...f, startDate: e.target.value } : f))}
+                    className="block mt-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                  />
+                </label>
+                <label className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Year ends
+                  <input
+                    type="date"
+                    value={yearForm.endDate}
+                    onChange={(e) => setYearForm((f) => (f ? { ...f, endDate: e.target.value } : f))}
+                    className="block mt-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                  />
+                </label>
+                <button
+                  onClick={() =>
+                    yearForm &&
+                    setYearQuarters(defaultQuarterSpans(yearForm.startDate, yearForm.endDate))
+                  }
+                  className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 underline"
+                >
+                  Split into four even quarters
+                </button>
+              </div>
+
+              <div>
+                <h3 className="text-[11px] font-semibold text-zinc-900 dark:text-zinc-100 mb-1.5">
+                  Quarter dates
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {yearQuarters.map((q, i) => (
+                    <div key={q.name} className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                        {q.name}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="date"
+                          value={q.startDate}
+                          onChange={(e) =>
+                            setYearQuarters((prev) =>
+                              prev.map((p, j) => (j === i ? { ...p, startDate: e.target.value } : p)),
+                            )
+                          }
+                          className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                        />
+                        <span className="text-zinc-400">–</span>
+                        <input
+                          type="date"
+                          value={q.endDate}
+                          onChange={(e) =>
+                            setYearQuarters((prev) =>
+                              prev.map((p, j) => (j === i ? { ...p, endDate: e.target.value } : p)),
+                            )
+                          }
+                          className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-[11px] font-semibold text-zinc-900 dark:text-zinc-100 mb-1.5">
+                  No-school days{" "}
+                  <span className="font-normal text-zinc-400">
+                    (holidays, snow days — school-wide, so every section shifts)
+                  </span>
+                </h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="date"
+                    value={newNoSchool.date}
+                    onChange={(e) => setNewNoSchool((p) => ({ ...p, date: e.target.value }))}
+                    className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                  />
+                  <input
+                    type="text"
+                    value={newNoSchool.label}
+                    onChange={(e) => setNewNoSchool((p) => ({ ...p, label: e.target.value }))}
+                    placeholder="Label"
+                    className="w-32 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!newNoSchool.date || yearNoSchool.some((d) => d.date === newNoSchool.date))
+                        return;
+                      setYearNoSchool((prev) =>
+                        [...prev, { date: newNoSchool.date, label: newNoSchool.label || "No school" }].sort(
+                          (a, b) => a.date.localeCompare(b.date),
+                        ),
+                      );
+                      setNewNoSchool({ date: "", label: "Snow day" });
+                    }}
+                    className="text-[11px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded px-2.5 py-1"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {yearNoSchool.map((d) => (
+                    <span
+                      key={d.date}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-2 py-0.5 text-[11px] text-red-700 dark:text-red-300"
+                    >
+                      {fmt(d.date)} · {d.label}
+                      <button
+                        onClick={() => setYearNoSchool((prev) => prev.filter((x) => x.date !== d.date))}
+                        className="hover:text-red-900 dark:hover:text-red-100"
+                        aria-label={`Remove ${d.label}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {yearNoSchool.length === 0 && (
+                    <span className="text-[11px] text-zinc-400">none yet</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveYearSettings}
+                  disabled={busy}
+                  className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg px-4 py-1.5 transition-colors"
+                >
+                  {busy ? "Saving…" : "Save school year"}
+                </button>
+                {yearSaveMsg && <span className="text-xs text-zinc-500">{yearSaveMsg}</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {manageOpen && (
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-5">
