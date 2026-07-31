@@ -268,6 +268,21 @@ export default function CurriculumEditorPage() {
   const totalLessons = editor.units.reduce((s, u) => s + u.lessons.length, 0);
   const totalAssessments = editor.units.reduce((s, u) => s + u.assessments.length, 0);
 
+  // Exit edit mode back to WHERE YOU CAME FROM (Jason 2026-07-31): a
+  // unit-scoped edit returns to that unit's view, a quarter-scoped edit to
+  // that quarter's view, a full edit to the year view — no forced detour
+  // through the main curriculum page.
+  const exitHref = scopeUnit
+    ? `/curriculum/${scopeUnit}`
+    : scopeQuarter
+      ? `/curriculum/quarter/${courseId}/${scopeQuarter}`
+      : "/curriculum";
+  const exitLabel = scopeUnit
+    ? "Done — unit view"
+    : scopeQuarter
+      ? `Done — ${scopeQuarter} view`
+      : "Done — year view";
+
   return (
     <div className="min-h-screen bg-zinc-100/50 dark:bg-zinc-950">
       {/* ── Toolbar ─── */}
@@ -275,13 +290,13 @@ export default function CurriculumEditorPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
-              href="/curriculum"
-              className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+              href={exitHref}
+              className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M11 2L5 8l6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              Curriculum
+              {exitLabel}
             </Link>
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
             <div>
