@@ -5,14 +5,19 @@ import { usePathname } from "next/navigation";
 import UserNav from "./UserNav";
 import { useCopilot } from "./CopilotProvider";
 
-const NAV_ITEMS = [
+// `comingSoon` items render greyed out and inert (Jason 2026-07-31): the
+// modules are scaffolded but not finished (#163), and a teacher clicking into
+// a half-built screen learns the wrong thing about the app. Flip the flag off
+// when the module is ready — the route itself is untouched, so it stays
+// reachable by URL for our own testing.
+const NAV_ITEMS: { href: string; label: string; comingSoon?: boolean }[] = [
   { href: "/curriculum", label: "Curriculum" },
   { href: "/calendar", label: "Calendar" },
   { href: "/standards", label: "Standards" },
   { href: "/search", label: "Search" },
   { href: "/glossary", label: "Glossary" },
-  { href: "/differentiation", label: "Differentiation" },
-  { href: "/communications", label: "Communications" },
+  { href: "/differentiation", label: "Differentiation", comingSoon: true },
+  { href: "/communications", label: "Communications", comingSoon: true },
   { href: "/import", label: "Import" },
 ];
 
@@ -35,6 +40,18 @@ export default function NavBar() {
               const isActive =
                 pathname === item.href ||
                 pathname.startsWith(item.href + "/");
+              if (item.comingSoon) {
+                return (
+                  <span
+                    key={item.href}
+                    aria-disabled="true"
+                    title="Not built yet — coming soon"
+                    className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-300 dark:text-zinc-700 cursor-not-allowed select-none"
+                  >
+                    {item.label}
+                  </span>
+                );
+              }
               return (
                 <Link
                   key={item.href}
