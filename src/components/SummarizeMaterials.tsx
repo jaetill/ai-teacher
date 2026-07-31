@@ -1,12 +1,15 @@
 "use client";
 
-// "Summarize materials" — teacher-triggered batch pass that gives every
-// imported file an AI-readable description (see /api/materials/summarize).
-// Deliberately a button, not an automatic job: the teacher controls when
-// API spend happens. Future: run automatically as part of import (#633
-// discussion) if the added latency is acceptable.
+// "Summarize materials" — batch pass that gives every imported file an
+// AI-readable description (see /api/materials/summarize). Two triggers:
+// the manual button (backlog, retries), and — per #650 — the
+// materials-imported event fired by the import flows, so fresh imports get
+// indexed automatically without blocking the import itself. Spend stays
+// bounded either way: small model, and the shared per-user AI rate limit
+// (#643) caps the hourly total.
 
 import { useState, useEffect, useRef } from "react";
+import { MATERIALS_IMPORTED_EVENT } from "@/lib/materials-events";
 
 type Status = "idle" | "running" | "done" | "error";
 
@@ -18,6 +21,7 @@ export default function SummarizeMaterials() {
   const [failedTitles, setFailedTitles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef(false);
+  const runningRef = useRef(false);
 
   async function refreshCount() {
     try {
@@ -35,7 +39,24 @@ export default function SummarizeMaterials() {
     refreshCount();
   }, []);
 
+  // #650: when an import flow announces fresh materials, refresh the count
+  // (so the card appears) and start the pass. runningRef makes this a no-op
+  // if a pass is already going; the Stop button still works mid-run.
+  useEffect(() => {
+    const onImported = () => {
+      refreshCount().then(() => run());
+    };
+    window.addEventListener(MATERIALS_IMPORTED_EVENT, onImported);
+    return () =>
+      window.removeEventListener(MATERIALS_IMPORTED_EVENT, onImported);
+    // Mount-once listener by design; run/refreshCount are stable in behavior
+    // (runningRef dedupes) and re-subscribing per render would double-fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function run() {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setStatus("running");
     setError(null);
     setProcessedTotal(0);
@@ -63,6 +84,7 @@ export default function SummarizeMaterials() {
       setError(err instanceof Error ? err.message : "Summarization failed");
       setStatus("error");
     } finally {
+      runningRef.current = false;
       await refreshCount();
     }
   }

@@ -9,6 +9,7 @@ import {
   MATERIAL_TYPES,
   GRADES,
 } from "@/lib/upload-utils";
+import { announceMaterialsImported } from "@/lib/materials-events";
 
 // ── Types ───
 
@@ -251,6 +252,12 @@ export default function ImportFromDrive() {
           return { ...f, status: "error" };
         })
       );
+      // #650: let SummarizeMaterials auto-index the fresh files.
+      if (
+        data.results?.some((r: { status: string }) => r.status === "copied")
+      ) {
+        announceMaterialsImported();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
