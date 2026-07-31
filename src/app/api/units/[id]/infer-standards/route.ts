@@ -16,6 +16,8 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
+import { MODELS } from "@/lib/models";
+import { parseAiJson } from "@/lib/parse-ai-json";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -97,7 +99,7 @@ export async function POST(
     .join("\n\n");
 
   const message = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
+    model: MODELS.structured,
     max_tokens: 4096,
     system: `You map teaching standards to lessons. For each lesson, identify which standards it covers and how.
 
@@ -129,14 +131,13 @@ ${lessonsList}`,
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
 
-  let mappings: Array<{
-    lessonSortOrder: number;
-    standards: Array<{ id: string; coverageType: string }>;
-  }>;
-
-  try {
-    mappings = JSON.parse(text);
-  } catch {
+  const mappings = parseAiJson<
+    Array<{
+      lessonSortOrder: number;
+      standards: Array<{ id: string; coverageType: string }>;
+    }>
+  >(text);
+  if (mappings === null) {
     return Response.json(
       { error: "Failed to parse AI response", raw: text },
       { status: 500 }

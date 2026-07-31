@@ -14,6 +14,7 @@ import { authOptions } from "@/lib/auth";
 import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
 
 const SYSTEM_PROMPT = `You are helping a middle school ELA teacher at a private school draft professional communications.
 
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
 ${situation}`;
 
   const stream = getAnthropic().messages.stream({
-    model: "claude-opus-4-6",
+    model: MODELS.reasoning,
     max_tokens: 4000,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userMessage }],

@@ -27,6 +27,8 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { normalizeMaterialRole } from "@/lib/material-roles";
 import { readJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
+import { parseAiJson } from "@/lib/parse-ai-json";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -81,6 +83,46 @@ export async function POST(req: Request) {
   // inform pacing/ordering/standards. Capped to keep the prompt bounded.
   const referenceText =
     typeof reqBody.referenceText === "string" ? reqBody.referenceText.slice(0, 10_000).trim() : "";
+
+  // ── 0. Early idempotency short-circuit (#611) ───
+  // The authoritative guard lives after course find-or-create (step 5), but the
+  // expensive AI call happens in step 3 — a re-Build on an already-built quarter
+  // used to spend a full model call (up to minutes of wall clock) just to be
+  // refused. Cheaply pre-check with the same course-identity predicate step 4
+  // uses; step 5 stays as the race-safe backstop.
+  if (!rebuild) {
+    const [earlyYear] = await db
+      .select({ id: schoolYears.id })
+      .from(schoolYears)
+      .where(eq(schoolYears.isCurrent, true))
+      .limit(1);
+    const [existingCourse] = await db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(
+        and(
+          eq(courses.grade, grade),
+          eq(courses.subject, "ELA"),
+          earlyYear?.id ? eq(courses.schoolYearId, earlyYear.id) : isNull(courses.schoolYearId),
+          eq(courses.ownerEmail, ownerEmail),
+        ),
+      )
+      .limit(1);
+    if (existingCourse) {
+      const builtUnits = await db
+        .select({ id: units.id })
+        .from(units)
+        .where(and(eq(units.courseId, existingCourse.id), eq(units.quarter, quarter)));
+      if (builtUnits.length > 0) {
+        return Response.json({
+          alreadyBuilt: true,
+          courseId: existingCourse.id,
+          quarter,
+          unitCount: builtUnits.length,
+        });
+      }
+    }
+  }
 
   // ── 1. Find materials in this quarter's folders ───
   const categories = ["Curriculum", "Lessons", "Activities", "Assessments", "Resources"];
@@ -274,7 +316,7 @@ ${standardsList}${referenceBlock}`;
   // lifts both limits — no guard, and room for the full enrichment. We still
   // accumulate the whole message server-side and parse it exactly as before.
   const stream = getAnthropic().messages.stream({
-    model: "claude-sonnet-4-6",
+    model: MODELS.structured,
     max_tokens: 32000,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
@@ -303,16 +345,10 @@ ${standardsList}${referenceBlock}`;
   };
   let parsed: { units: ParsedUnit[] } = { units: [] };
 
-  // Models sometimes wrap the JSON in ```json fences or add stray prose despite
-  // being told not to. Slice to the outermost braces so parsing is robust to that.
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  const jsonText =
-    firstBrace !== -1 && lastBrace > firstBrace ? text.slice(firstBrace, lastBrace + 1) : text;
-
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
+  const parseResult = parseAiJson<{ units: ParsedUnit[] }>(text);
+  if (parseResult !== null) {
+    parsed = parseResult;
+  } else {
     console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
     // In faithful mode the teacher's units come from her folders, not the AI, so
     // a parse failure only loses enrichment — proceed instead of failing her build.

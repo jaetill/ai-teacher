@@ -14,6 +14,7 @@ import { authOptions } from "@/lib/auth";
 import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer specializing in full-year planning for grades 6-8.
 
@@ -113,7 +114,7 @@ ${standards}`;
   }
 
   const stream = getAnthropic().messages.stream({
-    model: "claude-opus-4-6",
+    model: MODELS.reasoning,
     max_tokens: 64000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,
