@@ -94,6 +94,10 @@ export const authOptions: NextAuthOptions = {
       // an XSS an easy exfiltration target (#507). Server code that needs the
       // token reads it from the JWT via getAccessToken() (src/lib/auth-helpers).
       if (session.user) session.user.id = token.sub;
+      // Surface refresh failure as a boolean flag (#651) so the client can show
+      // a "sign in again" banner instead of letting Drive features fail
+      // mysteriously. Boolean only — never the token or error detail (#507).
+      if (token.refreshError) session.googleAuthError = true;
       return session;
     },
   },

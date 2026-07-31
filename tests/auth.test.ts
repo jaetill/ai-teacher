@@ -126,3 +126,24 @@ describe("authOptions.callbacks.jwt (#508)", () => {
     expect(result.accessToken).toBe("existing");
   });
 });
+
+describe("session.googleAuthError flag (#651)", () => {
+  const sessionCallback = authOptions.callbacks!.session!;
+  type Args = Parameters<typeof sessionCallback>[0];
+
+  const base = { expires: "2099-01-01", user: { email: "t@s.edu" } } as Session;
+
+  it("sets googleAuthError when the JWT carries refreshError", async () => {
+    const token = { sub: "u1", refreshError: "RefreshAccessTokenError" } as JWT;
+    const result = await sessionCallback({ session: { ...base }, token } as unknown as Args);
+    expect((result as Session).googleAuthError).toBe(true);
+    // Still a boolean flag only — no token material leaks (#507).
+    expect(JSON.stringify(result)).not.toContain("RefreshAccessTokenError");
+  });
+
+  it("leaves googleAuthError unset on a healthy JWT", async () => {
+    const token = { sub: "u1" } as JWT;
+    const result = await sessionCallback({ session: { ...base }, token } as unknown as Args);
+    expect((result as Session).googleAuthError).toBeUndefined();
+  });
+});
