@@ -572,47 +572,70 @@ ${standardsList}${referenceBlock}`;
       standardCount += unitStdCodes.length;
     }
 
-    // Lessons + lesson standards + material attachments
-    for (const lessonData of enr?.lessons ?? []) {
-      const [createdLesson] = await db
+    // Lessons + lesson standards + material attachments — batched (#583).
+    // The old shape awaited one round-trip per lesson, per lesson-standard,
+    // and per attachment; over the Neon HTTP driver a 10-lesson unit cost
+    // ~60 sequential round-trips and was the 504 root cause. Now each unit
+    // costs at most three: one lessons insert, one lessonStandards insert,
+    // one materialAttachments insert.
+    const lessonDatas = enr?.lessons ?? [];
+    if (lessonDatas.length > 0) {
+      const insertedLessons = await db
         .insert(lessons)
-        .values({
-          unitId: createdUnit.id,
-          title: lessonData.title,
-          sortOrder: lessonData.sortOrder,
-          durationMinutes: clampMinutes(lessonData.durationMinutes),
-          objectives: lessonData.objectives ?? [],
-          lessonPlan: { activities: lessonData.activities ?? [] },
-          source: "ai",
-        })
-        .returning({ id: lessons.id });
-      lessonCount++;
+        .values(
+          lessonDatas.map((lessonData) => ({
+            unitId: createdUnit.id,
+            title: lessonData.title,
+            sortOrder: lessonData.sortOrder,
+            durationMinutes: clampMinutes(lessonData.durationMinutes),
+            objectives: lessonData.objectives ?? [],
+            lessonPlan: { activities: lessonData.activities ?? [] },
+            source: "ai" as const,
+          })),
+        )
+        .returning({ id: lessons.id, sortOrder: lessons.sortOrder });
+      lessonCount += lessonDatas.length;
 
-      for (const std of lessonData.standards ?? []) {
-        if (!validStdIds.has(std.id)) continue;
-        const coverageType = std.coverageType || "teaches";
-        if (!VALID_COVERAGE_TYPES.has(coverageType)) continue;
-        await db
-          .insert(lessonStandards)
-          .values({ lessonId: createdLesson.id, standardId: std.id, coverageType })
-          .onConflictDoNothing();
-        lessonStdCount++;
-      }
+      // Map created ids back to their source rows by sortOrder (unique within
+      // a unit) rather than trusting RETURNING row order.
+      const lessonIdBySort = new Map(insertedLessons.map((l) => [l.sortOrder, l.id]));
 
-      for (const mat of lessonData.materials ?? []) {
-        const materialId = materialByTitle.get(mat.title.toLowerCase());
-        if (!materialId) continue;
-        await db
-          .insert(materialAttachments)
-          .values({
+      const stdRows: Array<{ lessonId: string; standardId: string; coverageType: string }> = [];
+      const matRows: Array<{
+        materialId: string;
+        attachableType: string;
+        attachableId: string;
+        role: string;
+        sortOrder: number;
+      }> = [];
+      for (const lessonData of lessonDatas) {
+        const lessonId = lessonIdBySort.get(lessonData.sortOrder);
+        if (!lessonId) continue;
+        for (const std of lessonData.standards ?? []) {
+          if (!validStdIds.has(std.id)) continue;
+          const coverageType = std.coverageType || "teaches";
+          if (!VALID_COVERAGE_TYPES.has(coverageType)) continue;
+          stdRows.push({ lessonId, standardId: std.id, coverageType });
+        }
+        for (const mat of lessonData.materials ?? []) {
+          const materialId = materialByTitle.get(mat.title.toLowerCase());
+          if (!materialId) continue;
+          matRows.push({
             materialId,
             attachableType: "lesson",
-            attachableId: createdLesson.id,
+            attachableId: lessonId,
             role: normalizeMaterialRole(mat.role),
             sortOrder: 0,
-          })
-          .onConflictDoNothing();
-        materialLinkCount++;
+          });
+        }
+      }
+      if (stdRows.length > 0) {
+        await db.insert(lessonStandards).values(stdRows).onConflictDoNothing();
+        lessonStdCount += stdRows.length;
+      }
+      if (matRows.length > 0) {
+        await db.insert(materialAttachments).values(matRows).onConflictDoNothing();
+        materialLinkCount += matRows.length;
       }
     }
   }

@@ -95,7 +95,7 @@ const MATERIAL = {
 const STANDARD = { id: "5.RL.1", description: "Read and comprehend literature" };
 const SCHOOL_YEAR = { id: "sy1" };
 const CREATED_UNIT = { id: "u1" };
-const CREATED_LESSON = { id: "l1" };
+const CREATED_LESSON = { id: "l1", sortOrder: 1 }; // sortOrder must match the primed lesson (#583 maps ids by sortOrder)
 
 const AI_RESPONSE = {
   units: [
@@ -638,6 +638,66 @@ describe("POST /api/import/build-curriculum", () => {
         expect(mockDbInsert).toHaveBeenCalledTimes(6);
       },
     );
+  });
+
+  describe("batched inserts (#583)", () => {
+    it("inserts many lessons in ONE call per table, not one per row", async () => {
+      const twoLessonResponse = {
+        units: [
+          {
+            ...AI_RESPONSE.units[0],
+            lessons: [
+              AI_RESPONSE.units[0].lessons[0],
+              {
+                ...AI_RESPONSE.units[0].lessons[0],
+                sortOrder: 2,
+                title: "Lesson Two",
+              },
+            ],
+          },
+        ],
+      };
+      mockMessagesCreate.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(twoLessonResponse) }],
+      });
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611)
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: no course yet
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([])) // courses select-first → not found
+        .mockReturnValueOnce(makeChain([])); // existingUnits
+
+      const lessonsValuesSpy = vi.fn();
+      lessonsValuesSpy.mockReturnValue({
+        returning: () =>
+          Promise.resolve([
+            { id: "l1", sortOrder: 1 },
+            { id: "l2", sortOrder: 2 },
+          ]),
+      });
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // courses
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce({ values: lessonsValuesSpy }) // lessons (batched)
+        .mockReturnValueOnce(makeChain([])) // lessonStandards (batched)
+        .mockReturnValueOnce(makeChain([])); // materialAttachments (batched)
+
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.lessonCount).toBe(2);
+      // Both lessons went through a single values() call...
+      expect(lessonsValuesSpy).toHaveBeenCalledTimes(1);
+      expect(lessonsValuesSpy.mock.calls[0][0]).toHaveLength(2);
+      // ...and the total insert count is one per table, not one per row.
+      expect(mockDbInsert).toHaveBeenCalledTimes(6);
+    });
   });
 
   describe("idempotency (re-running Build)", () => {
