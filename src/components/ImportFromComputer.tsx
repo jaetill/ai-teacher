@@ -9,6 +9,7 @@ import {
   MATERIAL_TYPES,
   GRADES,
 } from "@/lib/upload-utils";
+import { announceMaterialsImported } from "@/lib/materials-events";
 
 // ── Types ───
 
@@ -228,6 +229,7 @@ export default function ImportFromComputer() {
     );
     setUploadTotal(toUpload.length);
     setUploadProgress(0);
+    let uploadedAny = false;
 
     for (let i = 0; i < toUpload.length; i++) {
       const entry = toUpload[i];
@@ -258,6 +260,7 @@ export default function ImportFromComputer() {
         }
 
         const { driveWebUrl } = await res.json();
+        uploadedAny = true;
         setFiles((prev) =>
           prev.map((f) =>
             f.id === entry.id
@@ -280,6 +283,9 @@ export default function ImportFromComputer() {
         );
       }
     }
+
+    // #650: let SummarizeMaterials auto-index the fresh files.
+    if (uploadedAny) announceMaterialsImported();
   };
 
   // ── Field update helper ───
