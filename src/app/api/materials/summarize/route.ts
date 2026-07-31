@@ -166,7 +166,20 @@ export async function POST(req: Request) {
     try {
       const content = await fetchContent(accessToken, m.driveFileId!, m.driveMimeType);
       if (!content || content.trim().length === 0) {
+        // Downloaded fine but no extractable text (blank doc, or image-based
+        // content like a drawn timeline). Write an explicit marker so the
+        // file is honestly labeled AND stops being re-selected forever —
+        // without this, empty docs haunt the unsummarized count on every run.
+        console.warn(`[summarize] no extractable text in "${m.title}" (${m.driveMimeType})`);
+        await db
+          .update(materials)
+          .set({
+            description: "[No extractable text — this file appears to be empty or image-based.]",
+            updatedAt: new Date(),
+          })
+          .where(eq(materials.id, m.id));
         failures.push(m.title);
+        processed++; // it was handled; count it as progress so the loop advances
         continue;
       }
       const truncated = content.slice(0, MAX_CONTENT_CHARS);
