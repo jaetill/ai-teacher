@@ -407,15 +407,23 @@ export default function CurriculumPage() {
                         </span>
                       )}
                     </h2>
+                    <div className="flex items-center gap-2 ml-3 shrink-0">
+                    <Link
+                      href={`/curriculum/weeks/${course.id}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      Week view
+                    </Link>
                     <Link
                       href={`/curriculum/edit/${course.id}`}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors ml-3 shrink-0"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
                     >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="opacity-60">
                         <path d="M12.146.854a.5.5 0 01.708 0l2.292 2.292a.5.5 0 010 .708L5.854 13.146a.5.5 0 01-.233.131l-4 1a.5.5 0 01-.606-.606l1-4a.5.5 0 01.131-.232L12.146.854z" />
                       </svg>
                       Edit Curriculum
                     </Link>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {quarters.map((q) => {
