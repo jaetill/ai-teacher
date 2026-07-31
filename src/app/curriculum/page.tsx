@@ -409,10 +409,10 @@ export default function CurriculumPage() {
                     </h2>
                     <div className="flex items-center gap-2 ml-3 shrink-0">
                     <Link
-                      href={`/curriculum/weeks/${course.id}`}
+                      href={`/curriculum/calendar/${course.id}`}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
                     >
-                      Week view
+                      Calendar
                     </Link>
                     <Link
                       href={`/curriculum/edit/${course.id}`}

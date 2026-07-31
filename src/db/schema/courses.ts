@@ -18,6 +18,9 @@ export const courses = pgTable(
     subject: text("subject").notNull().default("ELA"),
     schoolYearId: uuid("school_year_id").references(() => schoolYears.id),
     ownerEmail: text("owner_email"), // Google account email of the teacher who created this course
+    // ISO weekdays this class meets, CSV ("1,2,3,4,5" = Mon-Fri). Feeds the
+    // calendar's class-day stream (#646); lesson dates are derived from it.
+    meetingDays: text("meeting_days").notNull().default("1,2,3,4,5"),
     description: text("description"), // Rich context for AI
     teacherNotes: text("teacher_notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
