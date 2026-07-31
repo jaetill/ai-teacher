@@ -5,9 +5,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materialAttachments, materials, units, lessons, assessments } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { readJson, isUuid } from "@/lib/api-utils";
 import { normalizeMaterialRole } from "@/lib/material-roles";
+import { ownedMaterials } from "@/lib/material-scope";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { AttachMaterialPayload } from "@/types/curriculum-editor";
@@ -34,14 +35,14 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid attachableType" }, { status: 400 });
   }
 
-  // Verify the material exists before inserting — a dangling materialId used
-  // to surface as an uncaught FK violation → 500. NOTE: materials has no owner
-  // column (see schema), so per-user authorization of the material itself is
-  // not possible yet; ownership is enforced on the attachable's course.
+  // Verify the material exists AND belongs to the caller (#566) before
+  // inserting — a dangling materialId used to surface as an uncaught FK
+  // violation → 500, and any authenticated user could attach another user's
+  // material by id. Ownership of the attachable's course is enforced below.
   const [material] = await db
     .select({ id: materials.id })
     .from(materials)
-    .where(eq(materials.id, materialId))
+    .where(and(eq(materials.id, materialId), ownedMaterials(session.user?.email)))
     .limit(1);
   if (!material) {
     return Response.json({ error: "Material not found" }, { status: 404 });

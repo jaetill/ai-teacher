@@ -27,6 +27,7 @@ vi.mock("@/lib/drive", () => ({
 vi.mock("@/lib/upload-utils", () => ({
   buildFolderKey: vi.fn((...args: unknown[]) => args.filter(Boolean).join("_")),
   getMimeType: vi.fn().mockReturnValue("application/pdf"),
+  isValidFolderTarget: vi.fn(() => true),
 }));
 vi.mock("stream", async (importOriginal) => {
   const actual = await importOriginal<typeof import("stream")>();

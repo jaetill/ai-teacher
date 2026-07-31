@@ -26,6 +26,7 @@ import { getDriveClient } from "@/lib/drive";
 import { MODELS } from "@/lib/models";
 import { db } from "@/db";
 import { courses, driveFolders, materials, units } from "@/db/schema";
+import { ownedMaterials } from "@/lib/material-scope";
 import { and, eq, inArray, isNull, or, sql as dsql } from "drizzle-orm";
 import mammoth from "mammoth";
 
@@ -103,6 +104,7 @@ async function findUnsummarized(ownerEmail: string) {
       and(
         inArray(materials.driveFolderId, folderIds),
         eq(materials.storageType, "google_drive"),
+        ownedMaterials(ownerEmail),
         or(isNull(materials.description), eq(materials.description, ""))
       )
     );

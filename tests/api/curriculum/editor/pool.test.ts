@@ -106,6 +106,13 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect((await res.json()).error).toBe("courseId required");
   });
 
+  it("returns 400 when courseId is not a UUID (#595)", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    const res = await GET(makeRequest("not-a-uuid"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Invalid courseId");
+  });
+
   it("returns 403 when session user does not own the course (IDOR guard)", async () => {
     mockSession.mockResolvedValueOnce(SESSION);
     mockDbSelect.mockReturnValueOnce(makeChain([])); // ownership → not owned

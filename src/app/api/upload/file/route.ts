@@ -9,7 +9,7 @@ import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { uploadFile } from "@/lib/drive";
-import { buildFolderKey, getMimeType } from "@/lib/upload-utils";
+import { buildFolderKey, getMimeType, isValidFolderTarget } from "@/lib/upload-utils";
 import { Readable } from "stream";
 
 export async function POST(req: Request) {
@@ -33,6 +33,11 @@ export async function POST(req: Request) {
 
   if (!file || !name || !grade || !destination) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
+  }
+  // #593: destination/category feed buildFolderKey directly — reject anything
+  // outside the known enums before it can shape a folder-key lookup.
+  if (!isValidFolderTarget(destination, category)) {
+    return Response.json({ error: "Invalid destination or category" }, { status: 400 });
   }
 
   // ── Look up target folder ───

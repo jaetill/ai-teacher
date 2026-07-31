@@ -29,6 +29,7 @@ import { normalizeMaterialRole } from "@/lib/material-roles";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
+import { ownedMaterials } from "@/lib/material-scope";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
   const quarterMaterials = await db
     .select()
     .from(materials)
-    .where(inArray(materials.driveFolderId, folderDriveIds));
+    .where(and(inArray(materials.driveFolderId, folderDriveIds), ownedMaterials(ownerEmail)));
 
   if (quarterMaterials.length === 0) {
     return Response.json({

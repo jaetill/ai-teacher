@@ -16,6 +16,8 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { assertCourseOwnership } from "../assert-ownership";
+import { isUuid } from "@/lib/api-utils";
+import { ownedMaterials } from "@/lib/material-scope";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -33,6 +35,11 @@ export async function GET(req: Request) {
 
   if (!courseId) {
     return Response.json({ error: "courseId required" }, { status: 400 });
+  }
+  // #595: gate before any DB query — a malformed id must be a 400, not a
+  // Postgres cast error surfacing as a 500.
+  if (!isUuid(courseId)) {
+    return Response.json({ error: "Invalid courseId" }, { status: 400 });
   }
 
   const forbidden = await assertCourseOwnership(courseId, userEmail);
@@ -97,7 +104,9 @@ export async function GET(req: Request) {
     courseMaterials = await db
       .select()
       .from(materials)
-      .where(inArray(materials.driveFolderId, relevantFolderDriveIds));
+      .where(
+        and(inArray(materials.driveFolderId, relevantFolderDriveIds), ownedMaterials(userEmail)),
+      );
   } else {
     // Fallback (rare — only when the course's quarter folders aren't registered):
     // gather every material attached to the course's units, lessons, or
@@ -120,7 +129,10 @@ export async function GET(req: Request) {
       : [];
     const materialIds = [...new Set(attachedMaterialIds.map((r) => r.materialId))];
     courseMaterials = materialIds.length
-      ? await db.select().from(materials).where(inArray(materials.id, materialIds))
+      ? await db
+          .select()
+          .from(materials)
+          .where(and(inArray(materials.id, materialIds), ownedMaterials(userEmail)))
       : [];
   }
 

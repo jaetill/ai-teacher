@@ -9,6 +9,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materials, driveFolders } from "@/db/schema";
+import { ownedMaterials } from "@/lib/material-scope";
 import { and, eq, isNull, or, like, desc } from "drizzle-orm";
 
 type FileRow = { title: string; materialType: string; category: string };
@@ -45,6 +46,7 @@ export async function GET() {
       and(
         like(driveFolders.folderKey, "grade\\_%"),
         or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail)),
+        ownedMaterials(ownerEmail),
       ),
     )
     .orderBy(desc(materials.createdAt));
