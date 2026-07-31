@@ -220,3 +220,21 @@ describe("POST /api/copilot/accept-draft", () => {
     expect(mockDbInsert).not.toHaveBeenCalled();
   });
 });
+
+describe("ownership stamping (#537/#554)", () => {
+  it("stamps the caller's ownerEmail on the materials insert", async () => {
+    selectQueue = [[{ driveId: "folder-assessments" }]];
+    const valuesSpy = vi.fn();
+    valuesSpy.mockReturnValue({
+      returning: () => Promise.resolve([{ id: "33333333-3333-3333-3333-333333333333" }]),
+    });
+    mockDbInsert.mockImplementationOnce(() => ({ values: valuesSpy }));
+
+    const res = await POST(req(VALID_BODY));
+    expect(res.status).toBe(200);
+    expect(valuesSpy.mock.calls[0][0]).toMatchObject({
+      source: "ai",
+      ownerEmail: "heidi@example.com",
+    });
+  });
+});

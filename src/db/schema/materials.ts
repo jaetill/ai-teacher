@@ -38,6 +38,10 @@ export const materials = pgTable(
     // AI-readable summary of what this material is
     description: text("description"),
     source: text("source").notNull().default("human"),
+    // Who owns this material (#537/#554). Nullable for legacy rows imported
+    // before the column existed — read paths treat NULL as legacy-shared, the
+    // same convention as driveFolders.ownerEmail. All insert paths stamp it.
+    ownerEmail: text("owner_email"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -48,6 +52,7 @@ export const materials = pgTable(
   (table) => [
     index("idx_materials_drive_file").on(table.driveFileId),
     index("idx_materials_type").on(table.materialType),
+    index("idx_materials_owner_email").on(table.ownerEmail),
   ]
 );
 
