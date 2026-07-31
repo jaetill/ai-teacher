@@ -42,6 +42,8 @@ type Lesson = {
   title: string;
   sortOrder: number;
   materialCount: number;
+  objectives?: string[] | null;
+  materials?: { title: string; driveWebUrl: string | null; role: string }[];
 };
 type Unit = {
   id: string;
@@ -448,24 +450,51 @@ export default function CalendarPage() {
                   <div className="text-[11px] italic text-zinc-300 dark:text-zinc-600">—</div>
                 ) : (
                   dayLessons.map(({ p, dayIndex }) => (
-                    <Link
+                    <div
                       key={`${p.lesson.id}-${dayIndex}`}
-                      href={`/curriculum/${p.unitId}`}
-                      className={`block rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden hover:border-zinc-400 dark:hover:border-zinc-500 transition-colors ${p.overflow ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
+                      className={`rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden ${p.overflow ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
                     >
                       <div className={`h-1 ${QUARTER_BARS[p.quarter] ?? "bg-zinc-300"}`} />
                       <div className="px-2 py-1.5">
                         <div className="text-[10px] font-medium text-zinc-400 truncate">{p.unitTitle}</div>
-                        <div className="text-[11px] text-zinc-800 dark:text-zinc-200 leading-snug">
+                        <Link
+                          href={`/curriculum/${p.unitId}`}
+                          className="block text-[11px] font-medium text-zinc-800 dark:text-zinc-200 leading-snug hover:underline"
+                        >
                           {p.lesson.title}
-                        </div>
-                        <div className="text-[10px] text-zinc-400 mt-0.5">
-                          {p.dayCount > 1 && `day ${dayIndex + 1} of ${p.dayCount}`}
-                          {p.dayCount > 1 && p.lesson.materialCount > 0 && " · "}
-                          {p.lesson.materialCount > 0 && `${p.lesson.materialCount} 📎`}
-                        </div>
+                          {p.dayCount > 1 && (
+                            <span className="font-normal text-zinc-400"> · day {dayIndex + 1} of {p.dayCount}</span>
+                          )}
+                        </Link>
+                        {(p.lesson.objectives ?? []).slice(0, 2).map((obj, i) => (
+                          <div
+                            key={i}
+                            className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-snug truncate"
+                            title={obj}
+                          >
+                            · {obj}
+                          </div>
+                        ))}
+                        {(p.lesson.materials ?? []).length > 0 && (
+                          <div className="mt-1 space-y-px">
+                            {(p.lesson.materials ?? []).map((m, i) =>
+                              m.driveWebUrl ? (
+                                <a
+                                  key={i}
+                                  href={m.driveWebUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block text-[10px] text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                  title={`${m.title} (${m.role})`}
+                                >
+                                  📎 {m.title}
+                                </a>
+                              ) : null,
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </Link>
+                    </div>
                   ))
                 )}
               </div>

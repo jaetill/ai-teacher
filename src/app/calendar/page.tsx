@@ -40,7 +40,14 @@ const GRADE_ROW_COLORS: Record<number, string> = {
 };
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
-type Lesson = { id: string; title: string; sortOrder: number; materialCount: number };
+type Lesson = {
+  id: string;
+  title: string;
+  sortOrder: number;
+  materialCount: number;
+  objectives?: string[] | null;
+  materials?: { title: string; driveWebUrl: string | null; role: string }[];
+};
 type Unit = {
   id: string;
   title: string;
@@ -434,23 +441,50 @@ export default function CalendarPage() {
                             </span>
                           ) : (
                             dayLessons.map(({ p, dayIndex }) => (
-                              <Link
+                              <div
                                 key={`${p.lesson.id}-${dayIndex}`}
-                                href={`/curriculum/${p.unitId}`}
-                                className={`block rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden hover:border-zinc-400 dark:hover:border-zinc-500 transition-colors ${p.overflow ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
+                                className={`rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden ${p.overflow ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
                               >
                                 <div className={`h-0.5 ${QUARTER_BARS[p.quarter] ?? "bg-zinc-300"}`} />
                                 <div className="px-1.5 py-1">
-                                  <div className="text-[10px] text-zinc-800 dark:text-zinc-200 leading-snug">
+                                  <Link
+                                    href={`/curriculum/${p.unitId}`}
+                                    className="block text-[10px] font-medium text-zinc-800 dark:text-zinc-200 leading-snug hover:underline"
+                                  >
                                     {p.lesson.title}
-                                  </div>
-                                  {p.dayCount > 1 && (
-                                    <div className="text-[9px] text-zinc-400">
-                                      day {dayIndex + 1}/{p.dayCount}
+                                    {p.dayCount > 1 && (
+                                      <span className="font-normal text-zinc-400"> · day {dayIndex + 1}/{p.dayCount}</span>
+                                    )}
+                                  </Link>
+                                  {(p.lesson.objectives ?? []).slice(0, 2).map((obj, i) => (
+                                    <div
+                                      key={i}
+                                      className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-snug truncate"
+                                      title={obj}
+                                    >
+                                      · {obj}
+                                    </div>
+                                  ))}
+                                  {(p.lesson.materials ?? []).length > 0 && (
+                                    <div className="mt-0.5 space-y-px">
+                                      {(p.lesson.materials ?? []).map((m, i) =>
+                                        m.driveWebUrl ? (
+                                          <a
+                                            key={i}
+                                            href={m.driveWebUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block text-[9px] text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                            title={`${m.title} (${m.role})`}
+                                          >
+                                            📎 {m.title}
+                                          </a>
+                                        ) : null,
+                                      )}
                                     </div>
                                   )}
                                 </div>
-                              </Link>
+                              </div>
                             ))
                           )}
                         </div>
