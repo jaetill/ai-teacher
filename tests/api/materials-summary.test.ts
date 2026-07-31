@@ -8,10 +8,13 @@ vi.mock("@/db", () => ({ db: { select: mockDbSelect } }));
 vi.mock("@/db/schema", () => ({
   materials: { title: {}, materialType: {}, driveFolderId: {}, createdAt: {} },
   driveFolders: { folderKey: {}, driveId: {}, ownerEmail: {} },
+  courses: { id: {}, grade: {}, ownerEmail: {} },
+  units: { courseId: {}, quarter: {} },
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn(),
   eq: vi.fn(),
+  inArray: vi.fn(),
   isNull: vi.fn(),
   or: vi.fn(),
   like: vi.fn(),
@@ -35,7 +38,12 @@ function chain(rows: unknown) {
   return c;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Selects after the primed ones (courses/units for the #604 built flags)
+  // default to empty — "nothing built".
+  mockDbSelect.mockImplementation(() => chain([]));
+});
 
 describe("GET /api/materials/summary", () => {
   it("401 when unauthenticated", async () => {
@@ -126,5 +134,42 @@ describe("GET /api/materials/summary", () => {
     const g7 = data.grades[0];
     // Summer is a pre-year bucket → sorts ahead of Q1.
     expect(g7.quarters.map((q: { quarter: string }) => q.quarter)).toEqual(["Summer", "Q1"]);
+  });
+
+  it("marks a built quarter, keeps its count, and drops its file ledger (#604)", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect
+      .mockReturnValueOnce(
+        chain([
+          {
+            title: "Giver Ch1",
+            materialType: "lesson",
+            folderKey: "grade_7_Q1_Lessons",
+            createdAt: 2,
+          },
+          {
+            title: "Outsiders",
+            materialType: "reading",
+            folderKey: "grade_7_Q3_Lessons",
+            createdAt: 1,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(chain([{ id: "c1", grade: 7 }])) // courses
+      .mockReturnValueOnce(chain([{ courseId: "c1", quarter: "Q1" }])); // units → Q1 built
+
+    const res = await GET();
+    const data = await res.json();
+    const g7 = data.grades[0];
+    expect(g7.courseId).toBe("c1");
+
+    const q1 = g7.quarters.find((q: { quarter: string }) => q.quarter === "Q1");
+    expect(q1.built).toBe(true);
+    expect(q1.total).toBe(1); // count survives for the done-state line
+    expect(q1.files).toEqual([]); // the ledger is retired for built quarters
+
+    const q3 = g7.quarters.find((q: { quarter: string }) => q.quarter === "Q3");
+    expect(q3.built).toBe(false);
+    expect(q3.files).toHaveLength(1); // staging view unchanged for unbuilt quarters
   });
 });
