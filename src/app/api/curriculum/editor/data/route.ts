@@ -151,6 +151,7 @@ export async function GET(req: Request) {
           sortOrder: l.sortOrder,
           durationMinutes: l.durationMinutes,
           source: l.source,
+          objectives: l.objectives ?? [],
           materialCount: mats.length,
           materials: mats.map((m) => ({
             attachmentId: m.attachmentId,

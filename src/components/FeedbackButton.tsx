@@ -150,6 +150,11 @@ export default function FeedbackButton() {
               maxWidth: 480,
               padding: "1rem",
               background: "white",
+              // The app's dark mode sets a light body text color, which used to
+              // inherit onto this white card -> pale-gray-on-white, unreadable.
+              // Pin the whole dialog to light colors regardless of theme.
+              color: "#1e293b",
+              colorScheme: "light",
               borderRadius: 8,
             }}
           >
@@ -161,7 +166,7 @@ export default function FeedbackButton() {
                 name="type"
                 required
                 defaultValue="bug"
-                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4 }}
+                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4, color: "#1e293b", background: "white" }}
               >
                 <option value="bug">Bug</option>
                 <option value="feature">Feature request</option>
@@ -177,7 +182,7 @@ export default function FeedbackButton() {
                 minLength={10}
                 maxLength={2000}
                 required
-                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4, fontFamily: "inherit" }}
+                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4, fontFamily: "inherit", color: "#1e293b", background: "white" }}
               />
             </label>
 
@@ -187,7 +192,7 @@ export default function FeedbackButton() {
                 type="email"
                 name="email"
                 placeholder="optional"
-                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4 }}
+                style={{ padding: ".5rem", border: "1px solid #cbd5e1", borderRadius: 4, color: "#1e293b", background: "white" }}
               />
             </label>
 
