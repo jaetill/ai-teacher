@@ -1,0 +1,1 @@
+ALTER TABLE "courses" ADD COLUMN "meeting_days" text DEFAULT '1,2,3,4,5' NOT NULL;
