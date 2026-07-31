@@ -69,7 +69,7 @@ export const DEFAULT_TERMS: GlossaryTerm[] = [
     term: "Section (class period)",
     category: "Curriculum structure",
     definition:
-      "One scheduled group of students taking the course — e.g. \"7th grade English, 3rd period.\" The same course can have several sections. The app plans at the course level today and doesn't track sections yet; this term is here so we agree on what it will mean when scheduling arrives.",
+      "One scheduled group of students taking the course — e.g. \"7th grade English, 3rd period.\" The same course can have several sections; each section is a row on the Calendar. For now sections share their course's plan and pacing — per-section drift comes later.",
   },
   {
     key: "pool",

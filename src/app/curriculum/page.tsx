@@ -395,6 +395,8 @@ export default function CurriculumPage() {
                 c.schoolYearId === null
             ).map((course) => {
               const quarters = ["Q1", "Q2", "Q3", "Q4"];
+              const yearLabel = (id: string | null) =>
+                years.find((y) => y.id === id)?.name ?? "captured";
 
               return (
                 <div key={course.id}>
@@ -408,6 +410,30 @@ export default function CurriculumPage() {
                       )}
                     </h2>
                     <div className="flex items-center gap-2 ml-3 shrink-0">
+                    {/* Fork a past year's course into the current planning year
+                        (product thesis: new year = fork + swaps). Clone is
+                        plain rows — deletable with the course Delete in the
+                        editor; the source year is never touched. */}
+                    {years.some((y) => y.isCurrent) &&
+                      course.schoolYearId !== null &&
+                      course.schoolYearId !== years.find((y) => y.isCurrent)?.id && (
+                        <button
+                          onClick={async () => {
+                            const yearName = years.find((y) => y.isCurrent)?.name ?? "current year";
+                            if (!confirm(`Copy Grade ${course.grade} into ${yearName} as a new, editable plan? The ${yearLabel(course.schoolYearId)} original is not changed, and the copy can be deleted from its editor.`)) return;
+                            const res = await fetch(`/api/courses/${course.id}/clone`, { method: "POST" });
+                            const data = await res.json().catch(() => null);
+                            if (!res.ok) {
+                              alert(data?.error ?? "Copy failed");
+                              return;
+                            }
+                            router.push(`/curriculum/edit/${data.courseId}`);
+                          }}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg px-3 py-1.5 transition-colors"
+                        >
+                          Copy to {years.find((y) => y.isCurrent)?.name}
+                        </button>
+                      )}
                     <Link
                       href={`/curriculum/calendar/${course.id}`}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
