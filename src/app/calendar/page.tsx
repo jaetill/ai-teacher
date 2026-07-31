@@ -26,18 +26,16 @@ import {
 } from "@/lib/schedule";
 import { useCopilot } from "@/components/CopilotProvider";
 
-const QUARTER_BARS: Record<string, string> = {
-  Summer: "bg-orange-400 dark:bg-orange-500",
-  Q1: "bg-blue-400 dark:bg-blue-500",
-  Q2: "bg-violet-400 dark:bg-violet-500",
-  Q3: "bg-teal-400 dark:bg-teal-500",
-  Q4: "bg-amber-400 dark:bg-amber-500",
-};
-const GRADE_ROW_COLORS: Record<number, string> = {
-  6: "border-l-teal-400 dark:border-l-teal-500",
-  7: "border-l-blue-400 dark:border-l-blue-500",
-  8: "border-l-violet-400 dark:border-l-violet-500",
-};
+// One colour per section (Atlas-style), so two sections of the same grade are
+// still tellable apart. Sized for the 6-section worst case Jason named.
+const SECTION_COLORS = [
+  { dot: "bg-blue-500", header: "bg-blue-600", ring: "border-blue-600" },
+  { dot: "bg-red-500", header: "bg-red-600", ring: "border-red-600" },
+  { dot: "bg-emerald-500", header: "bg-emerald-600", ring: "border-emerald-600" },
+  { dot: "bg-amber-500", header: "bg-amber-600", ring: "border-amber-600" },
+  { dot: "bg-violet-500", header: "bg-violet-600", ring: "border-violet-600" },
+  { dot: "bg-teal-500", header: "bg-teal-600", ring: "border-teal-600" },
+];
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 type Lesson = {
@@ -251,18 +249,16 @@ export default function CalendarPage() {
 
   // ── Rows: one per section; courses without sections get a course row ───
   const rows = useMemo(() => {
-    const out: { key: string; label: string; sub: string; course: Course; sectionId?: string }[] =
-      [];
+    const out: { key: string; label: string; course: Course; sectionId?: string }[] = [];
     for (const c of courses) {
       const secs = sectionsList.filter((s) => s.courseId === c.id);
       if (secs.length === 0) {
-        out.push({ key: c.id, label: `Grade ${c.grade}`, sub: "whole course", course: c });
+        out.push({ key: c.id, label: `Grade ${c.grade}`, course: c });
       } else {
         for (const s of secs) {
           out.push({
             key: s.id,
             label: `Grade ${c.grade} — ${s.name}`,
-            sub: s.period ? `Period ${s.period}` : "section",
             course: c,
             sectionId: s.id,
           });
@@ -271,6 +267,13 @@ export default function CalendarPage() {
     }
     return out;
   }, [courses, sectionsList]);
+
+  // Which rows are showing. Everything is checked by default; unchecking a
+  // section hides its row (Atlas's course checkboxes).
+  const [hiddenRows, setHiddenRows] = useState<Set<string>>(new Set());
+  const visibleRows = rows.filter((r) => !hiddenRows.has(r.key));
+  const colorFor = (key: string) =>
+    SECTION_COLORS[Math.max(0, rows.findIndex((r) => r.key === key)) % SECTION_COLORS.length];
 
   useEffect(() => {
     setPageContext(
@@ -343,7 +346,7 @@ export default function CalendarPage() {
         </div>
       </div>
       <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
-        One row per section.{" "}
+        One row per section — uncheck a section to hide it.{" "}
         {anyEstimated && (
           <span className="text-amber-600 dark:text-amber-400 font-medium">
             Quarter dates are an even-split estimate — set the real ones in{" "}
@@ -613,128 +616,177 @@ export default function CalendarPage() {
           .
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[1100px]">
-            {/* Column headers */}
-            <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: "11rem repeat(5, minmax(0, 1fr))" }}>
-              <div />
-              {weekDates.map((date, i) => (
-                <div
-                  key={date}
-                  className={`text-xs font-bold px-1 min-w-0 truncate ${
-                    date === todayIso
-                      ? "text-zinc-900 dark:text-zinc-50"
-                      : "text-zinc-500 dark:text-zinc-400"
-                  }`}
-                >
-                  {DAY_LABELS[i]} <span className="font-normal">{fmt(date)}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* One row per section */}
-            <div className="space-y-2">
+        <div className="flex gap-4 items-start">
+          {/* ── My sections: check to show, uncheck to hide ── */}
+          <aside className="w-44 shrink-0 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
+            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">My sections</h2>
+            <p className="text-[10px] text-zinc-400 mt-0.5 mb-2">
+              {visibleRows.length} of {rows.length} shown
+            </p>
+            <div className="space-y-1.5">
               {rows.map((row) => {
-                const cal = calendars.get(row.course.id);
+                const shown = !hiddenRows.has(row.key);
+                const color = colorFor(row.key);
                 return (
-                  <div
+                  <label
                     key={row.key}
-                    className="grid gap-2"
-                    style={{ gridTemplateColumns: "11rem repeat(5, minmax(0, 1fr))" }}
+                    className="flex items-center gap-2 cursor-pointer group"
                   >
-                    <div
-                      className={`rounded-lg border border-l-4 ${GRADE_ROW_COLORS[row.course.grade] ?? "border-l-zinc-400"} border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 flex flex-col justify-center`}
+                    <input
+                      type="checkbox"
+                      checked={shown}
+                      onChange={() =>
+                        setHiddenRows((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(row.key)) next.delete(row.key);
+                          else next.add(row.key);
+                          return next;
+                        })
+                      }
+                      className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-600 accent-zinc-900 dark:accent-zinc-100"
+                    />
+                    <span
+                      className={`text-[11px] leading-tight flex-1 ${
+                        shown
+                          ? "text-zinc-700 dark:text-zinc-300"
+                          : "text-zinc-400 dark:text-zinc-600"
+                      }`}
                     >
-                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-50 leading-tight">
-                        {row.label}
-                      </span>
-                      <span className="text-[10px] text-zinc-400">{row.sub}</span>
-                      <Link
-                        href={`/curriculum/calendar/${row.course.id}`}
-                        className="text-[10px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 mt-0.5"
-                      >
-                        Open →
-                      </Link>
-                    </div>
-                    {weekDates.map((date) => {
-                      const isMeeting = cal?.meetingDays.has(isoWeekday(date)) ?? false;
-                      const noSchoolLabel = cal?.noSchool.get(date);
-                      const dayLessons = cal?.byDate.get(date) ?? [];
-                      return (
-                        <div
-                          key={date}
-                          className={`rounded-lg border min-h-16 min-w-0 overflow-hidden p-1.5 space-y-1 ${
-                            date === todayIso
-                              ? "border-zinc-400 dark:border-zinc-500"
-                              : "border-zinc-200 dark:border-zinc-800"
-                          } ${!isMeeting || noSchoolLabel ? "bg-zinc-50/50 dark:bg-zinc-900/40" : "bg-white dark:bg-zinc-900"}`}
-                        >
-                          {noSchoolLabel ? (
-                            <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
-                              {noSchoolLabel}
-                            </span>
-                          ) : !isMeeting ? (
-                            <span className="text-[10px] italic text-zinc-300 dark:text-zinc-600">
-                              no class
-                            </span>
-                          ) : dayLessons.length === 0 ? (
-                            <span className="text-[10px] italic text-zinc-300 dark:text-zinc-600">
-                              —
-                            </span>
-                          ) : (
-                            dayLessons.map(({ p, dayIndex }) => (
-                              <div
-                                key={`${p.lesson.id}-${dayIndex}`}
-                                className={`rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden ${p.overflow ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
-                              >
-                                <div className={`h-0.5 ${QUARTER_BARS[p.quarter] ?? "bg-zinc-300"}`} />
-                                <div className="px-1.5 py-1">
-                                  <Link
-                                    href={`/curriculum/${p.unitId}`}
-                                    className="block text-[10px] font-medium text-zinc-800 dark:text-zinc-200 leading-snug hover:underline"
-                                  >
-                                    {p.lesson.title}
-                                    {p.dayCount > 1 && (
-                                      <span className="font-normal text-zinc-400"> · day {dayIndex + 1}/{p.dayCount}</span>
-                                    )}
-                                  </Link>
-                                  {(p.lesson.objectives ?? []).slice(0, 2).map((obj, i) => (
-                                    <div
-                                      key={i}
-                                      className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-snug line-clamp-2"
-                                      title={obj}
-                                    >
-                                      · {obj}
-                                    </div>
-                                  ))}
-                                  {(p.lesson.materials ?? []).length > 0 && (
-                                    <div className="mt-0.5 space-y-px">
-                                      {(p.lesson.materials ?? []).map((m, i) =>
-                                        m.driveWebUrl ? (
-                                          <a
-                                            key={i}
-                                            href={m.driveWebUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="block text-[9px] text-blue-600 dark:text-blue-400 hover:underline truncate"
-                                            title={`${m.title} (${m.role})`}
-                                          >
-                                            📎 {m.title}
-                                          </a>
-                                        ) : null,
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                      {row.label}
+                    </span>
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full shrink-0 ${color.dot} ${shown ? "" : "opacity-30"}`}
+                    />
+                  </label>
                 );
               })}
+            </div>
+          </aside>
+
+          {/* ── The week ── */}
+          <div className="flex-1 min-w-0 overflow-x-auto">
+            <div className="min-w-[820px]">
+              <div
+                className="grid gap-2 mb-2"
+                style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+              >
+                {weekDates.map((date, i) => (
+                  <div
+                    key={date}
+                    className={`text-center py-1.5 rounded-md min-w-0 ${
+                      date === todayIso
+                        ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50"
+                        : "text-zinc-500 dark:text-zinc-400"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">{DAY_LABELS[i]}</div>
+                    <div className="text-[10px] font-normal">{fmt(date)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {visibleRows.length === 0 ? (
+                <p className="text-xs text-zinc-400 py-6 text-center">
+                  No sections checked — pick one on the left.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {visibleRows.map((row) => {
+                    const cal = calendars.get(row.course.id);
+                    const color = colorFor(row.key);
+                    return (
+                      <div
+                        key={row.key}
+                        className="grid gap-2"
+                        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+                      >
+                        {weekDates.map((date) => {
+                          const isMeeting = cal?.meetingDays.has(isoWeekday(date)) ?? false;
+                          const noSchoolLabel = cal?.noSchool.get(date);
+                          const dayLessons = cal?.byDate.get(date) ?? [];
+
+                          // Empty states stay quiet: a thin placeholder keeps
+                          // the row aligned without shouting.
+                          if (noSchoolLabel || !isMeeting || dayLessons.length === 0) {
+                            return (
+                              <div
+                                key={date}
+                                className="rounded-lg border border-dashed border-zinc-200 dark:border-zinc-800 min-h-14 min-w-0 flex items-center justify-center"
+                              >
+                                <span className="text-[10px] italic text-zinc-300 dark:text-zinc-600 px-1 text-center">
+                                  {noSchoolLabel ?? (!isMeeting ? "no class" : "—")}
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div key={date} className="min-w-0 space-y-1.5">
+                              {dayLessons.map(({ p, dayIndex }) => (
+                                <div
+                                  key={`${p.lesson.id}-${dayIndex}`}
+                                  className={`rounded-lg border overflow-hidden ${color.ring} ${p.overflow ? "ring-1 ring-red-400" : ""}`}
+                                >
+                                  {/* Atlas-style header: which class, which unit */}
+                                  <div className={`${color.header} px-2 py-1`}>
+                                    <div className="text-[10px] font-bold text-white leading-tight truncate">
+                                      {row.label}
+                                    </div>
+                                    <div className="text-[10px] text-white/80 leading-tight truncate">
+                                      {p.unitTitle}
+                                    </div>
+                                  </div>
+                                  <div className="px-2 py-1.5 bg-white dark:bg-zinc-900">
+                                    <Link
+                                      href={`/curriculum/${p.unitId}`}
+                                      className="block text-[11px] font-medium text-zinc-900 dark:text-zinc-100 leading-snug hover:underline"
+                                    >
+                                      {p.lesson.title}
+                                      {p.dayCount > 1 && (
+                                        <span className="font-normal text-zinc-400">
+                                          {" "}
+                                          · day {dayIndex + 1}/{p.dayCount}
+                                        </span>
+                                      )}
+                                    </Link>
+                                    {(p.lesson.objectives ?? []).slice(0, 2).map((obj, i) => (
+                                      <div
+                                        key={i}
+                                        className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-snug line-clamp-2 mt-0.5"
+                                        title={obj}
+                                      >
+                                        · {obj}
+                                      </div>
+                                    ))}
+                                    {(p.lesson.materials ?? []).length > 0 && (
+                                      <div className="mt-1 space-y-px">
+                                        {(p.lesson.materials ?? []).map((m, i) =>
+                                          m.driveWebUrl ? (
+                                            <a
+                                              key={i}
+                                              href={m.driveWebUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="block text-[10px] text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                              title={`${m.title} (${m.role})`}
+                                            >
+                                              📎 {m.title}
+                                            </a>
+                                          ) : null,
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -742,8 +794,8 @@ export default function CalendarPage() {
 
       <p className="text-[11px] text-zinc-400 mt-4">
         Sections share their course&apos;s plan for now — per-section pacing (a section falling
-        behind, its own snow days) comes with actual-vs-planned tracking. Snow days and quarter
-        dates are set on each course&apos;s calendar (Open →).
+        behind, its own snow days) comes with actual-vs-planned tracking. School year and
+        quarter dates are set above; which weekdays a class meets is on its course calendar.
         {years.length > 0 && ""}
       </p>
     </div>
