@@ -84,6 +84,9 @@ export async function POST(req: Request) {
       driveWebUrl: driveFile.webViewLink!,
       driveFolderId: folder.driveId,
       source: "human",
+      // #554: stamp ownership at insert — read paths can then scope directly
+      // instead of inferring through folder keys.
+      ownerEmail,
     })
     .returning({ id: materials.id });
 

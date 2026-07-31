@@ -314,6 +314,10 @@ describe("POST /api/drive/import", () => {
     );
 
     expect(valuesSpy).toHaveBeenCalled();
-    expect(valuesSpy.mock.calls[0][0]).toMatchObject({ sourceUnit: "The Giver" });
+    expect(valuesSpy.mock.calls[0][0]).toMatchObject({
+      sourceUnit: "The Giver",
+      // #537: every insert stamps the caller's ownership
+      ownerEmail: "teacher@school.edu",
+    });
   });
 });

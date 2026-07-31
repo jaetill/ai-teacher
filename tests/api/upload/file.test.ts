@@ -164,3 +164,26 @@ describe("POST /api/upload/file", () => {
     expect(mockEq.mock.calls.some(([, v]) => v === "teacher-a@school.edu")).toBe(false);
   });
 });
+
+describe("ownership stamping (#554)", () => {
+  it("stamps the caller's ownerEmail on the materials insert", async () => {
+    mockGetServerSession.mockResolvedValueOnce({
+      accessToken: "tok",
+      user: { email: "teacher-a@school.edu" },
+    });
+    mockDbSelect.mockReturnValueOnce(makeSelectChain([{ driveId: "folder-a" }]));
+    const valuesSpy = vi.fn();
+    valuesSpy.mockReturnValue({
+      returning: () => Promise.resolve([{ id: "mat-9" }]),
+    });
+    mockDbInsert.mockReturnValueOnce({ values: valuesSpy });
+
+    const req = { formData: () => Promise.resolve(makeFormData()) } as unknown as Request;
+    await POST(req);
+
+    expect(valuesSpy.mock.calls[0][0]).toMatchObject({
+      source: "human",
+      ownerEmail: "teacher-a@school.edu",
+    });
+  });
+});

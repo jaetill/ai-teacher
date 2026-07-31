@@ -215,6 +215,8 @@ export async function POST(req: Request) {
       driveFolderId: folderId,
       description: `AI-generated ${materialType} draft accepted from a Copilot session.`,
       source: "ai",
+      // #537/#554: every materials insert path stamps ownership.
+      ownerEmail,
     })
     .returning({ id: materials.id });
 

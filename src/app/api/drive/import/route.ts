@@ -142,6 +142,8 @@ export async function POST(req: Request) {
         driveFolderId: folder.driveId,
         sourceUnit: file.sourceUnit?.trim() || null,
         source: "human",
+        // #537: stamp ownership at insert.
+        ownerEmail,
       });
 
       results.push({
