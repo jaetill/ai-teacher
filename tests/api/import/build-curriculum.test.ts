@@ -159,6 +159,8 @@ function setupMocks({
 
   mockDbSelect.mockReset();
   mockDbSelect
+    .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+    .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
     .mockReturnValueOnce(makeChain([FOLDER])) // 1. driveFolders
     .mockReturnValueOnce(makeChain([MATERIAL])) // 2. materials
     .mockReturnValueOnce(makeChain([STANDARD])) // 3. standards
@@ -327,6 +329,8 @@ describe("POST /api/import/build-curriculum", () => {
 
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(
           makeChain([
@@ -371,6 +375,8 @@ describe("POST /api/import/build-curriculum", () => {
       // Fallback grouping (no sourceUnit) keeps this focused on the reference plumbing.
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
@@ -423,8 +429,9 @@ describe("POST /api/import/build-curriculum", () => {
       const body = await res.json();
       expect(body.unitCount).toBe(1);
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
-      // 6 selects: folders, materials, standards, schoolYears, courses, existingUnits
-      expect(mockDbSelect).toHaveBeenCalledTimes(6);
+      // 8 selects: early guard (schoolYears, course) + folders, materials,
+      // standards, schoolYears, courses, existingUnits
+      expect(mockDbSelect).toHaveBeenCalledTimes(8);
       // No courses insert — units, unitStandards, lessons, lessonStandards, materialAttachments
       expect(mockDbInsert).toHaveBeenCalledTimes(5);
     });
@@ -440,7 +447,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT should NOT have been called — 6 selects total
       // (folders, materials, standards, schoolYears, courses select-first, existingUnits)
-      expect(mockDbSelect).toHaveBeenCalledTimes(6);
+      expect(mockDbSelect).toHaveBeenCalledTimes(8); // +2 for the early guard (#611)
     });
 
     it("scopes DB lookups by the session ownerEmail (#142)", async () => {
@@ -468,7 +475,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.unitCount).toBe(1);
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT must have been called — 7 selects total
-      expect(mockDbSelect).toHaveBeenCalledTimes(7);
+      expect(mockDbSelect).toHaveBeenCalledTimes(9); // +2 for the early guard (#611)
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
@@ -478,6 +485,8 @@ describe("POST /api/import/build-curriculum", () => {
 
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
@@ -507,6 +516,8 @@ describe("POST /api/import/build-curriculum", () => {
     it("stamps ownerEmail on course INSERT so IDOR cannot occur", async () => {
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
@@ -588,6 +599,8 @@ describe("POST /api/import/build-curriculum", () => {
       });
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
@@ -631,6 +644,8 @@ describe("POST /api/import/build-curriculum", () => {
     it("refuses to duplicate an already-built quarter and inserts nothing", async () => {
       mockDbSelect.mockReset();
       mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. early guard (#611): schoolYears
+        .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
         .mockReturnValueOnce(makeChain([STANDARD]))
@@ -652,8 +667,30 @@ describe("POST /api/import/build-curriculum", () => {
       expect(mockDbInsert).not.toHaveBeenCalled();
     });
 
+    it("early guard (#611): refuses BEFORE the AI call when the quarter is already built", async () => {
+      mockMessagesCreate.mockClear();
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 0a. schoolYears
+        .mockReturnValueOnce(makeChain([{ id: "c1" }])) // 0b. course found
+        .mockReturnValueOnce(makeChain([{ id: "u-old" }])); // 0c. quarter already built
+      mockDbInsert.mockReset();
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.alreadyBuilt).toBe(true);
+      expect(body.courseId).toBe("c1");
+      expect(body.unitCount).toBe(1);
+      // What #611 buys: the expensive model call never happens.
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+      expect(mockDbInsert).not.toHaveBeenCalled();
+    });
+
     it("rebuild:true clears the quarter's existing units, then builds fresh", async () => {
       mockDbSelect.mockReset();
+      // rebuild:true bypasses the early idempotency guard (#611) — no 0a/0b rows.
       mockDbSelect
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))

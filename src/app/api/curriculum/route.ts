@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth";
 import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer. You create detailed, practical unit plans for grades 6-8 English Language Arts.
 
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
 ${standards}${context ? `\n\n**Additional Context:**\n${context}` : ""}`;
 
   const stream = getAnthropic().messages.stream({
-    model: "claude-opus-4-8",
+    model: MODELS.reasoningLarge,
     max_tokens: 64000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,

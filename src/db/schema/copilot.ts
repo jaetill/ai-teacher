@@ -65,7 +65,7 @@ export const copilotMessages = pgTable(
     content: text("content").notNull(),
     sortOrder: smallint("sort_order").notNull(),
     // For assistant messages: track generation metadata
-    model: text("model"), // 'claude-opus-4-6', etc.
+    model: text("model"), // an Anthropic model ID (see src/lib/models.ts)
     tokenCountIn: integer("token_count_in"),
     tokenCountOut: integer("token_count_out"),
     createdAt: timestamp("created_at", { withTimezone: true })

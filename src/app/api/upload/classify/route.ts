@@ -7,6 +7,8 @@ import { getAccessToken, getUserEmail } from "@/lib/auth-helpers";
 import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
+import { parseAiJson } from "@/lib/parse-ai-json";
 
 // Caps on the classification request. Every other array-accepting route
 // validates its payload before interpolating into a prompt (#536, #477); this
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
     : "";
 
   const message = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
+    model: MODELS.structured,
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [
@@ -97,10 +99,11 @@ export async function POST(req: Request) {
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
 
-  try {
-    const classifications = JSON.parse(text);
+  const classifications = parseAiJson<unknown>(text);
+  if (classifications !== null) {
     return Response.json({ classifications });
-  } catch {
+  }
+  {
     console.error(
       "[classify] unparseable AI response:",
       text.slice(0, 500),

@@ -12,6 +12,7 @@ import { getAnthropic } from "@/lib/anthropic";
 import { DRAFT_SYSTEM_INSTRUCTIONS } from "@/lib/draft-protocol";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson, UUID_RE } from "@/lib/api-utils";
+import { MODELS } from "@/lib/models";
 import { db } from "@/db";
 import {
   copilotConversations,
@@ -325,7 +326,7 @@ export async function POST(request: Request) {
     : `${BASE_SYSTEM_PROMPT}${curriculumContext}`;
 
   const stream = getAnthropic().messages.stream({
-    model: "claude-opus-4-6",
+    model: MODELS.reasoning,
     max_tokens: 64000,
     thinking: { type: "adaptive" },
     system,
@@ -374,7 +375,7 @@ export async function POST(request: Request) {
             role: "assistant",
             content: assistantText,
             sortOrder: messageIndex + 1,
-            model: "claude-opus-4-6",
+            model: MODELS.reasoning,
           });
 
           await db

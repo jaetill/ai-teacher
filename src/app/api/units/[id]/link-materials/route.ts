@@ -19,6 +19,8 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-ownership";
 import { normalizeMaterialRole } from "@/lib/material-roles";
+import { MODELS } from "@/lib/models";
+import { parseAiJson } from "@/lib/parse-ai-json";
 
 
 export async function POST(
@@ -129,7 +131,7 @@ export async function POST(
     .join("\n");
 
   const message = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
+    model: MODELS.structured,
     max_tokens: 4096,
     system: `You link teaching materials (files) to the lessons that use them.
 
@@ -163,14 +165,13 @@ ${materialList}`,
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
 
-  let mappings: Array<{
-    materialTitle: string;
-    links: Array<{ lessonSortOrder: number; role: string }>;
-  }>;
-
-  try {
-    mappings = JSON.parse(text);
-  } catch {
+  const mappings = parseAiJson<
+    Array<{
+      materialTitle: string;
+      links: Array<{ lessonSortOrder: number; role: string }>;
+    }>
+  >(text);
+  if (mappings === null) {
     return Response.json(
       { error: "Failed to parse AI response", raw: text },
       { status: 500 }

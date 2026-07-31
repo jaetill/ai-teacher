@@ -23,6 +23,7 @@ import { getAccessToken } from "@/lib/auth-helpers";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { getAnthropic } from "@/lib/anthropic";
 import { getDriveClient } from "@/lib/drive";
+import { MODELS } from "@/lib/models";
 import { db } from "@/db";
 import { courses, driveFolders, materials, units } from "@/db/schema";
 import { and, eq, inArray, isNull, or, sql as dsql } from "drizzle-orm";
@@ -32,7 +33,7 @@ export const maxDuration = 60;
 
 const BATCH_SIZE = 5;
 const MAX_CONTENT_CHARS = 12_000;
-const SUMMARIZER_MODEL = "claude-haiku-4-5-20251001";
+const SUMMARIZER_MODEL = MODELS.summarizer;
 
 const GOOGLE_DOC = "application/vnd.google-apps.document";
 const DOCX =

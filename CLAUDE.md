@@ -112,14 +112,18 @@ This project adopts the Agentic Dev Environment platform (initial PR 2026-05-13)
 
 Several agent prompts use AWS/Lambda examples copied verbatim from game-night-pwa. They function for ai-teacher's Vercel/Neon stack but the *illustrative* content is AWS-flavored. Adapting the examples for Next.js is a follow-up — not a blocker for use.
 
-### What's NOT installed yet
+### Platform phase status (refreshed 2026-07-31, #625)
 
-Phase 3 (quality gates), Phase 4 (CI workflows), Phase 6 (IaC retrofit), Phase 7 (user-feedback API route) — all deferred. See `docs/adr/0001-platform-adoption.md` for the deferral reasons and what each phase needs from Jason.
+See `docs/adr/0001-platform-adoption.md` for what each phase is.
 
-Active gaps before the platform is "fully on":
-- ~~Phase 3~~ — DONE (Prettier, vitest, Playwright, husky, commitlint, lint-staged,
-  gitleaks all installed and wired; `src/` is prettier-ignored and converges via
-  lint-staged on touch)
-- Phase 4 — add `.github/workflows/ci.yml` + the platform agent workflows; configure repo secrets (`CLAUDE_CODE_OAUTH_TOKEN`, `SENTRY_*`, etc.); enable branch protection on `main`
-
-Each phase is its own PR.
+- ~~Phase 3 (quality gates)~~ — DONE (Prettier, vitest, Playwright, husky,
+  commitlint, lint-staged, gitleaks all installed and wired; `src/` is
+  prettier-ignored and converges via lint-staged on touch)
+- Phase 4 (CI) — MOSTLY DONE: CI status checks run on PRs and are required by
+  branch protection on `main` (6 required checks). Remaining: the
+  release-please/Vercel auto-deploy quirk (#619 — merges usually need an
+  empty-commit nudge to deploy) and formalizing the pipeline as CI-gated
+  deploy (#618).
+- Phase 6 (IaC retrofit) — deferred; not needed on Vercel/Neon today.
+- ~~Phase 7 (user-feedback API route)~~ — DONE (feedback widget + Postgres
+  rate-limited API route, ADR-0046).
