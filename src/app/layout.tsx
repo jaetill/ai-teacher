@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SessionProvider from "@/components/SessionProvider";
 import NavBar from "@/components/NavBar";
+import SessionExpiredBanner from "@/components/SessionExpiredBanner";
 import CopilotProvider from "@/components/CopilotProvider";
 import CopilotPanel from "@/components/CopilotPanel";
 import MainContent from "@/components/MainContent";
@@ -37,6 +38,7 @@ export default function RootLayout({
         <SessionProvider>
           <CopilotProvider>
             <NavBar />
+            <SessionExpiredBanner />
             <MainContent>{children}</MainContent>
             <CopilotPanel />
           </CopilotProvider>
