@@ -1,8 +1,13 @@
 // GET /api/schedule/[courseId] — calendar inputs for a course: its school
 //                                year, quarter date spans (terms), no-school
 //                                days, and meeting days.
-// PUT /api/schedule/[courseId] — save those inputs (upsert quarter terms,
-//                                replace no-school days, update meeting days).
+// PUT /api/schedule/[courseId] — save the COURSE-level input: which days this
+//                                class meets. Quarter dates and no-school days
+//                                belong to the school year and moved to
+//                                /api/school-year (Jason 2026-07-31) so the
+//                                teacher sets them once instead of per course
+//                                — they were already stored per year, which
+//                                made per-course editing quietly cross-wired.
 //
 // Design (#646 first slice): the app stores only the INPUT streams — quarter
 // spans, meeting days, no-school days. Lesson dates are derived client-side
@@ -18,9 +23,6 @@ import { db } from "@/db";
 import { courses, schoolYears, terms } from "@/db/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { isUuid, readJson } from "@/lib/api-utils";
-
-const QUARTER_NAMES = ["Summer", "Q1", "Q2", "Q3", "Q4"];
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function loadOwnedCourse(courseId: string, ownerEmail: string) {
   const [course] = await db
@@ -106,8 +108,6 @@ export async function GET(
 
 type PutBody = {
   meetingDays?: string;
-  quarterSpans?: { name: string; startDate: string; endDate: string }[];
-  noSchoolDays?: { date: string; label?: string }[];
 };
 
 export async function PUT(
@@ -127,90 +127,23 @@ export async function PUT(
   if (!course) {
     return Response.json({ error: "Course not found" }, { status: 404 });
   }
-  if (!course.schoolYearId) {
-    return Response.json(
-      { error: "Course has no school year assigned; assign one first." },
-      { status: 400 },
-    );
-  }
 
   const body = await readJson<PutBody>(req);
   if (!body) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-
-  // ── Validate ───
-  const spans = body.quarterSpans ?? [];
-  if (spans.length > 10) {
-    return Response.json({ error: "Too many quarter spans" }, { status: 400 });
+  if (body.meetingDays === undefined) {
+    return Response.json({ error: "meetingDays is required" }, { status: 400 });
   }
-  for (const s of spans) {
-    if (
-      !QUARTER_NAMES.includes(s.name) ||
-      !ISO_DATE.test(s.startDate ?? "") ||
-      !ISO_DATE.test(s.endDate ?? "") ||
-      s.startDate > s.endDate
-    ) {
-      return Response.json({ error: `Invalid quarter span: ${s.name}` }, { status: 400 });
-    }
-  }
-  const noSchool = body.noSchoolDays ?? [];
-  if (noSchool.length > 120) {
-    return Response.json({ error: "Too many no-school days" }, { status: 400 });
-  }
-  for (const d of noSchool) {
-    if (!ISO_DATE.test(d.date ?? "")) {
-      return Response.json({ error: `Invalid no-school date` }, { status: 400 });
-    }
-  }
-  if (body.meetingDays !== undefined) {
-    const days = body.meetingDays.split(",").map((x) => parseInt(x.trim(), 10));
-    if (days.length === 0 || days.some((n) => !(n >= 1 && n <= 7))) {
-      return Response.json({ error: "Invalid meetingDays" }, { status: 400 });
-    }
+  const days = body.meetingDays.split(",").map((x) => parseInt(x.trim(), 10));
+  if (days.length === 0 || days.some((n) => !(n >= 1 && n <= 7))) {
+    return Response.json({ error: "Invalid meetingDays" }, { status: 400 });
   }
 
-  // ── Apply: replace-by-type keeps this simple and idempotent ───
-  if (body.meetingDays !== undefined) {
-    await db
-      .update(courses)
-      .set({ meetingDays: body.meetingDays })
-      .where(eq(courses.id, courseId));
-  }
-  if (body.quarterSpans !== undefined) {
-    await db
-      .delete(terms)
-      .where(and(eq(terms.schoolYearId, course.schoolYearId), eq(terms.termType, "quarter")));
-    if (spans.length > 0) {
-      await db.insert(terms).values(
-        spans.map((s, i) => ({
-          schoolYearId: course.schoolYearId!,
-          termType: "quarter",
-          name: s.name,
-          sortOrder: i,
-          startDate: s.startDate,
-          endDate: s.endDate,
-        })),
-      );
-    }
-  }
-  if (body.noSchoolDays !== undefined) {
-    await db
-      .delete(terms)
-      .where(and(eq(terms.schoolYearId, course.schoolYearId), eq(terms.termType, "no_school")));
-    if (noSchool.length > 0) {
-      await db.insert(terms).values(
-        noSchool.map((d, i) => ({
-          schoolYearId: course.schoolYearId!,
-          termType: "no_school",
-          name: (d.label ?? "No school").slice(0, 120),
-          sortOrder: i,
-          startDate: d.date,
-          endDate: d.date,
-        })),
-      );
-    }
-  }
+  await db
+    .update(courses)
+    .set({ meetingDays: body.meetingDays })
+    .where(eq(courses.id, courseId));
 
   return Response.json({ ok: true });
 }

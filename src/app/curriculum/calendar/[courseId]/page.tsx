@@ -77,7 +77,6 @@ export default function CalendarPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [newNoSchool, setNewNoSchool] = useState({ date: "", label: "Snow day" });
 
   // ── Viewport ───
   const [viewMonday, setViewMonday] = useState<string>(() => weekStart(new Date().toISOString().slice(0, 10)));
@@ -159,10 +158,13 @@ export default function CalendarPage() {
     setSaving(true);
     setSaveMsg(null);
     try {
+      // Course-level only: quarter dates and no-school days belong to the
+      // school year now (Calendar tab → School year dates), so one edit
+      // covers every course and section instead of N identical edits.
       const res = await fetch(`/api/schedule/${courseId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingDays: meetingDaysCsv, quarterSpans, noSchoolDays }),
+        body: JSON.stringify({ meetingDays: meetingDaysCsv }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -175,7 +177,7 @@ export default function CalendarPage() {
     } finally {
       setSaving(false);
     }
-  }, [courseId, meetingDaysCsv, quarterSpans, noSchoolDays]);
+  }, [courseId, meetingDaysCsv]);
 
   if (loading) {
     return (
@@ -213,9 +215,29 @@ export default function CalendarPage() {
     setMeetingDaysCsv([...next].sort().join(","));
   };
 
+  // A snow day closes the school, so it is a school-YEAR fact, not a course
+  // one: persist it straight to /api/school-year and every course/section
+  // recomputes. (A single section losing a day is a different thing — #669.)
+  async function persistNoSchool(next: NoSchoolDay[]) {
+    setNoSchoolDays(next);
+    try {
+      const res = await fetch("/api/school-year", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noSchoolDays: next }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setSaveMsg("School-wide day saved.");
+    } catch {
+      setSaveMsg("Could not save that day — try the Calendar tab.");
+    }
+  }
+
   const markNoSchool = (date: string, label: string) => {
     if (noSchoolSet.has(date)) return;
-    setNoSchoolDays((prev) => [...prev, { date, label }].sort((a, b) => a.date.localeCompare(b.date)));
+    persistNoSchool(
+      [...noSchoolDays, { date, label }].sort((a, b) => a.date.localeCompare(b.date)),
+    );
   };
 
   return (
@@ -259,34 +281,28 @@ export default function CalendarPage() {
       {settingsOpen && (
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-5 space-y-4">
           <div>
-            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Quarter dates</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {quarterSpans.map((q, i) => (
-                <div key={q.name} className="text-xs space-y-1">
-                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${QUARTER_BADGES[q.name] ?? ""}`}>
-                    {q.name}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="date"
-                      value={q.startDate}
-                      onChange={(e) =>
-                        setQuarterSpans((prev) => prev.map((p, j) => (j === i ? { ...p, startDate: e.target.value } : p)))
-                      }
-                      className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
-                    />
-                    <span className="text-zinc-400">–</span>
-                    <input
-                      type="date"
-                      value={q.endDate}
-                      onChange={(e) =>
-                        setQuarterSpans((prev) => prev.map((p, j) => (j === i ? { ...p, endDate: e.target.value } : p)))
-                      }
-                      className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
-                    />
-                  </div>
-                </div>
+            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+              Quarter dates{" "}
+              <span className="font-normal text-zinc-400">
+                — set for the whole school year on the{" "}
+                <Link href="/calendar" className="underline">
+                  Calendar tab
+                </Link>
+              </span>
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {quarterSpans.map((q) => (
+                <span
+                  key={q.name}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] ${QUARTER_BADGES[q.name] ?? "bg-zinc-100 text-zinc-600"}`}
+                >
+                  <span className="font-bold uppercase tracking-wide">{q.name}</span>
+                  {fmt(q.startDate)} – {fmt(q.endDate)}
+                </span>
               ))}
+              {quarterSpans.length === 0 && (
+                <span className="text-[11px] text-zinc-400">no quarter dates set yet</span>
+              )}
             </div>
           </div>
 
@@ -312,48 +328,21 @@ export default function CalendarPage() {
 
             <div className="flex-1 min-w-64">
               <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-                No-school days <span className="font-normal text-zinc-400">(holidays, snow days, assemblies)</span>
+                No-school days{" "}
+                <span className="font-normal text-zinc-400">
+                  — school-wide, edit on the{" "}
+                  <Link href="/calendar" className="underline">
+                    Calendar tab
+                  </Link>
+                </span>
               </h2>
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  type="date"
-                  value={newNoSchool.date}
-                  onChange={(e) => setNewNoSchool((p) => ({ ...p, date: e.target.value }))}
-                  className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
-                />
-                <input
-                  type="text"
-                  value={newNoSchool.label}
-                  onChange={(e) => setNewNoSchool((p) => ({ ...p, label: e.target.value }))}
-                  placeholder="Label"
-                  className="w-32 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-700 dark:text-zinc-300"
-                />
-                <button
-                  onClick={() => {
-                    if (newNoSchool.date) {
-                      markNoSchool(newNoSchool.date, newNoSchool.label || "No school");
-                      setNewNoSchool({ date: "", label: "Snow day" });
-                    }
-                  }}
-                  className="text-[11px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded px-2.5 py-1"
-                >
-                  Add
-                </button>
-              </div>
               <div className="flex flex-wrap gap-1.5">
                 {noSchoolDays.map((d) => (
                   <span
                     key={d.date}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-2 py-0.5 text-[11px] text-red-700 dark:text-red-300"
+                    className="inline-flex items-center rounded-full bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-2 py-0.5 text-[11px] text-red-700 dark:text-red-300"
                   >
                     {fmt(d.date)} · {d.label}
-                    <button
-                      onClick={() => setNoSchoolDays((prev) => prev.filter((x) => x.date !== d.date))}
-                      className="hover:text-red-900 dark:hover:text-red-100"
-                      aria-label={`Remove ${d.label}`}
-                    >
-                      ×
-                    </button>
                   </span>
                 ))}
                 {noSchoolDays.length === 0 && (
@@ -426,7 +415,7 @@ export default function CalendarPage() {
                 {isMeeting && !noSchoolLabel && (
                   <button
                     onClick={() => markNoSchool(date, "Snow day")}
-                    title="Mark as no school (snow day) — lessons after this shift forward"
+                    title="Mark as no school (snow day) — school-wide; lessons after this shift forward in every section"
                     className="text-[10px] text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                   >
                     ❄
@@ -438,7 +427,7 @@ export default function CalendarPage() {
                   <div className="text-[11px] font-medium text-red-600 dark:text-red-400">
                     {noSchoolLabel}
                     <button
-                      onClick={() => setNoSchoolDays((prev) => prev.filter((x) => x.date !== date))}
+                      onClick={() => persistNoSchool(noSchoolDays.filter((x) => x.date !== date))}
                       className="ml-1.5 text-[10px] text-zinc-400 hover:text-zinc-600 underline"
                     >
                       undo
