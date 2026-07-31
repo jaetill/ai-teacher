@@ -9,8 +9,14 @@ type QuarterSummary = {
   total: number;
   categories: Record<string, number>;
   files: FileRow[];
+  built: boolean;
 };
-type GradeSummary = { grade: number; total: number; quarters: QuarterSummary[] };
+type GradeSummary = {
+  grade: number;
+  total: number;
+  quarters: QuarterSummary[];
+  courseId: string | null;
+};
 
 const ALL_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"];
 
@@ -130,7 +136,8 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
         <div>
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Imported so far</h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            What&apos;s been imported and for which quarter. Empty quarters still need files.
+            Staging for quarters that aren&apos;t built yet. Built quarters live in your
+            curriculum — their files are in the content pool.
           </p>
         </div>
         {grades.length > 1 && (
@@ -160,7 +167,43 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
           const q = byQuarter.get(qk);
           const total = q?.total ?? 0;
           const isEmpty = total === 0;
+          const isBuilt = q?.built ?? false;
           const isOpen = expanded === qk;
+
+          // #604: a built quarter has graduated — its files live in the
+          // curriculum and the pool. Show a quiet done-state (so the import
+          // history isn't amnesiac), not the staging ledger.
+          if (isBuilt) {
+            return (
+              <div
+                key={qk}
+                className={`rounded-lg border border-l-4 ${QUARTER_STYLES[qk]} border-zinc-200 dark:border-zinc-800 bg-transparent p-3`}
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    {qk}
+                  </span>
+                  <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    ✓ built
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
+                  {total} file{total === 1 ? "" : "s"} in curriculum
+                </p>
+                <button
+                  onClick={() =>
+                    router.push(
+                      grade.courseId ? `/curriculum/edit/${grade.courseId}?quarter=${qk}` : "/curriculum",
+                    )
+                  }
+                  className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                >
+                  Open →
+                </button>
+              </div>
+            );
+          }
+
           return (
             <div
               key={qk}

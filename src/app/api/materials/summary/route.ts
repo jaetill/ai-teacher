@@ -8,9 +8,9 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { materials, driveFolders } from "@/db/schema";
+import { courses, materials, driveFolders, units } from "@/db/schema";
 import { ownedMaterials } from "@/lib/material-scope";
-import { and, eq, isNull, or, like, desc } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, like, desc } from "drizzle-orm";
 
 type FileRow = { title: string; materialType: string; category: string };
 type QuarterSummary = {
@@ -18,8 +18,17 @@ type QuarterSummary = {
   total: number;
   categories: Record<string, number>;
   files: FileRow[];
+  // #604: a built quarter graduates off the staging view — the client shows a
+  // quiet done-state instead of the file ledger.
+  built: boolean;
 };
-type GradeSummary = { grade: number; total: number; quarters: QuarterSummary[] };
+type GradeSummary = {
+  grade: number;
+  total: number;
+  quarters: QuarterSummary[];
+  // Course to open when a built quarter's link is clicked (current-year first).
+  courseId: string | null;
+};
 
 const QUARTER_ORDER = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"];
 
@@ -51,6 +60,32 @@ export async function GET() {
     )
     .orderBy(desc(materials.createdAt));
 
+  // #604: which grade+quarter combos are already built (any owned course of
+  // that grade has units in that quarter). Built quarters graduate off the
+  // import staging view; their files live in the curriculum and the pool.
+  const ownCourses = await db
+    .select({ id: courses.id, grade: courses.grade })
+    .from(courses)
+    .where(eq(courses.ownerEmail, ownerEmail));
+  const courseById = new Map(ownCourses.map((c) => [c.id, c.grade]));
+  const builtSet = new Set<string>(); // "grade:quarter"
+  if (ownCourses.length > 0) {
+    const unitRows = await db
+      .select({ courseId: units.courseId, quarter: units.quarter })
+      .from(units)
+      .where(inArray(units.courseId, ownCourses.map((c) => c.id)));
+    for (const u of unitRows) {
+      const g = courseById.get(u.courseId);
+      if (g != null && u.quarter) builtSet.add(`${g}:${u.quarter}`);
+    }
+  }
+  const courseIdByGrade = new Map<number, string>();
+  for (const c of ownCourses) {
+    // Last write wins is fine here; any course of the grade opens the editor,
+    // which is year-aware on its own.
+    courseIdByGrade.set(c.grade, c.id);
+  }
+
   // folderKey shape: grade_<n>_<quarter>[_<category>]
   const grades = new Map<number, GradeSummary>();
 
@@ -63,19 +98,29 @@ export async function GET() {
 
     let g = grades.get(grade);
     if (!g) {
-      g = { grade, total: 0, quarters: [] };
+      g = { grade, total: 0, quarters: [], courseId: courseIdByGrade.get(grade) ?? null };
       grades.set(grade, g);
     }
     g.total += 1;
 
     let q = g.quarters.find((x) => x.quarter === quarter);
     if (!q) {
-      q = { quarter, total: 0, categories: {}, files: [] };
+      q = {
+        quarter,
+        total: 0,
+        categories: {},
+        files: [],
+        built: builtSet.has(`${grade}:${quarter}`),
+      };
       g.quarters.push(q);
     }
     q.total += 1;
     q.categories[category] = (q.categories[category] ?? 0) + 1;
-    q.files.push({ title: r.title, materialType: r.materialType, category });
+    // #604: built quarters keep counts (for the done-state line) but no file
+    // ledger — those files live in the curriculum and the pool now.
+    if (!q.built) {
+      q.files.push({ title: r.title, materialType: r.materialType, category });
+    }
   }
 
   const result = [...grades.values()]
