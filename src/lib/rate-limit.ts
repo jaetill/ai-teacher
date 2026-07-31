@@ -33,6 +33,21 @@ export async function checkRateLimit(
     })
     .returning({ count: rateLimits.count, windowStart: rateLimits.windowStart });
 
+  // Opportunistic cleanup (#623): rate-limit rows are per-key and otherwise
+  // live forever. Roughly 1-in-64 checks sweeps rows whose window ended more
+  // than a day ago. Cheap, needs no cron, and race-free: a concurrently-used
+  // key is simply re-inserted by its own next upsert. Failures are swallowed —
+  // cleanup must never affect the rate-limit answer.
+  if (Math.random() < 1 / 64) {
+    try {
+      await db
+        .delete(rateLimits)
+        .where(sql`${rateLimits.windowStart} < now() - interval '1 day'`);
+    } catch (err) {
+      console.warn("[rate-limit] opportunistic cleanup failed:", err);
+    }
+  }
+
   if (row.count > limit) {
     const elapsed = Date.now() - new Date(row.windowStart).getTime();
     const retryAfter = Math.max(1, Math.ceil((windowMs - elapsed) / 1000));
