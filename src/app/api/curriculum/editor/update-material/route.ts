@@ -5,10 +5,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { materialAttachments, materials, units, lessons, assessments } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { ownedMaterials } from "@/lib/material-scope";
 
 const VALID_ROLES = ["primary", "supporting", "teacher_reference"];
 const VALID_MATERIAL_TYPES = [
@@ -115,7 +116,7 @@ export async function POST(req: Request) {
         await db
           .select({ materialType: materials.materialType })
           .from(materials)
-          .where(eq(materials.id, attachment.materialId))
+          .where(and(eq(materials.id, attachment.materialId), ownedMaterials(session.user?.email)))
           .limit(1)
       )[0]?.materialType
     : undefined;

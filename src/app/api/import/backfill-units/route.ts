@@ -16,6 +16,7 @@ import { materials, driveFolders } from "@/db/schema";
 import { and, eq, isNull, or, inArray } from "drizzle-orm";
 import { scanFolderUnits } from "@/lib/drive";
 import { readJson } from "@/lib/api-utils";
+import { ownedMaterials } from "@/lib/material-scope";
 
 export async function POST(req: Request) {
   const accessToken = await getAccessToken(req);
@@ -70,7 +71,13 @@ export async function POST(req: Request) {
   const candidates = await db
     .select({ id: materials.id, title: materials.title })
     .from(materials)
-    .where(and(isNull(materials.sourceUnit), inArray(materials.driveFolderId, ownerDriveIds)));
+    .where(
+      and(
+        isNull(materials.sourceUnit),
+        inArray(materials.driveFolderId, ownerDriveIds),
+        ownedMaterials(ownerEmail),
+      ),
+    );
 
   // 3. Match by filename; collect updates for unambiguous hits only.
   const updates: Array<{ id: string; unit: string }> = [];

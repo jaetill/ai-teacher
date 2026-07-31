@@ -12,7 +12,7 @@ import { getAccessToken } from "@/lib/auth-helpers";
 import { db } from "@/db";
 import { driveFolders, materials } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { buildFolderKey } from "@/lib/upload-utils";
+import { buildFolderKey, isValidFolderTarget } from "@/lib/upload-utils";
 import { scanFolderUnits } from "@/lib/drive";
 import { readJson } from "@/lib/api-utils";
 
@@ -99,6 +99,13 @@ export async function POST(req: Request) {
 
   for (const file of body.files) {
     try {
+      // #593: destination/category feed buildFolderKey directly — reject
+      // anything outside the known enums before it can shape a folder key.
+      if (!isValidFolderTarget(file.destination, file.category)) {
+        results.push({ name: file.name, status: "error", message: "Invalid destination or category" });
+        continue;
+      }
+
       // Look up target folder
       const folderKey =
         file.destination === "YearPlan"

@@ -11,6 +11,7 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { listFilesInFolder } from "@/lib/drive";
 import { buildFolderKey } from "@/lib/upload-utils";
 import { readJson } from "@/lib/api-utils";
+import { ownedMaterials } from "@/lib/material-scope";
 
 type FileInput = {
   name: string;
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     ? await db
         .select({ title: materials.title, driveFolderId: materials.driveFolderId })
         .from(materials)
-        .where(inArray(materials.driveFolderId, driveIds))
+        .where(and(inArray(materials.driveFolderId, driveIds), ownedMaterials(ownerEmail)))
     : [];
   const dbMaterialsByFolder = new Map<string, Set<string>>();
   for (const m of dbMaterials) {

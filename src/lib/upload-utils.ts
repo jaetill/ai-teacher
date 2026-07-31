@@ -53,6 +53,21 @@ export const DESTINATIONS = [
 ] as const;
 export type Destination = (typeof DESTINATIONS)[number];
 
+// #593: server-side gate for the two values that shape a folder key. YearPlan
+// has no category; every other destination requires a known category.
+export function isValidFolderTarget(
+  destination: unknown,
+  category: unknown,
+): boolean {
+  if (typeof destination !== "string") return false;
+  if (!(DESTINATIONS as readonly string[]).includes(destination)) return false;
+  if (destination === "YearPlan") return true;
+  return (
+    typeof category === "string" &&
+    (CATEGORIES as readonly string[]).includes(category)
+  );
+}
+
 export const MATERIAL_TYPES = [
   "reading",
   "activity",

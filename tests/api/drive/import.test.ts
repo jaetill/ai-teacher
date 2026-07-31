@@ -33,6 +33,7 @@ vi.mock("googleapis", () => ({
 }));
 vi.mock("@/lib/upload-utils", () => ({
   buildFolderKey: vi.fn((...args: unknown[]) => args.filter(Boolean).join("_")),
+  isValidFolderTarget: vi.fn(() => true),
 }));
 
 import { getServerSession } from "next-auth";

@@ -46,6 +46,8 @@ import { POST } from "../../src/app/api/units/[id]/link-materials/route";
 const mockGetServerSession = vi.mocked(getServerSession);
 const mockEq = vi.mocked(eq);
 
+const UNIT_ID = "550e8400-e29b-41d4-a716-446655440111";
+
 function makeParams(id: string) {
   return { params: Promise.resolve({ id }) };
 }
@@ -76,8 +78,8 @@ describe("POST /api/units/[id]/link-materials", () => {
     mockGetServerSession.mockResolvedValueOnce(null);
 
     const res = await POST(
-      new Request("http://localhost/api/units/u1/link-materials"),
-      makeParams("u1"),
+      new Request("http://localhost/api/units/550e8400-e29b-41d4-a716-446655440111/link-materials"),
+      makeParams(UNIT_ID),
     );
 
     expect(res.status).toBe(401);
@@ -89,8 +91,8 @@ describe("POST /api/units/[id]/link-materials", () => {
     mockGetServerSession.mockResolvedValueOnce({ accessToken: "tok", user: {}, expires: "" });
 
     const res = await POST(
-      new Request("http://localhost/api/units/u1/link-materials"),
-      makeParams("u1"),
+      new Request("http://localhost/api/units/550e8400-e29b-41d4-a716-446655440111/link-materials"),
+      makeParams(UNIT_ID),
     );
 
     expect(res.status).toBe(401);
@@ -103,8 +105,8 @@ describe("POST /api/units/[id]/link-materials", () => {
     mockDbSelect.mockReturnValueOnce(makeSelectChain([])); // units → empty
 
     const res = await POST(
-      new Request("http://localhost/api/units/u1/link-materials"),
-      makeParams("u1"),
+      new Request("http://localhost/api/units/550e8400-e29b-41d4-a716-446655440111/link-materials"),
+      makeParams(UNIT_ID),
     );
 
     expect(res.status).toBe(404);
@@ -127,7 +129,10 @@ describe("POST /api/units/[id]/link-materials", () => {
     // 5. driveFolders → empty; triggers 400 but eq predicate is already recorded
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
 
-    await POST(new Request("http://localhost/api/units/u1/link-materials"), makeParams("u1"));
+    await POST(
+      new Request("http://localhost/api/units/550e8400-e29b-41d4-a716-446655440111/link-materials"),
+      makeParams(UNIT_ID),
+    );
 
     // courses: {} means courses.ownerEmail is undefined, so the find below matches
     // only the driveFolders.ownerEmail sentinel — no ambiguity with assertCourseOwnership.
@@ -152,7 +157,10 @@ describe("POST /api/units/[id]/link-materials", () => {
     mockDbSelect.mockReturnValueOnce(makeSelectChain([{ id: "c1" }]));
     mockDbSelect.mockReturnValueOnce(makeSelectChain([]));
 
-    await POST(new Request("http://localhost/api/units/u1/link-materials"), makeParams("u1"));
+    await POST(
+      new Request("http://localhost/api/units/550e8400-e29b-41d4-a716-446655440111/link-materials"),
+      makeParams(UNIT_ID),
+    );
 
     const eqCalls = mockEq.mock.calls as [unknown, unknown][];
     const ownerEmailCall = eqCalls.find(([col]) => col === "ownerEmail");
@@ -160,5 +168,19 @@ describe("POST /api/units/[id]/link-materials", () => {
     // Must be scoped to the authenticated session's email, not any other user's
     expect(ownerEmailCall![1]).toBe("victim@school.edu");
     expect(ownerEmailCall![1]).not.toBe("teacher@school.edu");
+  });
+});
+
+describe("unit id validation (#576)", () => {
+  it("400s on a non-UUID unit id before any DB query", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockClear(); // isolate: this file has no beforeEach clear
+    const res = await POST(
+      new Request("http://localhost/api/units/not-a-uuid/link-materials"),
+      makeParams("not-a-uuid"),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Invalid unit id");
+    expect(mockDbSelect).not.toHaveBeenCalled();
   });
 });

@@ -12,7 +12,14 @@ vi.mock("@/db/schema", () => ({
   materials: {},
   materialAttachments: {},
 }));
-vi.mock("drizzle-orm", () => ({ asc: vi.fn(), eq: vi.fn(), inArray: vi.fn() }));
+vi.mock("drizzle-orm", () => ({
+  asc: vi.fn(),
+  eq: vi.fn(),
+  inArray: vi.fn(),
+  and: vi.fn(),
+  or: vi.fn(),
+  isNull: vi.fn(),
+}));
 
 import { getServerSession } from "next-auth";
 import { GET } from "../../src/app/api/search/route";

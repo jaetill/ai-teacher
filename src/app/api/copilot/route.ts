@@ -14,6 +14,7 @@ import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson, UUID_RE } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { db } from "@/db";
+import { ownedMaterials } from "@/lib/material-scope";
 import {
   copilotConversations,
   copilotMessages,
@@ -134,13 +135,13 @@ async function buildCurriculumContext(ownerEmail: string): Promise<string> {
           driveFolderId: materials.driveFolderId,
         })
         .from(materials)
-        .where(inArray(materials.driveFolderId, folderIds))
+        .where(and(inArray(materials.driveFolderId, folderIds), ownedMaterials(ownerEmail)))
     : [];
   const attachedOnlyMaterials = attachedMatIds.length > 0
     ? await db
         .select({ id: materials.id, title: materials.title, materialType: materials.materialType, description: materials.description })
         .from(materials)
-        .where(inArray(materials.id, attachedMatIds))
+        .where(and(inArray(materials.id, attachedMatIds), ownedMaterials(ownerEmail)))
     : [];
   const matById = new Map<string, { title: string; materialType: string; description: string | null }>();
   for (const m of [...folderMaterials, ...attachedOnlyMaterials]) matById.set(m.id, m);

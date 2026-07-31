@@ -21,6 +21,8 @@ import { assertCourseOwnership } from "@/app/api/curriculum/editor/assert-owners
 import { normalizeMaterialRole } from "@/lib/material-roles";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
+import { ownedMaterials } from "@/lib/material-scope";
+import { isUuid } from "@/lib/api-utils";
 
 
 export async function POST(
@@ -40,6 +42,11 @@ export async function POST(
   if (rateLimited) return rateLimited;
 
   const { id } = await params;
+  // #576: gate before any DB query — a malformed id must be a 400, not a
+  // Postgres cast error surfacing as a 500.
+  if (!isUuid(id)) {
+    return Response.json({ error: "Invalid unit id" }, { status: 400 });
+  }
 
   // ── Load unit, course, and lessons ───
   const [unit] = await db.select().from(units).where(eq(units.id, id)).limit(1);
@@ -103,7 +110,7 @@ export async function POST(
       driveFolderId: materials.driveFolderId,
     })
     .from(materials)
-    .where(inArray(materials.driveFolderId, folderDriveIds));
+    .where(and(inArray(materials.driveFolderId, folderDriveIds), ownedMaterials(ownerEmail)));
 
   if (quarterMaterials.length === 0) {
     return Response.json({

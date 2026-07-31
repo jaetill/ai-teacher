@@ -10,6 +10,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
+import { ownedMaterials } from "@/lib/material-scope";
 import {
   courses,
   units,
@@ -17,7 +18,7 @@ import {
   materials,
   materialAttachments,
 } from "@/db/schema";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 const MAX_QUERY = 100;
 const MAX_RESULTS_PER_KIND = 25;
@@ -95,7 +96,7 @@ export async function GET(req: Request) {
           driveWebUrl: materials.driveWebUrl,
         })
         .from(materials)
-        .where(inArray(materials.id, materialIds))
+        .where(and(inArray(materials.id, materialIds), ownedMaterials(ownerEmail)))
     : [];
 
   const matches = (text: string | null | undefined) =>
