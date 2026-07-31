@@ -16,6 +16,13 @@ export type GlossaryTerm = {
 export const DEFAULT_TERMS: GlossaryTerm[] = [
   // ── Curriculum structure ───
   {
+    key: "curriculum-concept",
+    term: "Curriculum",
+    category: "Curriculum structure",
+    definition:
+      "The whole plan for a course, taken together: the year's units, their lessons and assessments, and the materials linked to them. Distinct from a Curriculum *document* (a syllabus or pacing guide, which describes the plan on paper).",
+  },
+  {
     key: "course",
     term: "Course",
     category: "Curriculum structure",
@@ -56,6 +63,13 @@ export const DEFAULT_TERMS: GlossaryTerm[] = [
     category: "Curriculum structure",
     definition:
       "One August-to-June cycle. A *captured* year is the record of a year you already taught (your 2025-26); the *planning* year is the one you're building next (2026-27).",
+  },
+  {
+    key: "section",
+    term: "Section (class period)",
+    category: "Curriculum structure",
+    definition:
+      "One scheduled group of students taking the course — e.g. \"7th grade English, 3rd period.\" The same course can have several sections. The app plans at the course level today and doesn't track sections yet; this term is here so we agree on what it will mean when scheduling arrives.",
   },
   {
     key: "pool",
