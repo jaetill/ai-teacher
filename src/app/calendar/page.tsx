@@ -60,12 +60,16 @@ type Section = {
   id: string;
   name: string;
   period: string | null;
+  meetingDays: string | null; // null = inherit the course's days
   courseId: string;
   grade: number;
 };
-type CourseCalendar = {
-  byDate: Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>;
-  meetingDays: Set<number>;
+// Raw per-course inputs. Placement is computed PER ROW (below) because a
+// section can override which weekdays it meets (#669).
+type CourseData = {
+  units: Unit[];
+  spans: QuarterSpan[];
+  courseMeetingDays: string;
   noSchool: Map<string, string>;
   estimated: boolean;
 };
@@ -82,7 +86,7 @@ export default function CalendarPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [years, setYears] = useState<SchoolYear[]>([]);
   const [sectionsList, setSectionsList] = useState<Section[]>([]);
-  const [calendars, setCalendars] = useState<Map<string, CourseCalendar>>(new Map());
+  const [courseData, setCourseData] = useState<Map<string, CourseData>>(new Map());
   const [loading, setLoading] = useState(true);
   const [manageOpen, setManageOpen] = useState(false);
   const [newSection, setNewSection] = useState<{ courseId: string; name: string; period: string }>(
@@ -165,7 +169,7 @@ export default function CalendarPage() {
   // mount and after year-level settings change (which move all sections).
   const reloadCalendars = useCallback(async (forCourses?: Course[]) => {
     const list = forCourses ?? coursesRef.current;
-    const cals = new Map<string, CourseCalendar>();
+    const cals = new Map<string, CourseData>();
     let firstStart = null as string | null;
     await Promise.all(
       list.map(async (c) => {
@@ -183,21 +187,11 @@ export default function CalendarPage() {
           spans = defaultQuarterSpans(sched.schoolYear.startDate, sched.schoolYear.endDate);
           estimated = true;
         }
-        const meetingDays = parseMeetingDays(sched.meetingDays);
         const noSchoolArr: { date: string; label: string }[] = sched.noSchoolDays ?? [];
-        const noSchoolSet = new Set(noSchoolArr.map((d) => d.date));
-        const placed = placeLessons(units, spans, meetingDays, noSchoolSet);
-        const byDate = new Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>();
-        for (const p of placed) {
-          p.dates.forEach((date, i) => {
-            const arr = byDate.get(date) ?? [];
-            arr.push({ p, dayIndex: i });
-            byDate.set(date, arr);
-          });
-        }
         cals.set(c.id, {
-          byDate,
-          meetingDays,
+          units,
+          spans,
+          courseMeetingDays: sched.meetingDays ?? "1,2,3,4,5",
           noSchool: new Map(noSchoolArr.map((d) => [d.date, d.label])),
           estimated,
         });
@@ -206,7 +200,7 @@ export default function CalendarPage() {
         }
       }),
     );
-    setCalendars(cals);
+    setCourseData(cals);
     return firstStart;
   }, []);
 
@@ -268,6 +262,39 @@ export default function CalendarPage() {
     return out;
   }, [courses, sectionsList]);
 
+  // Placement per ROW, not per course: two sections of one course can meet on
+  // different weekdays, so each row gets its own class-day stream.
+  const rowCalendars = useMemo(() => {
+    const out = new Map<
+      string,
+      {
+        byDate: Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>;
+        meetingDays: Set<number>;
+        noSchool: Map<string, string>;
+      }
+    >();
+    for (const row of rows) {
+      const data = courseData.get(row.course.id);
+      if (!data) continue;
+      const section = row.sectionId
+        ? sectionsList.find((x) => x.id === row.sectionId)
+        : undefined;
+      const meetingDays = parseMeetingDays(section?.meetingDays ?? data.courseMeetingDays);
+      const noSchoolSet = new Set(data.noSchool.keys());
+      const placed = placeLessons(data.units, data.spans, meetingDays, noSchoolSet);
+      const byDate = new Map<string, { p: PlacedLesson<Lesson>; dayIndex: number }[]>();
+      for (const p of placed) {
+        p.dates.forEach((date, i) => {
+          const arr = byDate.get(date) ?? [];
+          arr.push({ p, dayIndex: i });
+          byDate.set(date, arr);
+        });
+      }
+      out.set(row.key, { byDate, meetingDays, noSchool: data.noSchool });
+    }
+    return out;
+  }, [rows, courseData, sectionsList]);
+
   // Which rows are showing. Everything is checked by default; unchecking a
   // section hides its row (Atlas's course checkboxes).
   const [hiddenRows, setHiddenRows] = useState<Set<string>>(new Set());
@@ -284,7 +311,7 @@ export default function CalendarPage() {
 
   const weekDates = [0, 1, 2, 3, 4].map((i) => addDays(viewMonday, i));
   const todayIso = new Date().toISOString().slice(0, 10);
-  const anyEstimated = [...calendars.values()].some((c) => c.estimated);
+  const anyEstimated = [...courseData.values()].some((c) => c.estimated);
 
   async function addSection() {
     if (!newSection.courseId || !newSection.name.trim()) return;
@@ -303,6 +330,25 @@ export default function CalendarPage() {
         setNewSection((p) => ({ ...p, name: "", period: "" }));
         await loadSections();
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Per-section edit (#669): meetingDays null goes back to inheriting the
+  // course's days, so only the section that differs carries an override.
+  async function updateSection(
+    id: string,
+    patch: { name?: string; period?: string | null; meetingDays?: string | null },
+  ) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      });
+      if (res.ok) await loadSections();
     } finally {
       setBusy(false);
     }
@@ -518,7 +564,11 @@ export default function CalendarPage() {
 
       {manageOpen && (
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-5">
-          <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Sections</h2>
+          <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">Sections</h2>
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 mb-2">
+            Add, remove, and set which weekdays each section meets. A section with no
+            override follows its course.
+          </p>
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <select
               value={newSection.courseId}
@@ -554,26 +604,73 @@ export default function CalendarPage() {
               Add section
             </button>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {sectionsList.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 text-[11px] text-zinc-700 dark:text-zinc-300"
-              >
-                Grade {s.grade} — {s.name}
-                <button
-                  onClick={() => removeSection(s.id)}
-                  disabled={busy}
-                  className="text-zinc-400 hover:text-red-500"
-                  aria-label={`Delete ${s.name}`}
+          <div className="space-y-1.5">
+            {sectionsList.map((sec) => {
+              const inherited = sec.meetingDays === null;
+              const courseDays =
+                courseData.get(sec.courseId)?.courseMeetingDays ?? "1,2,3,4,5";
+              const effective = parseMeetingDays(sec.meetingDays ?? courseDays);
+              return (
+                <div
+                  key={sec.id}
+                  className="flex items-center gap-3 flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5"
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 w-40 shrink-0">
+                    Grade {sec.grade} — {sec.name}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 mr-1">Meets</span>
+                    {[1, 2, 3, 4, 5].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => {
+                          const next = new Set(effective);
+                          if (next.has(d)) next.delete(d);
+                          else next.add(d);
+                          if (next.size === 0) return; // never zero days
+                          updateSection(sec.id, {
+                            meetingDays: [...next].sort().join(","),
+                          });
+                        }}
+                        disabled={busy}
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                          effective.has(d)
+                            ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
+                        }`}
+                      >
+                        {DAY_LABELS[d - 1]}
+                      </button>
+                    ))}
+                  </div>
+                  {inherited ? (
+                    <span className="text-[10px] text-zinc-400">
+                      following the course ({courseDays.split(",").length} days)
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => updateSection(sec.id, { meetingDays: null })}
+                      disabled={busy}
+                      className="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 underline"
+                    >
+                      reset to course days
+                    </button>
+                  )}
+                  <button
+                    onClick={() => removeSection(sec.id)}
+                    disabled={busy}
+                    className="ml-auto text-zinc-400 hover:text-red-500 text-sm leading-none"
+                    aria-label={`Delete ${sec.name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
             {sectionsList.length === 0 && (
               <span className="text-[11px] text-zinc-400">
-                No sections yet — a course without sections shows as one row.
+                No sections yet — a course without sections shows as one row, using its
+                course meeting days.
               </span>
             )}
           </div>
@@ -692,7 +789,7 @@ export default function CalendarPage() {
               ) : (
                 <div className="space-y-2">
                   {visibleRows.map((row) => {
-                    const cal = calendars.get(row.course.id);
+                    const cal = rowCalendars.get(row.key);
                     const color = colorFor(row.key);
                     return (
                       <div

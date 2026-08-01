@@ -7,6 +7,9 @@
 // GET    → all of the caller's sections, with course info for row labels.
 // POST   → { courseId, name, period? } create one (course must be owned and
 //          have a school year).
+// PATCH  → { id, name?, period?, meetingDays? } edit one. meetingDays is the
+//          per-section override (#669): a CSV of ISO weekdays, or null to go
+//          back to inheriting the course's days.
 // DELETE → ?id= remove one (owner-scoped through its course).
 
 import { getServerSession } from "next-auth";
@@ -34,6 +37,7 @@ export async function GET() {
       id: sections.id,
       name: sections.name,
       period: sections.period,
+      meetingDays: sections.meetingDays,
       courseId: sections.courseId,
       grade: courses.grade,
       courseTitle: courses.title,
@@ -86,6 +90,64 @@ export async function POST(req: Request) {
     .returning({ id: sections.id });
 
   return Response.json({ id: created.id });
+}
+
+export async function PATCH(req: Request) {
+  const ownerEmail = await ownerEmailOr401();
+  if (ownerEmail instanceof Response) return ownerEmail;
+
+  const body = await readJson<{
+    id?: string;
+    name?: string;
+    period?: string | null;
+    meetingDays?: string | null;
+  }>(req);
+  if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  if (!body.id || !isUuid(body.id)) {
+    return Response.json({ error: "Invalid section id" }, { status: 400 });
+  }
+
+  const updates: { name?: string; period?: string | null; meetingDays?: string | null } = {};
+  if (body.name !== undefined) {
+    const name = body.name.trim();
+    if (name.length < 1 || name.length > 80) {
+      return Response.json({ error: "Name must be 1-80 characters" }, { status: 400 });
+    }
+    updates.name = name;
+  }
+  if (body.period !== undefined) {
+    const period = (body.period ?? "").trim();
+    if (period.length > 20) {
+      return Response.json({ error: "Period must be at most 20 characters" }, { status: 400 });
+    }
+    updates.period = period || null;
+  }
+  if (body.meetingDays !== undefined) {
+    if (body.meetingDays === null || body.meetingDays === "") {
+      updates.meetingDays = null; // inherit the course again
+    } else {
+      const days = body.meetingDays.split(",").map((x) => parseInt(x.trim(), 10));
+      if (days.length === 0 || days.some((n) => !(n >= 1 && n <= 7))) {
+        return Response.json({ error: "Invalid meetingDays" }, { status: 400 });
+      }
+      updates.meetingDays = [...new Set(days)].sort().join(",");
+    }
+  }
+  if (Object.keys(updates).length === 0) {
+    return Response.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  // Owner-scoped: resolve the section through its course's owner first.
+  const [row] = await db
+    .select({ id: sections.id })
+    .from(sections)
+    .innerJoin(courses, eq(sections.courseId, courses.id))
+    .where(and(eq(sections.id, body.id), eq(courses.ownerEmail, ownerEmail)))
+    .limit(1);
+  if (!row) return Response.json({ error: "Section not found" }, { status: 404 });
+
+  await db.update(sections).set(updates).where(eq(sections.id, body.id));
+  return Response.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {

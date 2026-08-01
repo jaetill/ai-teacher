@@ -3,25 +3,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // /api/sections — the calendar's row unit. Owner scoping runs through the
 // section's course in every method.
 
-const { mockDbSelect, mockDbInsert, mockDbDelete } = vi.hoisted(() => ({
+const { mockDbSelect, mockDbInsert, mockDbDelete, mockDbUpdate } = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
   mockDbDelete: vi.fn(),
+  mockDbUpdate: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({
-  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete },
+  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, update: mockDbUpdate },
 }));
 vi.mock("@/db/schema", () => ({
   courses: { id: {}, grade: {}, title: {}, schoolYearId: {}, ownerEmail: {} },
-  sections: { id: {}, name: {}, period: {}, courseId: {} },
+  sections: { id: {}, name: {}, period: {}, meetingDays: {}, courseId: {} },
 }));
 vi.mock("drizzle-orm", () => ({ and: vi.fn(), asc: vi.fn(), eq: vi.fn() }));
 
 import { getServerSession } from "next-auth";
-import { GET, POST, DELETE } from "../../src/app/api/sections/route";
+import { GET, POST, PATCH, DELETE } from "../../src/app/api/sections/route";
 
 const mockGetServerSession = vi.mocked(getServerSession);
 const SESSION = { user: { email: "heidi@example.com" }, expires: "" };
@@ -32,7 +33,7 @@ function chain(rows: unknown) {
   const p = Promise.resolve(rows);
   const c: Record<string, unknown> = {};
   const self = () => c;
-  for (const m of ["from", "innerJoin", "where", "limit", "orderBy", "values", "returning"])
+  for (const m of ["from", "innerJoin", "where", "limit", "orderBy", "values", "returning", "set"])
     c[m] = vi.fn(self);
   c.then = (r: (v: unknown) => unknown, j?: (e: unknown) => unknown) => p.then(r, j);
   return c;
@@ -53,6 +54,7 @@ beforeEach(() => {
   mockDbSelect.mockImplementation(() => chain([]));
   mockDbInsert.mockImplementation(() => chain([{ id: SECTION_ID }]));
   mockDbDelete.mockImplementation(() => chain([]));
+  mockDbUpdate.mockImplementation(() => chain([]));
 });
 
 describe("GET /api/sections", () => {
@@ -108,5 +110,52 @@ describe("DELETE /api/sections", () => {
     mockDbSelect.mockImplementationOnce(() => chain([{ id: SECTION_ID }]));
     expect((await DELETE(del(SECTION_ID))).status).toBe(200);
     expect(mockDbDelete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PATCH /api/sections", () => {
+  const patch = (body: unknown) =>
+    new Request("http://localhost/api/sections", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("400s on a non-UUID id", async () => {
+    expect((await PATCH(patch({ id: "nope", meetingDays: "1,3" }))).status).toBe(400);
+  });
+
+  it("400s on out-of-range meeting days", async () => {
+    expect((await PATCH(patch({ id: SECTION_ID, meetingDays: "0,9" }))).status).toBe(400);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("400s when nothing to update was sent", async () => {
+    expect((await PATCH(patch({ id: SECTION_ID }))).status).toBe(400);
+  });
+
+  it("404s when the section is not the caller's", async () => {
+    expect((await PATCH(patch({ id: SECTION_ID, meetingDays: "1,3" }))).status).toBe(404);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it("saves a per-section meeting-day override, deduped and sorted", async () => {
+    mockDbSelect.mockImplementationOnce(() => chain([{ id: SECTION_ID }]));
+    const setSpy = vi.fn();
+    setSpy.mockReturnValue(chain([]));
+    mockDbUpdate.mockImplementationOnce(() => ({ set: setSpy }));
+
+    const res = await PATCH(patch({ id: SECTION_ID, meetingDays: "3,1,3" }));
+
+    expect(res.status).toBe(200);
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy.mock.calls[0][0]).toEqual({ meetingDays: "1,3" });
+  });
+
+  it("clears the override back to inheriting the course", async () => {
+    mockDbSelect.mockImplementationOnce(() => chain([{ id: SECTION_ID }]));
+    const res = await PATCH(patch({ id: SECTION_ID, meetingDays: null }));
+    expect(res.status).toBe(200);
+    expect(mockDbUpdate).toHaveBeenCalledTimes(1);
   });
 });

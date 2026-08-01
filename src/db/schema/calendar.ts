@@ -62,6 +62,10 @@ export const sections = pgTable(
       .references(() => schoolYears.id, { onDelete: "cascade" }),
     name: text("name").notNull(), // "Period 3" or "Block B"
     period: text("period"), // "3" or "B"
+    // Which ISO weekdays THIS section meets, CSV ("1,3,5"). NULL = inherit the
+    // course's meeting days — so a teacher only sets this for the section that
+    // differs (#669 first slice: per-section calendar settings).
+    meetingDays: text("meeting_days"),
     studentCount: smallint("student_count"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
