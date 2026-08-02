@@ -92,6 +92,13 @@
       "when": 1785553903491,
       "tag": "0012_section_meeting_days",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785631834433,
+      "tag": "0013_lesson_templates",
+      "breakpoints": true
     }
   ]
 }

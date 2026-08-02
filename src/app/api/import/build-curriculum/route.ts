@@ -21,6 +21,7 @@ import {
   materialAttachments,
   driveFolders,
   schoolYears,
+  lessonTemplates,
 } from "@/db/schema";
 import { eq, inArray, asc, and, isNull, or } from "drizzle-orm";
 import { getAnthropic } from "@/lib/anthropic";
@@ -30,6 +31,11 @@ import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { ownedMaterials } from "@/lib/material-scope";
+import {
+  templateToPromptSchema,
+  coerceToTemplate,
+  type TemplateField,
+} from "@/lib/lesson-template";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -208,12 +214,29 @@ export async function POST(req: Request) {
     ? `\n\nTeacher's reference material (pacing guide / schedule). Use it to inform pacing, ordering, and standards coverage:\n${referenceText}`
     : "";
 
+  // The teacher's own lesson shape (#647). When she hasn't defined one, this
+  // stays null and the prompt keeps its original "activities" list — the
+  // Classic shape every pre-template lesson already has, so nothing about
+  // import changes for a teacher who never visits /templates.
+  const [defaultTemplate] = await db
+    .select({ id: lessonTemplates.id, fields: lessonTemplates.fields })
+    .from(lessonTemplates)
+    .where(and(eq(lessonTemplates.ownerEmail, ownerEmail), eq(lessonTemplates.isDefault, true)))
+    .limit(1);
+  const templateFields: TemplateField[] | null = defaultTemplate
+    ? ((defaultTemplate.fields as TemplateField[]) ?? null)
+    : null;
+  // Ask the model to fill her fields instead of ours.
+  const lessonShapeLine = templateFields
+    ? `"plan": ${templateToPromptSchema(templateFields)},`
+    : `"activities": ["activity 1", "activity 2"],`;
+
   // Shared lesson/standard/material rules used in both modes.
   const sharedRules = `- Generate 15-25 lessons TOTAL across the whole quarter (NOT per unit). Size each unit to its
   scope: a full novel ~6-10 lessons, a short/intro unit ~2-4. Do not exceed 25 lessons total.
 - Units are NOT equal length. Set each unit's durationWeeks to reflect its real scope — a major
   novel spans several weeks, a short unit only 1-2 — and give it a lesson count to match.
-- Keep lesson objectives and activities concise (1-3 each).
+- Keep lesson objectives concise (1-3), and each lesson-plan section brief.
 - lessons[].sortOrder restarts at 1 within EACH unit.
 - Every material must be linked to at least one lesson in the unit it belongs to.
 - materials[].title must exactly match one of the provided filenames.
@@ -237,7 +260,7 @@ export async function POST(req: Request) {
           "title": "Lesson title",
           "durationMinutes": 45,
           "objectives": ["objective 1", "objective 2"],
-          "activities": ["activity 1", "activity 2"],
+          ${lessonShapeLine}
           "standards": [{"id": "7.RL.1.A", "coverageType": "teaches"}],
           "materials": [{"title": "exact filename.docx", "role": "primary"}]
         }
@@ -339,6 +362,8 @@ ${standardsList}${referenceBlock}`;
       durationMinutes: number;
       objectives: string[];
       activities: string[];
+      // Present only when the teacher has a template; keyed by her field keys.
+      plan?: unknown;
       standards: Array<{ id: string; coverageType: string }>;
       materials: Array<{ title: string; role: string }>;
     }>;
@@ -589,7 +614,10 @@ ${standardsList}${referenceBlock}`;
             sortOrder: lessonData.sortOrder,
             durationMinutes: clampMinutes(lessonData.durationMinutes),
             objectives: lessonData.objectives ?? [],
-            lessonPlan: { activities: lessonData.activities ?? [] },
+            templateId: defaultTemplate?.id ?? null,
+            lessonPlan: templateFields
+              ? coerceToTemplate(lessonData.plan, templateFields)
+              : { activities: lessonData.activities ?? [] },
             source: "ai" as const,
           })),
         )

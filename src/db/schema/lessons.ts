@@ -22,7 +22,13 @@ export const lessons = pgTable(
     sortOrder: smallint("sort_order").notNull(),
     durationMinutes: smallint("duration_minutes"),
     objectives: text("objectives").array(), // TEXT[] — flat list, queryable
-    // Structured AI content: opening, instruction, practice, closing, vocab, etc.
+    // Which template shapes this lesson (#647). NULL = inherit the course's
+    // template, and failing that the Classic builtin. Set only when this
+    // lesson uses a different shape than its course default (a seminar day
+    // inside a reading unit).
+    templateId: uuid("template_id"),
+    // Content keyed by the resolved template's field keys. Pre-template rows
+    // hold {activities: [...]}, which is exactly the Classic builtin's shape.
     lessonPlan: jsonb("lesson_plan").notNull().default({}),
     teacherNotes: text("teacher_notes"),
     source: text("source").notNull().default("ai"),

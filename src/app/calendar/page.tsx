@@ -892,7 +892,7 @@ export default function CalendarPage() {
       <p className="text-[11px] text-zinc-400 mt-4">
         Sections share their course&apos;s plan for now — per-section pacing (a section falling
         behind, its own snow days) comes with actual-vs-planned tracking. School year and
-        quarter dates are set above; which weekdays a class meets is on its course calendar.
+        quarter dates are set above; which weekdays each section meets is in Manage sections.
         {years.length > 0 && ""}
       </p>
     </div>

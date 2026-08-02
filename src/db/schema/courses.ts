@@ -21,6 +21,9 @@ export const courses = pgTable(
     // ISO weekdays this class meets, CSV ("1,2,3,4,5" = Mon-Fri). Feeds the
     // calendar's class-day stream (#646); lesson dates are derived from it.
     meetingDays: text("meeting_days").notNull().default("1,2,3,4,5"),
+    // Default lesson template for this course (#647). NULL = fall back to the
+    // Classic builtin, which is the shape every pre-template lesson has.
+    lessonTemplateId: uuid("lesson_template_id"),
     description: text("description"), // Rich context for AI
     teacherNotes: text("teacher_notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
