@@ -17,3 +17,4 @@ export { driveFolders } from "./drive-folders";
 export { curriculumEditLog } from "./curriculum-edit-log";
 export { rateLimits } from "./rate-limits";
 export { glossaryTerms } from "./glossary";
+export { lessonTemplates } from "./lesson-templates";

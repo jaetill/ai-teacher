@@ -16,6 +16,7 @@ const NAV_ITEMS: { href: string; label: string; comingSoon?: boolean }[] = [
   { href: "/standards", label: "Standards" },
   { href: "/search", label: "Search" },
   { href: "/glossary", label: "Glossary" },
+  { href: "/templates", label: "Templates" },
   { href: "/differentiation", label: "Differentiation", comingSoon: true },
   { href: "/communications", label: "Communications", comingSoon: true },
   { href: "/import", label: "Import" },
