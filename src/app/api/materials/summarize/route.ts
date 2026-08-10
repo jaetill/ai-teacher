@@ -22,13 +22,12 @@ import { authOptions } from "@/lib/auth";
 import { getAccessToken } from "@/lib/auth-helpers";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { getAnthropic } from "@/lib/anthropic";
-import { getDriveClient } from "@/lib/drive";
+import { fetchDriveText, isExtractable } from "@/lib/drive-text";
 import { MODELS } from "@/lib/models";
 import { db } from "@/db";
 import { courses, driveFolders, materials, units } from "@/db/schema";
 import { ownedMaterials } from "@/lib/material-scope";
 import { and, eq, inArray, isNull, or, sql as dsql } from "drizzle-orm";
-import mammoth from "mammoth";
 
 export const maxDuration = 60;
 
@@ -36,16 +35,7 @@ const BATCH_SIZE = 5;
 const MAX_CONTENT_CHARS = 12_000;
 const SUMMARIZER_MODEL = MODELS.summarizer;
 
-const GOOGLE_DOC = "application/vnd.google-apps.document";
-const DOCX =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const TEXTLIKE = ["text/plain", "text/markdown", "text/csv"];
 
-function isExtractable(mime: string | null): boolean {
-  return (
-    mime === GOOGLE_DOC || mime === DOCX || TEXTLIKE.includes(mime ?? "")
-  );
-}
 
 // #644: titles and types come from Drive metadata, which the teacher (or a
 // Drive share) controls — keep them inert inside the prompt: collapse to a
@@ -125,37 +115,6 @@ export async function GET() {
   });
 }
 
-async function fetchContent(
-  accessToken: string,
-  fileId: string,
-  mime: string | null
-): Promise<string | null> {
-  const drive = getDriveClient(accessToken);
-  if (mime === GOOGLE_DOC) {
-    const res = await drive.files.export(
-      { fileId, mimeType: "text/plain" },
-      { responseType: "text" }
-    );
-    return typeof res.data === "string" ? res.data : String(res.data ?? "");
-  }
-  if (mime === DOCX) {
-    const res = await drive.files.get(
-      { fileId, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-    const buffer = Buffer.from(res.data as ArrayBuffer);
-    const { value } = await mammoth.extractRawText({ buffer });
-    return value;
-  }
-  if (TEXTLIKE.includes(mime ?? "")) {
-    const res = await drive.files.get(
-      { fileId, alt: "media" },
-      { responseType: "text" }
-    );
-    return typeof res.data === "string" ? res.data : String(res.data ?? "");
-  }
-  return null;
-}
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -182,7 +141,7 @@ export async function POST(req: Request) {
 
   for (const m of batch) {
     try {
-      const content = await fetchContent(accessToken, m.driveFileId!, m.driveMimeType);
+      const content = await fetchDriveText(accessToken, m.driveFileId!, m.driveMimeType);
       if (!content || content.trim().length === 0) {
         // Downloaded fine but no extractable text (blank doc, or image-based
         // content like a drawn timeline). Write an explicit marker so the

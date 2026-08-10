@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useCopilot } from "@/components/CopilotProvider";
 import { groupLessonsByWeek } from "@/lib/group-lessons";
+import ItemWriter from "@/components/ItemWriter";
 
 function LessonCard({ lesson }: { lesson: Lesson }) {
   const { unitId } = useParams<{ unitId: string }>();
@@ -148,6 +149,18 @@ function LessonCard({ lesson }: { lesson: Lesson }) {
               </div>
             </div>
           )}
+          <div onClick={(e) => e.stopPropagation()}>
+            <ItemWriter
+              lessonId={lesson.id}
+              materials={(lesson.materials ?? [])
+                .filter((m) => !!m.materialId)
+                .map((m) => ({
+                  materialId: m.materialId as string,
+                  title: m.title,
+                  materialType: m.materialType,
+                }))}
+            />
+          </div>
           <div onClick={(e) => e.stopPropagation()}>
             <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
               Notes
@@ -329,6 +342,9 @@ type LessonStandard = {
 };
 
 type MaterialLink = {
+  // Present on lesson-level attachments so the item writer (#679) can name a
+  // specific file as the passage source.
+  materialId?: string;
   title: string;
   materialType: string;
   driveWebUrl: string | null;

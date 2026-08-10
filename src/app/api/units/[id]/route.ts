@@ -163,13 +163,20 @@ export async function GET(
   // Group by lesson
   const matsByLesson = new Map<
     string,
-    Array<{ title: string; materialType: string; driveWebUrl: string | null; role: string }>
+    Array<{
+      materialId: string;
+      title: string;
+      materialType: string;
+      driveWebUrl: string | null;
+      role: string;
+    }>
   >();
   for (const row of lessonAttachments) {
     if (!matsByLesson.has(row.attachableId)) {
       matsByLesson.set(row.attachableId, []);
     }
     matsByLesson.get(row.attachableId)!.push({
+      materialId: row.materialId,
       title: row.title,
       materialType: row.materialType,
       driveWebUrl: row.driveWebUrl,
