@@ -213,19 +213,44 @@ export async function POST(req: Request) {
     .join("\n");
 
   // The grade's year plan — her own document, imported once into
-  // grade_N_YearPlan and re-read on every build. It's the only input that
-  // knows what the WHOLE year looks like, so it's the one thing that can tell
-  // the model this quarter has three units and not seven (the verified
-  // over-splitting failure mode). Degrades to "" and changes nothing when she
-  // hasn't imported one.
+  // grade_N_YearPlan and re-read on every build. Degrades to "" and changes
+  // nothing when she hasn't imported one.
+  //
+  // How much authority it carries depends on the mode, and getting this wrong
+  // broke real builds (#682). The first version told the model the plan was
+  // "binding — use ITS unit count, unit names, sequence" and appended that to
+  // BOTH prompts. In faithful mode that directly contradicts the system prompt
+  // three paragraphs up, which says her units are FIXED and must not be added
+  // to, renamed, merged or split. Where the plan and her folders agreed the
+  // model could satisfy both and nothing looked wrong; where they diverged it
+  // followed the document and clobbered her structure. Grade 6 Q2 (her folders
+  // say Before the Ever After + Short Story; her plan says Before the Ever
+  // After + Poetry + Choice Reading) and Q4 (one Refugee folder vs three
+  // bullets) came out wrong for exactly this reason.
+  //
+  // Her folders are the work. A document describing the year does not get to
+  // overrule them — that is the standing "never clobber what she has already
+  // done" constraint. So: advisory in faithful mode, authoritative only in the
+  // fallback path, where there is no folder structure to honour and the plan is
+  // the only thing standing between us and invented units.
   const yearPlanText = await loadYearPlanReference(req, ownerEmail, grade);
-  const yearPlanBlock = yearPlanText
-    ? `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (her own document — authoritative for the shape of the year):
+  const yearPlanBlock = !yearPlanText
+    ? ""
+    : faithful
+      ? `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (context only — her own document):
 ${yearPlanText}
 
-Treat the year plan as binding wherever it speaks to ${quarter}: use ITS unit count, unit names, sequence,
-and pacing rather than inventing your own. Where it is silent, fall back to the materials below.`
-    : "";
+Use the year plan ONLY to inform pacing, lesson sequence, essential questions, anchor texts and
+standards emphasis. It does NOT change the unit list: the units given above come from her own
+folders and are authoritative even where this document names different units, more units, or fewer.
+If the plan describes a unit that is not in the given list, ignore it. If the given list contains a
+unit the plan never mentions, keep it exactly as given.`
+      : `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (her own document — authoritative for the shape of the year):
+${yearPlanText}
+
+No unit structure was captured from her folders for this quarter, so treat the year plan as binding
+wherever it speaks to ${quarter}: use ITS unit count, unit names, sequence, and pacing rather than
+inventing your own. Where it is silent, fall back to the materials below.`;
 
   const referenceBlock = referenceText
     ? `\n\nTeacher's reference material (pacing guide / schedule). Use it to inform pacing, ordering, and standards coverage:\n${referenceText}`
@@ -564,12 +589,36 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // The units to create. Faithful mode: one per the teacher's folder (source
   // "human"), enriched by matching AI output on title. Fallback: the AI's own
   // grouping (source "ai"). Both feed one persistence loop below.
+  //
+  // The title join is fragile by nature — it depends on the model echoing her
+  // folder names back verbatim, and when it doesn't, the old code silently
+  // created a unit with no lessons and still reported success. That is how a
+  // single bad prompt instruction produced eight empty Grade 6 units with no
+  // error anywhere (#682). Two safeguards now:
+  //   1. Positional fallback. The prompt asks for one object per given unit in
+  //      the given order, so when the model returns the right COUNT but wrong
+  //      titles, index i is overwhelmingly the enrichment for unit i. An
+  //      approximately-right lesson plan under her title beats an empty unit.
+  //   2. Whatever is still unmatched is counted and returned, so an empty
+  //      build is visible in the response instead of looking like a success.
+  const unmatchedUnits: string[] = [];
   const unitsToCreate: Array<{ title: string; source: "human" | "ai"; enr?: ParsedUnit }> = faithful
-    ? distinctUnits.map((name) => ({
-        title: name,
-        source: "human" as const,
-        enr: enrichmentByTitle.get(name.trim().toLowerCase()),
-      }))
+    ? distinctUnits.map((name, i) => {
+        const byTitle = enrichmentByTitle.get(name.trim().toLowerCase());
+        // Only trust position when the model returned one object per unit —
+        // a different count means it restructured, and guessing would pair
+        // her unit with someone else's lessons.
+        const byPosition =
+          !byTitle && parsedUnits.length === distinctUnits.length ? parsedUnits[i] : undefined;
+        if (!byTitle && !byPosition) unmatchedUnits.push(name);
+        if (!byTitle && byPosition) {
+          console.warn(
+            `[build-curriculum] enrichment title mismatch for ${JSON.stringify(name)}; ` +
+              `falling back to position ${i} (${JSON.stringify(byPosition.title)})`,
+          );
+        }
+        return { title: name, source: "human" as const, enr: byTitle ?? byPosition };
+      })
     : parsedUnits.map((u) => ({ title: u.title, source: "ai" as const, enr: u }));
 
   // ── 6-8. Create each unit, its standards, lessons, and material links ───
@@ -692,6 +741,10 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     // Whether her year plan steered this build — so the UI can say so instead
     // of leaving her to guess what the model was told.
     yearPlanUsed: yearPlanText.length > 0,
+    // Units that got no enrichment at all: they exist but have no lessons.
+    // Surfaced rather than swallowed, so "built 3 units, 0 lessons" can never
+    // again look like a clean success (#682).
+    unmatchedUnits,
     unitCount: createdUnits.length,
     units: createdUnits,
     lessonCount,

@@ -138,8 +138,15 @@ export async function scanFolderUnits(
       });
       for (const file of res.data.files ?? []) {
         if (file.mimeType === "application/vnd.google-apps.folder") {
-          // This subfolder becomes the unit for everything inside it.
-          await listFolder(file.id!, file.name ?? null);
+          // The unit is the FIRST folder below the scanned root, and it stays
+          // the unit all the way down. Previously this passed `file.name` at
+          // every depth, so the deepest folder won: a file in
+          // "Dash Q3/Letters/" came back with sourceUnit "Letters", and her
+          // real unit — Dash — never became a unit at all. That is the
+          // over-splitting failure mode, produced by the scanner rather than
+          // by the AI. Nested folders are organisation inside a unit, not
+          // units of their own.
+          await listFolder(file.id!, sourceUnit ?? file.name ?? null);
         } else {
           allFiles.push({
             id: file.id!,
@@ -154,7 +161,8 @@ export async function scanFolderUnits(
     } while (pageToken);
   }
 
-  // The top-level folder being scanned is not itself a unit.
+  // The top-level folder being scanned is not itself a unit — files sitting
+  // directly in it keep sourceUnit null (that is how the year plan is found).
   await listFolder(folderId, null);
   return allFiles;
 }
