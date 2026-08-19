@@ -51,6 +51,35 @@ function destinationLabel(d: string): string {
   return d;
 }
 
+/**
+ * Order a scan result so files outside any unit folder come first.
+ *
+ * The Drive scan is recursive and depth-first, so a grade folder whose first
+ * subfolder holds 20+ files pushes the root-level document about 25 rows into a
+ * 150-row list — inside a scroll box showing ~10. Heidi's Grade 6 folder is
+ * exactly this shape: one document at the root ("Grade 6 Texts/Plan Overview")
+ * and eight unit folders, the first of which has ~23 items. The file this
+ * feature exists to find was the hardest one in the list to see.
+ *
+ * Root files are the anomaly worth surfacing, so they sort first; the rest
+ * group by unit, then by name, so the list reads predictably.
+ *
+ * Exported for test: the component itself has no test harness yet (#572).
+ */
+export function sortRootFilesFirst<T extends { sourceUnit: string | null; name: string }>(
+  files: T[],
+): T[] {
+  return [...files].sort((a, b) => {
+    const aNested = a.sourceUnit ? 1 : 0;
+    const bNested = b.sourceUnit ? 1 : 0;
+    if (aNested !== bNested) return aNested - bNested;
+    return (
+      (a.sourceUnit ?? "").localeCompare(b.sourceUnit ?? "") ||
+      a.name.localeCompare(b.name)
+    );
+  });
+}
+
 // ── Component ───
 
 export default function ImportFromDrive() {
@@ -92,20 +121,27 @@ export default function ImportFromDrive() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to scan folder");
       }
-      setFiles(
-        data.files.map(
-          (f: { id: string; name: string; mimeType: string; sourceUnit?: string | null }) => ({
-            ...f,
-            grade: defaultGrade,
-            destination: defaultQuarter,
-            category: "Activities",
-            materialType: "other",
-            sourceUnit: f.sourceUnit ?? null,
-            selected: true,
-            status: "pending",
-          })
-        )
+      // Year Plan scope means "the document that isn't in any unit folder", so
+      // it drives both ordering and the default selection below.
+      const scopedToYearPlan = defaultQuarter === "YearPlan";
+
+      const scanned: DriveFile[] = data.files.map(
+        (f: { id: string; name: string; mimeType: string; sourceUnit?: string | null }) => ({
+          ...f,
+          grade: defaultGrade,
+          destination: defaultQuarter,
+          category: "Activities",
+          materialType: "other",
+          sourceUnit: f.sourceUnit ?? null,
+          // Selecting all 150 files is the wrong default when the teacher just
+          // said "this is year-plan material" — a year plan is definitionally
+          // the file sitting outside the unit folders.
+          selected: scopedToYearPlan ? !f.sourceUnit : true,
+          status: "pending" as const,
+        })
       );
+
+      setFiles(sortRootFilesFirst(scanned));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to scan folder");
     } finally {
@@ -305,12 +341,18 @@ export default function ImportFromDrive() {
     setFiles((prev) => prev.map((f) => ({ ...f, selected })));
   }
 
+  // One click to isolate the files outside any unit folder — the year-plan case.
+  function setSelectedToRootOnly() {
+    setFiles((prev) => prev.map((f) => ({ ...f, selected: !f.sourceUnit })));
+  }
+
   // ── Render ───
 
   // `files` is the whole scan; everything downstream of step 1 works on the
   // selected view of it.
   const selectedFiles = files.filter((f) => f.selected);
   const selectedCount = selectedFiles.length;
+  const rootCount = files.filter((f) => !f.sourceUnit).length;
   const doneCount = files.filter((f) => f.status === "done").length;
   const errorCount = files.filter((f) => f.status === "error").length;
   // Year Plan material isn't built into units — it's reference for every build
@@ -411,6 +453,17 @@ export default function ImportFromDrive() {
                     <span className="text-zinc-400"> · {selectedCount} selected</span>
                   </p>
                   <div className="flex shrink-0 gap-2 text-xs">
+                    {rootCount > 0 && (
+                      <>
+                        <button
+                          onClick={() => setSelectedToRootOnly()}
+                          className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
+                        >
+                          Only the {rootCount} at root
+                        </button>
+                        <span className="text-zinc-300 dark:text-zinc-700">·</span>
+                      </>
+                    )}
                     <button
                       onClick={() => setAllSelected(true)}
                       className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
@@ -426,6 +479,14 @@ export default function ImportFromDrive() {
                     </button>
                   </div>
                 </div>
+                {rootCount > 0 && (
+                  <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {rootCount === 1 ? "1 file sits" : `${rootCount} files sit`} at the
+                    root of that folder, outside any unit — listed first below.
+                    {defaultQuarter === "YearPlan" &&
+                      " Pre-selected, since that's what a year plan is."}
+                  </p>
+                )}
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
                   {files.map((f) => (
                     <label
