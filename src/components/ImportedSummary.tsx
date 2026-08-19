@@ -20,6 +20,12 @@ type GradeSummary = {
 
 const ALL_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"];
 
+// Year Plan is deliberately NOT in ALL_QUARTERS: it isn't a quarter and never
+// gets built into units. It's grade-level reference read on every build, so it
+// gets its own strip below the grid rather than a sixth card with a dead
+// "Build →" affordance.
+const YEAR_PLAN = "YearPlan";
+
 const QUARTER_STYLES: Record<string, string> = {
   // Summer = pre-year bucket; warm orange sets it apart from the graded quarters.
   Summer: "border-l-orange-400 dark:border-l-orange-500",
@@ -331,6 +337,41 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
         })}
       </div>
 
+      {(() => {
+        const yp = byQuarter.get(YEAR_PLAN);
+        const isOpen = expanded === YEAR_PLAN;
+        return (
+          <div
+            className={`mt-3 rounded-lg border border-l-4 border-l-indigo-400 dark:border-l-indigo-500 ${
+              yp
+                ? "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40"
+                : "border-dashed border-zinc-200 dark:border-zinc-800 bg-transparent"
+            } px-3 py-2`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-xs font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Year Plan
+                </span>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  {yp
+                    ? `${yp.total} ${yp.total === 1 ? "file" : "files"} · read as reference every time you build a quarter of Grade ${grade.grade}`
+                    : "None yet. Import your plan for the year here and every build of this grade will follow it."}
+                </p>
+              </div>
+              {yp && (
+                <button
+                  onClick={() => setExpanded(isOpen ? null : YEAR_PLAN)}
+                  className="shrink-0 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                >
+                  {isOpen ? "Hide files" : "See files"}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {buildError && (
         <div className="mt-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-2.5 text-xs text-red-700 dark:text-red-300">
           {buildError}
@@ -340,14 +381,16 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
       {expanded && byQuarter.get(expanded) && (
         <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 max-h-56 overflow-y-auto">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 mb-2">
-            {expanded} files ({byQuarter.get(expanded)!.total})
+            {expanded === YEAR_PLAN ? "Year Plan" : expanded} files (
+            {byQuarter.get(expanded)!.total})
           </p>
           <div className="space-y-1">
             {byQuarter.get(expanded)!.files.map((f, i) => (
               <div key={i} className="flex items-center justify-between gap-3 text-xs">
                 <span className="text-zinc-700 dark:text-zinc-300 truncate">{f.title}</span>
                 <span className="text-[10px] text-zinc-400 shrink-0">
-                  {f.category} · {f.materialType}
+                  {/* Year Plan files have no category — the bucket has no subfolders. */}
+                  {expanded === YEAR_PLAN ? f.materialType : `${f.category} · ${f.materialType}`}
                 </span>
               </div>
             ))}

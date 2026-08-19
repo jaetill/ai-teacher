@@ -31,6 +31,7 @@ import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { ownedMaterials } from "@/lib/material-scope";
+import { loadYearPlanReference } from "@/lib/year-plan-reference";
 import {
   templateToPromptSchema,
   coerceToTemplate,
@@ -210,6 +211,22 @@ export async function POST(req: Request) {
   const standardsList = gradeStandards
     .map((s) => `${s.id}: ${s.description}`)
     .join("\n");
+
+  // The grade's year plan — her own document, imported once into
+  // grade_N_YearPlan and re-read on every build. It's the only input that
+  // knows what the WHOLE year looks like, so it's the one thing that can tell
+  // the model this quarter has three units and not seven (the verified
+  // over-splitting failure mode). Degrades to "" and changes nothing when she
+  // hasn't imported one.
+  const yearPlanText = await loadYearPlanReference(req, ownerEmail, grade);
+  const yearPlanBlock = yearPlanText
+    ? `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (her own document — authoritative for the shape of the year):
+${yearPlanText}
+
+Treat the year plan as binding wherever it speaks to ${quarter}: use ITS unit count, unit names, sequence,
+and pacing rather than inventing your own. Where it is silent, fall back to the materials below.`
+    : "";
+
   const referenceBlock = referenceText
     ? `\n\nTeacher's reference material (pacing guide / schedule). Use it to inform pacing, ordering, and standards coverage:\n${referenceText}`
     : "";
@@ -307,7 +324,7 @@ units (FIXED — enrich each, do not change the set):
 ${unitBlocks}${unassignedBlock}
 
 Available standards for Grade ${grade}:
-${standardsList}${referenceBlock}`;
+${standardsList}${yearPlanBlock}${referenceBlock}`;
   } else {
     // Legacy path: no captured unit structure, so the AI groups the materials.
     const materialList = quarterMaterials.map(describeMaterial).join("\n");
@@ -330,7 +347,7 @@ Materials (${quarterMaterials.length} files):
 ${materialList}
 
 Available standards for Grade ${grade}:
-${standardsList}${referenceBlock}`;
+${standardsList}${yearPlanBlock}${referenceBlock}`;
   }
 
   // Stream the response. A quarter with a large novel (e.g. Roll of Thunder,
@@ -672,6 +689,9 @@ ${standardsList}${referenceBlock}`;
     courseId,
     // "faithful" = units came from the teacher's own folders; "ai" = grouped by AI.
     mode: faithful ? "faithful" : "ai",
+    // Whether her year plan steered this build — so the UI can say so instead
+    // of leaving her to guess what the model was told.
+    yearPlanUsed: yearPlanText.length > 0,
     unitCount: createdUnits.length,
     units: createdUnits,
     lessonCount,
