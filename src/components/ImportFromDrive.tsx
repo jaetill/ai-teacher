@@ -116,9 +116,11 @@ export default function ImportFromDrive() {
   // ── Step 2: Classify ───
 
   async function classify() {
-    // Unselected files drop out here rather than being carried as dead rows —
-    // every step after this (review, import, build) then works on exactly the
-    // set being imported.
+    // `files` always holds the FULL scan result; deselected rows are filtered
+    // at render and send time, never removed from state. An earlier version
+    // dropped them here, which quietly made "Back" from the classify step a
+    // one-way door — the deselected files were gone and only a re-scan brought
+    // them back (PR #680 review, CODE-M1).
     const chosen = files.filter((f) => f.selected);
     if (chosen.length === 0) {
       setError("Select at least one file to import");
@@ -144,8 +146,11 @@ export default function ImportFromDrive() {
       if (!res.ok) throw new Error("Classification failed");
 
       const { classifications } = await res.json();
-      setFiles(
-        chosen.map((f) => {
+      setFiles((prev) =>
+        prev.map((f) => {
+          // Only the selected rows were sent for classification; the rest stay
+          // exactly as scanned so Back still shows the whole folder.
+          if (!f.selected) return f;
           const match = classifications.find(
             (c: { filename: string }) => c.filename === f.name
           );
@@ -227,14 +232,12 @@ export default function ImportFromDrive() {
     setStep("import");
     setImporting(true);
 
-    const toImport = files;
-    for (let i = 0; i < toImport.length; i++) {
-      setFiles((prev) =>
-        prev.map((f, idx) =>
-          idx === i ? { ...f, status: "copying" } : f
-        )
-      );
-    }
+    // Only selected rows are imported; the rest stay "pending" in state so the
+    // scan list is still whole if the user goes back.
+    const toImport = files.filter((f) => f.selected);
+    setFiles((prev) =>
+      prev.map((f) => (f.selected ? { ...f, status: "copying" } : f))
+    );
 
     // Batch import via the API
     try {
@@ -243,7 +246,7 @@ export default function ImportFromDrive() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sourceFolderId: folderId,
-          files: files.map((f) => ({
+          files: toImport.map((f) => ({
             sourceFileId: f.id,
             name: f.name,
             category: f.category,
@@ -260,6 +263,7 @@ export default function ImportFromDrive() {
       const data = await res.json();
       setFiles((prev) =>
         prev.map((f) => {
+          if (!f.selected) return f;
           const result = data.results?.find(
             (r: { name: string }) => r.name === f.name
           );
@@ -288,9 +292,12 @@ export default function ImportFromDrive() {
 
   // ── Field update helper ───
 
-  function updateFile(index: number, field: keyof DriveFile, value: unknown) {
+  // Keyed by file id, not array index: the classify and import tables render a
+  // filtered view of `files`, so a row's position there no longer matches its
+  // position in state.
+  function updateFile(id: string, field: keyof DriveFile, value: unknown) {
     setFiles((prev) =>
-      prev.map((f, i) => (i === index ? { ...f, [field]: value } : f))
+      prev.map((f) => (f.id === id ? { ...f, [field]: value } : f))
     );
   }
 
@@ -300,7 +307,10 @@ export default function ImportFromDrive() {
 
   // ── Render ───
 
-  const selectedCount = files.filter((f) => f.selected).length;
+  // `files` is the whole scan; everything downstream of step 1 works on the
+  // selected view of it.
+  const selectedFiles = files.filter((f) => f.selected);
+  const selectedCount = selectedFiles.length;
   const doneCount = files.filter((f) => f.status === "done").length;
   const errorCount = files.filter((f) => f.status === "error").length;
   // Year Plan material isn't built into units — it's reference for every build
@@ -417,7 +427,7 @@ export default function ImportFromDrive() {
                   </div>
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
-                  {files.map((f, i) => (
+                  {files.map((f) => (
                     <label
                       key={f.id}
                       className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 py-0.5 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-200"
@@ -425,7 +435,7 @@ export default function ImportFromDrive() {
                       <input
                         type="checkbox"
                         checked={f.selected}
-                        onChange={(e) => updateFile(i, "selected", e.target.checked)}
+                        onChange={(e) => updateFile(f.id, "selected", e.target.checked)}
                         className="shrink-0 accent-zinc-900 dark:accent-zinc-100"
                       />
                       <span className="truncate">{f.name}</span>
@@ -483,7 +493,7 @@ export default function ImportFromDrive() {
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-zinc-900">
-                  {files.map((f, i) => (
+                  {selectedFiles.map((f) => (
                     <tr
                       key={f.id}
                       className="border-t border-zinc-100 dark:border-zinc-800"
@@ -504,7 +514,7 @@ export default function ImportFromDrive() {
                         <select
                           value={f.grade}
                           onChange={(e) =>
-                            updateFile(i, "grade", parseInt(e.target.value))
+                            updateFile(f.id, "grade", parseInt(e.target.value))
                           }
                           className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300"
                         >
@@ -519,7 +529,7 @@ export default function ImportFromDrive() {
                         <select
                           value={f.destination}
                           onChange={(e) =>
-                            updateFile(i, "destination", e.target.value)
+                            updateFile(f.id, "destination", e.target.value)
                           }
                           className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300"
                         >
@@ -537,7 +547,7 @@ export default function ImportFromDrive() {
                           <select
                             value={f.category}
                             onChange={(e) =>
-                              updateFile(i, "category", e.target.value)
+                              updateFile(f.id, "category", e.target.value)
                             }
                             className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300"
                           >
@@ -553,7 +563,7 @@ export default function ImportFromDrive() {
                         <select
                           value={f.materialType}
                           onChange={(e) =>
-                            updateFile(i, "materialType", e.target.value)
+                            updateFile(f.id, "materialType", e.target.value)
                           }
                           className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300"
                         >
@@ -581,7 +591,7 @@ export default function ImportFromDrive() {
                 onClick={importFiles}
                 className="rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
               >
-                Import {files.length} Files
+                Import {selectedCount} File{selectedCount === 1 ? "" : "s"}
               </button>
             </div>
           </div>
@@ -593,7 +603,7 @@ export default function ImportFromDrive() {
             {importing ? (
               <div className="mb-6">
                 <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-2">
-                  Importing {files.length} files...
+                  Importing {selectedCount} files...
                 </p>
                 <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                   <div
@@ -625,7 +635,7 @@ export default function ImportFromDrive() {
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-zinc-900">
-                  {files.map((f) => (
+                  {selectedFiles.map((f) => (
                     <tr
                       key={f.id}
                       className="border-t border-zinc-100 dark:border-zinc-800"
