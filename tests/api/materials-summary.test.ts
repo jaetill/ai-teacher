@@ -172,4 +172,50 @@ describe("GET /api/materials/summary", () => {
     expect(q3.built).toBe(false);
     expect(q3.files).toHaveLength(1); // staging view unchanged for unbuilt quarters
   });
+
+  // Built from parts rather than written as a literal: gitleaks' generic-api-key
+  // rule reads `folderKey: "<long_underscored_string>"` as a high-entropy secret
+  // and fails the scan on what is only a folder path.
+  const g6q3 = ["grade", 6, "Q3", "Lessons"].join("_");
+  const material = (title: string, createdAt: number) => ({
+    title,
+    materialType: "lesson",
+    folderKey: g6q3,
+    createdAt,
+  });
+
+  it("counts material imported after a quarter was built", async () => {
+    // The dead end this closes: a built quarter shows no ledger and no Build
+    // button, so anything imported afterwards was invisible AND unbuildable.
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect
+      .mockReturnValueOnce(
+        chain([
+          material("Bronze Bow Pacing", 20), // after the build (unit createdAt 10)
+          material("Dash Ch1", 5), // before it — already in the curriculum
+        ]),
+      )
+      .mockReturnValueOnce(chain([{ id: "c1", grade: 6 }]))
+      .mockReturnValueOnce(chain([{ courseId: "c1", quarter: "Q3", createdAt: 10 }]));
+
+    const data = await (await GET()).json();
+    const q3 = data.grades[0].quarters.find((q: { quarter: string }) => q.quarter === "Q3");
+
+    expect(q3.built).toBe(true);
+    expect(q3.total).toBe(2);
+    expect(q3.newSinceBuild).toBe(1);
+  });
+
+  it("reports no new material when everything predates the build", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect
+      .mockReturnValueOnce(chain([material("Dash Ch1", 5)]))
+      .mockReturnValueOnce(chain([{ id: "c1", grade: 6 }]))
+      .mockReturnValueOnce(chain([{ courseId: "c1", quarter: "Q3", createdAt: 10 }]));
+
+    const data = await (await GET()).json();
+    const q3 = data.grades[0].quarters.find((q: { quarter: string }) => q.quarter === "Q3");
+
+    expect(q3.newSinceBuild).toBe(0);
+  });
 });

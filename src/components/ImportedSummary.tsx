@@ -10,6 +10,10 @@ type QuarterSummary = {
   categories: Record<string, number>;
   files: FileRow[];
   built: boolean;
+  // Imported after the quarter was built. Before this existed, such material
+  // was invisible here AND unbuildable: the built card offered only "Open",
+  // and Rebuild lived behind a Build button that built quarters never render.
+  newSinceBuild: number;
 };
 type GradeSummary = {
   grade: number;
@@ -174,6 +178,7 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
           const total = q?.total ?? 0;
           const isEmpty = total === 0;
           const isBuilt = q?.built ?? false;
+          const isNew = q?.newSinceBuild ?? 0;
           const isOpen = expanded === qk;
 
           // #604: a built quarter has graduated — its files live in the
@@ -193,19 +198,75 @@ export default function ImportedSummary({ refreshKey = 0 }: { refreshKey?: numbe
                     ✓ built
                   </span>
                 </div>
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
-                  in curriculum
-                </p>
-                <button
-                  onClick={() =>
-                    router.push(
-                      grade.courseId ? `/curriculum/edit/${grade.courseId}?quarter=${qk}` : "/curriculum",
-                    )
-                  }
-                  className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-                >
-                  Open →
-                </button>
+                {isNew > 0 ? (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 leading-snug">
+                    {isNew} file{isNew === 1 ? "" : "s"} imported since — not in the
+                    curriculum yet
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
+                    in curriculum
+                  </p>
+                )}
+                <div className="mt-1.5 flex items-center gap-2">
+                  <button
+                    onClick={() =>
+                      router.push(
+                        grade.courseId ? `/curriculum/edit/${grade.courseId}?quarter=${qk}` : "/curriculum",
+                      )
+                    }
+                    className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                  >
+                    Open →
+                  </button>
+                  {/* A built quarter used to be a dead end: no ledger, no Build
+                      button, and Rebuild only reachable through the Build button
+                      it never rendered. Anything imported afterwards could not be
+                      built in at all. */}
+                  {buildingQuarter === qk ? (
+                    <span className="text-[11px] font-medium text-zinc-400 animate-pulse">
+                      Rebuilding…
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingBuild(qk)}
+                      disabled={buildingQuarter !== null}
+                      className={`text-[11px] font-medium disabled:opacity-40 transition-colors ${
+                        isNew > 0
+                          ? "font-semibold text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
+                          : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      }`}
+                    >
+                      Rebuild
+                    </button>
+                  )}
+                </div>
+                {confirmingBuild === qk && buildingQuarter === null && (
+                  <div className="mt-2 rounded-md border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 p-2 space-y-1.5">
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                      Rebuild {qk} from all {total} files? This discards the current
+                      {" "}{qk} units and lessons and builds them again from your
+                      folders. Any edits you made to {qk} are lost.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setConfirmingBuild(null);
+                          buildQuarter(grade.grade, qk, "", true);
+                        }}
+                        className="text-[11px] font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded px-2 py-0.5 transition-colors"
+                      >
+                        Rebuild {qk}
+                      </button>
+                      <button
+                        onClick={() => setConfirmingBuild(null)}
+                        className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           }
