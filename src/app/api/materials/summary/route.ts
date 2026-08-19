@@ -21,6 +21,9 @@ type QuarterSummary = {
   // #604: a built quarter graduates off the staging view — the client shows a
   // quiet done-state instead of the file ledger.
   built: boolean;
+  // Materials imported AFTER this quarter was built. They are in neither the
+  // curriculum nor the ledger, so the card has to say so or they are lost.
+  newSinceBuild: number;
 };
 type GradeSummary = {
   grade: number;
@@ -69,14 +72,24 @@ export async function GET() {
     .where(eq(courses.ownerEmail, ownerEmail));
   const courseById = new Map(ownCourses.map((c) => [c.id, c.grade]));
   const builtSet = new Set<string>(); // "grade:quarter"
+  // When each grade+quarter was last built. A built quarter shows no file
+  // ledger, so without this a material imported after the build is invisible
+  // AND unbuildable — the card offers only "Open". That dead end is what this
+  // timestamp exists to break.
+  const builtAt = new Map<string, Date>();
   if (ownCourses.length > 0) {
     const unitRows = await db
-      .select({ courseId: units.courseId, quarter: units.quarter })
+      .select({ courseId: units.courseId, quarter: units.quarter, createdAt: units.createdAt })
       .from(units)
       .where(inArray(units.courseId, ownCourses.map((c) => c.id)));
     for (const u of unitRows) {
       const g = courseById.get(u.courseId);
-      if (g != null && u.quarter) builtSet.add(`${g}:${u.quarter}`);
+      if (g == null || !u.quarter) continue;
+      const key = `${g}:${u.quarter}`;
+      builtSet.add(key);
+      // Latest unit wins: that is when the quarter was most recently built.
+      const prev = builtAt.get(key);
+      if (!prev || u.createdAt > prev) builtAt.set(key, u.createdAt);
     }
   }
   const courseIdByGrade = new Map<number, string>();
@@ -111,6 +124,7 @@ export async function GET() {
         categories: {},
         files: [],
         built: builtSet.has(`${grade}:${quarter}`),
+        newSinceBuild: 0,
       };
       g.quarters.push(q);
     }
@@ -120,6 +134,11 @@ export async function GET() {
     // ledger — those files live in the curriculum and the pool now.
     if (!q.built) {
       q.files.push({ title: r.title, materialType: r.materialType, category });
+    } else {
+      // Imported after the build, so it is in neither the curriculum nor the
+      // ledger. Counting it is what makes "you have new material here" sayable.
+      const when = builtAt.get(`${grade}:${quarter}`);
+      if (when && r.createdAt > when) q.newSinceBuild += 1;
     }
   }
 
