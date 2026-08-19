@@ -13,7 +13,7 @@ vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect, update: mockDbUpdate } }));
 vi.mock("@/db/schema", () => ({
   materials: { id: {}, title: {}, sourceUnit: {}, driveFolderId: {} },
-  driveFolders: { driveId: {}, ownerEmail: {} },
+  driveFolders: { driveId: {}, ownerEmail: {}, folderKey: {} },
 }));
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((_c, v) => ({ type: "eq", v })),
@@ -21,6 +21,7 @@ vi.mock("drizzle-orm", () => ({
   or: vi.fn((...a) => ({ type: "or", a })),
   isNull: vi.fn((c) => ({ type: "isNull", c })),
   inArray: vi.fn((c, v) => ({ type: "inArray", c, v })),
+  like: vi.fn((c, v) => ({ type: "like", c, v })),
 }));
 vi.mock("@/lib/drive", () => ({ scanFolderUnits: mockScanFolderUnits }));
 
@@ -120,5 +121,87 @@ describe("POST /api/import/backfill-units", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).matched).toBe(0);
     expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  // ── repair mode (#682) ────────────────────────────────────────────────────
+  // A scanner bug wrote the DEEPEST folder name as the unit, so rows carry
+  // values that are WRONG rather than missing. The default path cannot touch
+  // them, and re-importing would duplicate every material and Drive file.
+  describe("repair mode", () => {
+    const SCAN = [
+      { id: "s1", name: "dash-ch1.pdf", mimeType: "x", parents: [], sourceUnit: "Dash Q3" },
+      { id: "s2", name: "letter.pdf", mimeType: "x", parents: [], sourceUnit: "Dash Q3" },
+    ];
+
+    it("leaves a disagreeing value alone when repair is not requested", async () => {
+      mockScanFolderUnits.mockResolvedValueOnce(SCAN);
+      mockDbSelect
+        .mockReturnValueOnce(selectChain([{ driveId: "d1" }]))
+        // Default mode's query filters to nulls, so a wrong-valued row never
+        // reaches the loop — modelled here by returning none.
+        .mockReturnValueOnce(selectChain([]));
+      mockDbUpdate.mockReturnValue({ set: vi.fn() });
+
+      const res = await POST(req({ sourceFolderId: "src-1" }));
+      const body = await res.json();
+
+      expect(body.matched).toBe(0);
+      expect(body.repaired).toEqual([]);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+    });
+
+    it("overwrites a disagreeing value and reports from → to", async () => {
+      mockScanFolderUnits.mockResolvedValueOnce(SCAN);
+      mockDbSelect.mockReturnValueOnce(selectChain([{ driveId: "d1" }])).mockReturnValueOnce(
+        selectChain([
+          // The real shape of the bug: a file inside Dash Q3/Letters/ stored
+          // under the nested folder's name.
+          { id: "m1", title: "letter.pdf", sourceUnit: "Letters" },
+          { id: "m2", title: "dash-ch1.pdf", sourceUnit: "Dash Q3" }, // already right
+          { id: "m3", title: "orphan.pdf", sourceUnit: null }, // fill
+        ]),
+      );
+
+      const setSpy = vi.fn((_values: { sourceUnit: string }) => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      }));
+      mockDbUpdate.mockReturnValue({ set: setSpy });
+
+      const res = await POST(req({ sourceFolderId: "src-1", repair: true }));
+      const body = await res.json();
+
+      expect(body.repaired).toEqual([{ title: "letter.pdf", from: "Letters", to: "Dash Q3" }]);
+      expect(body.alreadyCorrect).toBe(1);
+      // orphan.pdf is not in the scan → skipped, not filled.
+      expect(body.matched).toBe(0);
+      expect(body.skipped).toBe(1);
+      expect(setSpy).toHaveBeenCalledTimes(1);
+      expect(setSpy.mock.calls[0][0]).toEqual({ sourceUnit: "Dash Q3" });
+    });
+
+    it("never repairs an ambiguous filename", async () => {
+      mockScanFolderUnits.mockResolvedValueOnce([
+        { id: "s1", name: "dup.pdf", mimeType: "x", parents: [], sourceUnit: "Unit A" },
+        { id: "s2", name: "dup.pdf", mimeType: "x", parents: [], sourceUnit: "Unit B" },
+      ]);
+      mockDbSelect
+        .mockReturnValueOnce(selectChain([{ driveId: "d1" }]))
+        .mockReturnValueOnce(selectChain([{ id: "m1", title: "dup.pdf", sourceUnit: "Wrong" }]));
+      mockDbUpdate.mockReturnValue({ set: vi.fn() });
+
+      const body = await (await POST(req({ sourceFolderId: "src-1", repair: true }))).json();
+
+      expect(body.repaired).toEqual([]);
+      expect(body.skipped).toBe(1);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+    });
+
+    it("rejects a grade that is not a plain integer in range", async () => {
+      for (const grade of [0, 13, 1.5, "6"]) {
+        const res = await POST(req({ sourceFolderId: "src-1", repair: true, grade }));
+        expect(res.status).toBe(400);
+      }
+      expect(mockScanFolderUnits).not.toHaveBeenCalled();
+    });
   });
 });
