@@ -213,19 +213,44 @@ export async function POST(req: Request) {
     .join("\n");
 
   // The grade's year plan — her own document, imported once into
-  // grade_N_YearPlan and re-read on every build. It's the only input that
-  // knows what the WHOLE year looks like, so it's the one thing that can tell
-  // the model this quarter has three units and not seven (the verified
-  // over-splitting failure mode). Degrades to "" and changes nothing when she
-  // hasn't imported one.
+  // grade_N_YearPlan and re-read on every build. Degrades to "" and changes
+  // nothing when she hasn't imported one.
+  //
+  // How much authority it carries depends on the mode, and getting this wrong
+  // broke real builds (#682). The first version told the model the plan was
+  // "binding — use ITS unit count, unit names, sequence" and appended that to
+  // BOTH prompts. In faithful mode that directly contradicts the system prompt
+  // three paragraphs up, which says her units are FIXED and must not be added
+  // to, renamed, merged or split. Where the plan and her folders agreed the
+  // model could satisfy both and nothing looked wrong; where they diverged it
+  // followed the document and clobbered her structure. Grade 6 Q2 (her folders
+  // say Before the Ever After + Short Story; her plan says Before the Ever
+  // After + Poetry + Choice Reading) and Q4 (one Refugee folder vs three
+  // bullets) came out wrong for exactly this reason.
+  //
+  // Her folders are the work. A document describing the year does not get to
+  // overrule them — that is the standing "never clobber what she has already
+  // done" constraint. So: advisory in faithful mode, authoritative only in the
+  // fallback path, where there is no folder structure to honour and the plan is
+  // the only thing standing between us and invented units.
   const yearPlanText = await loadYearPlanReference(req, ownerEmail, grade);
-  const yearPlanBlock = yearPlanText
-    ? `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (her own document — authoritative for the shape of the year):
+  const yearPlanBlock = !yearPlanText
+    ? ""
+    : faithful
+      ? `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (context only — her own document):
 ${yearPlanText}
 
-Treat the year plan as binding wherever it speaks to ${quarter}: use ITS unit count, unit names, sequence,
-and pacing rather than inventing your own. Where it is silent, fall back to the materials below.`
-    : "";
+Use the year plan ONLY to inform pacing, lesson sequence, essential questions, anchor texts and
+standards emphasis. It does NOT change the unit list: the units given above come from her own
+folders and are authoritative even where this document names different units, more units, or fewer.
+If the plan describes a unit that is not in the given list, ignore it. If the given list contains a
+unit the plan never mentions, keep it exactly as given.`
+      : `\n\nTHE TEACHER'S YEAR PLAN for Grade ${grade} (her own document — authoritative for the shape of the year):
+${yearPlanText}
+
+No unit structure was captured from her folders for this quarter, so treat the year plan as binding
+wherever it speaks to ${quarter}: use ITS unit count, unit names, sequence, and pacing rather than
+inventing your own. Where it is silent, fall back to the materials below.`;
 
   const referenceBlock = referenceText
     ? `\n\nTeacher's reference material (pacing guide / schedule). Use it to inform pacing, ordering, and standards coverage:\n${referenceText}`

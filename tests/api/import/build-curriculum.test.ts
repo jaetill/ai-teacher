@@ -389,6 +389,75 @@ describe("POST /api/import/build-curriculum", () => {
       expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({ title: "The Giver", source: "human" });
     });
 
+    it("never lets the year plan override her units in faithful mode (#682)", async () => {
+      // The bug: the year-plan block told the model the plan was binding on
+      // unit count and names, and was appended to the faithful prompt too —
+      // where the system prompt says her units are FIXED. Grade 6 Q2 and Q4
+      // came out wrong because her folders and her plan disagree there.
+      mockLoadYearPlan.mockResolvedValue(
+        "Q1: Poetry Unit, Choice Reading Book, Nonfiction articles",
+      );
+
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: "mat1",
+              title: "Giver Ch1",
+              materialType: "reading",
+              driveFolderId: "drive1",
+              sourceUnit: "The Giver",
+            },
+          ]),
+        )
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(makeChain([CREATED_UNIT]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([CREATED_LESSON]))
+        .mockReturnValue(makeChain([]));
+
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+
+      const call = mockMessagesCreate.mock.calls[0][0];
+      const userContent = call.messages[0].content as string;
+
+      // The plan still reaches the model — it informs pacing and standards.
+      expect(userContent).toContain("Q1: Poetry Unit, Choice Reading Book");
+      // But it is explicitly stripped of authority over the unit list.
+      expect(userContent).toContain("does NOT change the unit list");
+      expect(userContent).toContain("context only");
+      // And must not carry the language that caused the clobber.
+      expect(userContent).not.toContain("use ITS unit count");
+      expect(userContent).not.toContain("authoritative for the shape of the year");
+    });
+
+    it("keeps the year plan authoritative in fallback mode, where she has no folders", async () => {
+      // No sourceUnit anywhere → nothing of hers to protect, and the plan is
+      // the only thing preventing invented units. Authority is correct here.
+      mockLoadYearPlan.mockResolvedValue("Q1: one unit only — The Giver");
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+
+      const userContent = mockMessagesCreate.mock.calls[0][0].messages[0].content as string;
+      expect(userContent).toContain("use ITS unit count");
+      expect(userContent).toContain("No unit structure was captured from her folders");
+      expect(userContent).not.toContain("does NOT change the unit list");
+    });
+
     it("forwards referenceText into the AI prompt and stores it on a new course", async () => {
       // Fallback grouping (no sourceUnit) keeps this focused on the reference plumbing.
       mockDbSelect.mockReset();
