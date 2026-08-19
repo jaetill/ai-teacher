@@ -56,6 +56,37 @@ src/
 - Context window carries unit/lesson/student profile data as system context
 - No real student data used during development
 
+## Her folders are her units (inviolable)
+
+Stated plainly by Jason, 2026-08-19: **"her folders are her units. plain and simple."**
+
+When a Drive import captures `materials.sourceUnit`, the teacher's own folder names
+ARE the unit list. Faithful mode builds units from that list and the AI's only job is
+enrichment — lessons, standards, durations, essential questions. Nothing may add,
+remove, rename, merge, split or reorder those units. Not the AI. Not a pacing guide.
+Not her own year-plan document.
+
+This is not a style preference; it is the rule the app exists to respect, and it has
+been broken twice by well-intentioned changes:
+
+- **#680/#682** — a year-plan block told the model the plan was "binding … use ITS
+  unit count, unit names" and was appended to the faithful prompt too. Her Grade 6 Q2
+  and Q4 built with zero lessons, because the model answered with the plan's unit
+  names and the title join to her folder-derived units missed. The year plan is now
+  context-only in faithful mode; it keeps authority only in the fallback path, where
+  she has no folder structure to honour.
+- **#682** — `scanFolderUnits` used the deepest folder as the unit, so
+  `Dash Q3/Letters/` produced a unit called "Letters" and Dash never existed. The unit
+  is the FIRST folder below the scanned root and stays constant all the way down.
+
+Before changing any build prompt, ask: can this make the model return a unit set that
+differs from her folders? If yes, it is wrong regardless of how good the intent is.
+Tests pinning this live in `tests/api/import/build-curriculum.test.ts` (faithful mode
+must not contain unit-overriding language) and `tests/lib/scan-folder-units.test.ts`.
+
+Corollary: a unit that gets no enrichment must be *reported*, not silently created
+empty — see `unmatchedUnits` in the build response.
+
 ## Key decisions
 - Next.js API routes instead of separate AWS Lambda functions — simpler local dev, easier iteration
 - Vercel instead of S3+CloudFront — better fit for Next.js, simpler deploy
