@@ -589,12 +589,36 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // The units to create. Faithful mode: one per the teacher's folder (source
   // "human"), enriched by matching AI output on title. Fallback: the AI's own
   // grouping (source "ai"). Both feed one persistence loop below.
+  //
+  // The title join is fragile by nature — it depends on the model echoing her
+  // folder names back verbatim, and when it doesn't, the old code silently
+  // created a unit with no lessons and still reported success. That is how a
+  // single bad prompt instruction produced eight empty Grade 6 units with no
+  // error anywhere (#682). Two safeguards now:
+  //   1. Positional fallback. The prompt asks for one object per given unit in
+  //      the given order, so when the model returns the right COUNT but wrong
+  //      titles, index i is overwhelmingly the enrichment for unit i. An
+  //      approximately-right lesson plan under her title beats an empty unit.
+  //   2. Whatever is still unmatched is counted and returned, so an empty
+  //      build is visible in the response instead of looking like a success.
+  const unmatchedUnits: string[] = [];
   const unitsToCreate: Array<{ title: string; source: "human" | "ai"; enr?: ParsedUnit }> = faithful
-    ? distinctUnits.map((name) => ({
-        title: name,
-        source: "human" as const,
-        enr: enrichmentByTitle.get(name.trim().toLowerCase()),
-      }))
+    ? distinctUnits.map((name, i) => {
+        const byTitle = enrichmentByTitle.get(name.trim().toLowerCase());
+        // Only trust position when the model returned one object per unit —
+        // a different count means it restructured, and guessing would pair
+        // her unit with someone else's lessons.
+        const byPosition =
+          !byTitle && parsedUnits.length === distinctUnits.length ? parsedUnits[i] : undefined;
+        if (!byTitle && !byPosition) unmatchedUnits.push(name);
+        if (!byTitle && byPosition) {
+          console.warn(
+            `[build-curriculum] enrichment title mismatch for ${JSON.stringify(name)}; ` +
+              `falling back to position ${i} (${JSON.stringify(byPosition.title)})`,
+          );
+        }
+        return { title: name, source: "human" as const, enr: byTitle ?? byPosition };
+      })
     : parsedUnits.map((u) => ({ title: u.title, source: "ai" as const, enr: u }));
 
   // ── 6-8. Create each unit, its standards, lessons, and material links ───
@@ -717,6 +741,10 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     // Whether her year plan steered this build — so the UI can say so instead
     // of leaving her to guess what the model was told.
     yearPlanUsed: yearPlanText.length > 0,
+    // Units that got no enrichment at all: they exist but have no lessons.
+    // Surfaced rather than swallowed, so "built 3 units, 0 lessons" can never
+    // again look like a clean success (#682).
+    unmatchedUnits,
     unitCount: createdUnits.length,
     units: createdUnits,
     lessonCount,

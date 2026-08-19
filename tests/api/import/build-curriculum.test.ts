@@ -443,6 +443,131 @@ describe("POST /api/import/build-curriculum", () => {
       expect(userContent).not.toContain("authoritative for the shape of the year");
     });
 
+    it("falls back to positional enrichment when the model renames her units (#682)", async () => {
+      // The failure that produced eight empty Grade 6 units: the model returned
+      // a unit under a different title, the title join missed, and the unit was
+      // created with no lessons and reported as a success.
+      mockMessagesCreate.mockResolvedValueOnce({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              units: [
+                {
+                  // Her folder is "The Giver"; the model answered with its own name.
+                  title: "Poetry Unit",
+                  durationWeeks: 3,
+                  summary: "s",
+                  essentialQuestions: "",
+                  anchorTexts: "",
+                  contentWarnings: null,
+                  lessons: [
+                    {
+                      sortOrder: 1,
+                      title: "Intro",
+                      durationMinutes: 45,
+                      objectives: ["o"],
+                      activities: ["a"],
+                      standards: [],
+                      materials: [],
+                    },
+                  ],
+                  unitStandards: [],
+                },
+              ],
+            }),
+          },
+        ],
+      });
+
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: "mat1",
+              title: "Giver Ch1",
+              materialType: "reading",
+              driveFolderId: "drive1",
+              sourceUnit: "The Giver",
+            },
+          ]),
+        )
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const unitChain = makeChain([CREATED_UNIT]);
+      const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
+      unitChain.values = unitValuesSpy;
+
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(unitChain)
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([CREATED_LESSON]))
+        .mockReturnValue(makeChain([]));
+
+      const res = await POST(makeRequest());
+      const body = await res.json();
+
+      // Her folder title is still what gets saved — position only supplies the
+      // lesson plan, never the name.
+      expect(unitValuesSpy.mock.calls[0][0]).toMatchObject({
+        title: "The Giver",
+        source: "human",
+        durationWeeks: 3,
+      });
+      // And the lessons are no longer dropped on the floor.
+      expect(body.lessonCount).toBe(1);
+      expect(body.unmatchedUnits).toEqual([]);
+    });
+
+    it("reports units it could not enrich instead of silently building them empty", async () => {
+      // Model returns a different COUNT, so position cannot be trusted either —
+      // pairing her unit with someone else's lessons would be worse than empty.
+      mockMessagesCreate.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify({ units: [] }) }],
+      });
+
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: "mat1",
+              title: "Giver Ch1",
+              materialType: "reading",
+              driveFolderId: "drive1",
+              sourceUnit: "The Giver",
+            },
+          ]),
+        )
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      mockDbInsert.mockReset();
+      mockDbInsert.mockReturnValueOnce(makeChain([CREATED_UNIT])).mockReturnValue(makeChain([]));
+
+      const res = await POST(makeRequest());
+      const body = await res.json();
+
+      expect(body.lessonCount).toBe(0);
+      // The empty build is visible in the response rather than looking clean.
+      expect(body.unmatchedUnits).toEqual(["The Giver"]);
+    });
+
     it("keeps the year plan authoritative in fallback mode, where she has no folders", async () => {
       // No sourceUnit anywhere → nothing of hers to protect, and the plan is
       // the only thing preventing invented units. Authority is correct here.
