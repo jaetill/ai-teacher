@@ -1,11 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks (must be initialized before any import runs) ──────────
-const { mockDbSelect, mockDbInsert, mockDbDelete, mockMessagesCreate } = vi.hoisted(() => ({
-  mockDbSelect: vi.fn(),
-  mockDbInsert: vi.fn(),
-  mockDbDelete: vi.fn(),
-  mockMessagesCreate: vi.fn(),
+const { mockDbSelect, mockDbInsert, mockDbDelete, mockMessagesCreate, mockLoadYearPlan } =
+  vi.hoisted(() => ({
+    mockDbSelect: vi.fn(),
+    mockDbInsert: vi.fn(),
+    mockDbDelete: vi.fn(),
+    mockMessagesCreate: vi.fn(),
+    mockLoadYearPlan: vi.fn(),
+  }));
+
+// The year-plan loader runs its own db.select calls. Mocking the module (rather
+// than letting it draw from mockDbSelect) keeps this file's strictly-ordered
+// select sequences valid — the loader is covered on its own in
+// tests/lib/year-plan-reference.test.ts.
+vi.mock("@/lib/year-plan-reference", () => ({
+  loadYearPlanReference: mockLoadYearPlan,
+  yearPlanFolderKey: (g: number) => `grade_${g}_YearPlan`,
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
@@ -205,6 +216,9 @@ function makeRequest() {
 describe("POST /api/import/build-curriculum", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no year plan imported, so the prompt is exactly what it was
+    // before the feature existed.
+    mockLoadYearPlan.mockResolvedValue("");
     mockGetServerSession.mockResolvedValue({
       user: { email: "teacher@school.edu", name: "Teacher" },
     });
@@ -421,6 +435,51 @@ describe("POST /api/import/build-curriculum", () => {
       expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({
         teacherNotes: "PACING: 2 weeks per novel.",
       });
+    });
+
+    it("puts the grade's year plan in the prompt without storing it as course notes", async () => {
+      mockLoadYearPlan.mockResolvedValue("Q1: The Giver (5 weeks), then Poetry (2 weeks).");
+      setupMocks({ courseSelectReturn: [], courseInsertReturn: [{ id: "c1" }] });
+
+      // Re-prime the course insert so we can inspect what it was given.
+      const courseChain = makeChain([{ id: "c1" }]);
+      const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
+      courseChain.values = courseValuesSpy;
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(courseChain) // courses
+        .mockReturnValueOnce(makeChain([CREATED_UNIT])) // units
+        .mockReturnValueOnce(makeChain([])) // unitStandards
+        .mockReturnValueOnce(makeChain([CREATED_LESSON])) // lessons
+        .mockReturnValue(makeChain([])); // lessonStandards + materialAttachments
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.yearPlanUsed).toBe(true);
+
+      // It was loaded for the requested grade…
+      expect(mockLoadYearPlan).toHaveBeenCalledWith(expect.anything(), "teacher@school.edu", 5);
+      // …and reached the model, framed as binding for this quarter.
+      const userContent = mockMessagesCreate.mock.calls[0][0].messages[0].content as string;
+      expect(userContent).toContain("Q1: The Giver (5 weeks), then Poetry (2 weeks).");
+      expect(userContent).toContain("YEAR PLAN");
+      // teacherNotes stays the teacher's pasted note; the year plan is a live
+      // reference re-read each build, not a snapshot copied onto the course.
+      expect(courseValuesSpy.mock.calls[0][0]).toMatchObject({ teacherNotes: null });
+    });
+
+    it("builds exactly as before when no year plan is imported", async () => {
+      mockLoadYearPlan.mockResolvedValue("");
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).yearPlanUsed).toBe(false);
+      const userContent = mockMessagesCreate.mock.calls[0][0].messages[0].content as string;
+      expect(userContent).not.toContain("YEAR PLAN");
     });
   });
 

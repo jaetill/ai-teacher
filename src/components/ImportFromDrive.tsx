@@ -23,6 +23,10 @@ type DriveFile = {
   materialType: string;
   // The teacher's own unit, captured from the Drive subfolder this file lived in.
   sourceUnit: string | null;
+  // Scans are recursive, so pointing at a grade folder pulls the whole tree.
+  // Selection lets a single file (e.g. the year plan sitting at the root) be
+  // imported on its own without importing everything under it.
+  selected: boolean;
   status: "pending" | "copying" | "done" | "error";
   driveWebUrl?: string;
 };
@@ -97,6 +101,7 @@ export default function ImportFromDrive() {
             category: "Activities",
             materialType: "other",
             sourceUnit: f.sourceUnit ?? null,
+            selected: true,
             status: "pending",
           })
         )
@@ -111,6 +116,18 @@ export default function ImportFromDrive() {
   // ── Step 2: Classify ───
 
   async function classify() {
+    // Unselected files drop out here rather than being carried as dead rows —
+    // every step after this (review, import, build) then works on exactly the
+    // set being imported.
+    const chosen = files.filter((f) => f.selected);
+    if (chosen.length === 0) {
+      setError("Select at least one file to import");
+      return;
+    }
+    // Declaring "Year Plan" at step 1 is a scope statement, not a guess: the
+    // classifier's per-file quarter opinion would only fight it.
+    const scopedToYearPlan = defaultQuarter === "YearPlan";
+
     setClassifying(true);
     setError(null);
     try {
@@ -118,15 +135,17 @@ export default function ImportFromDrive() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          filenames: files.map((f) => f.name),
-          zipName: `Grade ${defaultGrade} Quarter ${defaultQuarter.replace("Q", "")}`,
+          filenames: chosen.map((f) => f.name),
+          zipName: scopedToYearPlan
+            ? `Grade ${defaultGrade} Year Plan`
+            : `Grade ${defaultGrade} ${destinationLabel(defaultQuarter)}`,
         }),
       });
       if (!res.ok) throw new Error("Classification failed");
 
       const { classifications } = await res.json();
-      setFiles((prev) =>
-        prev.map((f) => {
+      setFiles(
+        chosen.map((f) => {
           const match = classifications.find(
             (c: { filename: string }) => c.filename === f.name
           );
@@ -134,7 +153,9 @@ export default function ImportFromDrive() {
             return {
               ...f,
               grade: match.grade ?? f.grade,
-              destination: match.destination ?? f.destination,
+              destination: scopedToYearPlan
+                ? "YearPlan"
+                : match.destination ?? f.destination,
               category: match.category ?? f.category,
               materialType: match.materialType ?? f.materialType,
             };
@@ -273,10 +294,23 @@ export default function ImportFromDrive() {
     );
   }
 
+  function setAllSelected(selected: boolean) {
+    setFiles((prev) => prev.map((f) => ({ ...f, selected })));
+  }
+
   // ── Render ───
 
+  const selectedCount = files.filter((f) => f.selected).length;
   const doneCount = files.filter((f) => f.status === "done").length;
   const errorCount = files.filter((f) => f.status === "error").length;
+  // Year Plan material isn't built into units — it's reference for every build
+  // of the grade. An import of nothing but year-plan files has no quarter to build.
+  const builtableCount = files.filter(
+    (f) => f.status === "done" && f.destination !== "YearPlan",
+  ).length;
+  const yearPlanDoneCount = files.filter(
+    (f) => f.status === "done" && f.destination === "YearPlan",
+  ).length;
 
   return (
     <div>
@@ -309,14 +343,14 @@ export default function ImportFromDrive() {
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                  Quarter
+                  Goes in
                 </label>
                 <select
                   value={defaultQuarter}
                   onChange={(e) => setDefaultQuarter(e.target.value)}
                   className="rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-100"
                 >
-                  {DESTINATIONS.filter((d) => d !== "YearPlan").map((d) => (
+                  {DESTINATIONS.map((d) => (
                     <option key={d} value={d}>
                       {destinationLabel(d)}
                     </option>
@@ -324,6 +358,14 @@ export default function ImportFromDrive() {
                 </select>
               </div>
             </div>
+            {defaultQuarter === "YearPlan" && (
+              <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Year Plan material belongs to the whole grade, not one quarter — a
+                pacing guide, a standards map, your plan for the year. It isn&apos;t
+                built into units; it&apos;s read as reference every time you build any
+                quarter of Grade {defaultGrade}.
+              </p>
+            )}
             <div className="flex gap-3">
               <input
                 type="text"
@@ -343,42 +385,70 @@ export default function ImportFromDrive() {
 
             {files.length > 0 && (
               <div className="mt-6">
-                <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-3">
-                  Found {files.length} files
-                  {(() => {
-                    const units = [...new Set(files.map((f) => f.sourceUnit).filter(Boolean))];
-                    return units.length > 0 ? (
-                      <span className="text-zinc-400">
-                        {" "}
-                        · recognized {units.length} unit{units.length === 1 ? "" : "s"} from your
-                        folders
-                      </span>
-                    ) : null;
-                  })()}
-                </p>
-                <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
-                  {files.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 py-0.5"
+                <div className="flex items-baseline justify-between mb-3 gap-3">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                    Found {files.length} files
+                    {(() => {
+                      const units = [...new Set(files.map((f) => f.sourceUnit).filter(Boolean))];
+                      return units.length > 0 ? (
+                        <span className="text-zinc-400">
+                          {" "}
+                          · recognized {units.length} unit{units.length === 1 ? "" : "s"} from your
+                          folders
+                        </span>
+                      ) : null;
+                    })()}
+                    <span className="text-zinc-400"> · {selectedCount} selected</span>
+                  </p>
+                  <div className="flex shrink-0 gap-2 text-xs">
+                    <button
+                      onClick={() => setAllSelected(true)}
+                      className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
                     >
+                      Select all
+                    </button>
+                    <span className="text-zinc-300 dark:text-zinc-700">·</span>
+                    <button
+                      onClick={() => setAllSelected(false)}
+                      className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
+                    >
+                      Select none
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
+                  {files.map((f, i) => (
+                    <label
+                      key={f.id}
+                      className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 py-0.5 cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={f.selected}
+                        onChange={(e) => updateFile(i, "selected", e.target.checked)}
+                        className="shrink-0 accent-zinc-900 dark:accent-zinc-100"
+                      />
                       <span className="truncate">{f.name}</span>
-                      {f.sourceUnit && (
+                      {f.sourceUnit ? (
                         <span className="shrink-0 rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
                           {f.sourceUnit}
                         </span>
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-600">
+                          at root
+                        </span>
                       )}
-                    </div>
+                    </label>
                   ))}
                 </div>
                 <button
                   onClick={classify}
-                  disabled={classifying}
+                  disabled={classifying || selectedCount === 0}
                   className="mt-4 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 transition-colors"
                 >
                   {classifying
-                    ? `Classifying ${files.length} files...`
-                    : "Classify Files"}
+                    ? `Classifying ${selectedCount} files...`
+                    : `Classify ${selectedCount} File${selectedCount === 1 ? "" : "s"}`}
                 </button>
               </div>
             )}
@@ -603,7 +673,16 @@ export default function ImportFromDrive() {
               </table>
             </div>
 
-            {!importing && doneCount > 0 && (
+            {!importing && yearPlanDoneCount > 0 && (
+              <div className="mt-4 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3 text-sm text-indigo-800 dark:text-indigo-300">
+                {yearPlanDoneCount} year-plan{" "}
+                {yearPlanDoneCount === 1 ? "file" : "files"} saved. There&apos;s nothing
+                to build from these — they&apos;ll be read as reference every time you
+                build a quarter of this grade.
+              </div>
+            )}
+
+            {!importing && builtableCount > 0 && (
               <div className="mt-4 flex gap-3">
                 <button
                   onClick={buildCurriculum}
@@ -619,6 +698,17 @@ export default function ImportFromDrive() {
                   className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors inline-block"
                 >
                   Skip
+                </Link>
+              </div>
+            )}
+
+            {!importing && builtableCount === 0 && doneCount > 0 && (
+              <div className="mt-4">
+                <Link
+                  href="/"
+                  className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors inline-block"
+                >
+                  Done
                 </Link>
               </div>
             )}
