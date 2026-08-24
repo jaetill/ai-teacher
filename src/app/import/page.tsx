@@ -5,11 +5,21 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ImportFromComputer from "@/components/ImportFromComputer";
 import ImportFromDrive from "@/components/ImportFromDrive";
+import ImportPlanner from "@/components/ImportPlanner";
 import ImportedSummary from "@/components/ImportedSummary";
 import SummarizeMaterials from "@/components/SummarizeMaterials";
 import RetrofitUnits from "@/components/RetrofitUnits";
 
-type Source = "drive" | "computer";
+type Source = "drive" | "computer" | "legacy";
+
+const TABS: { id: Source; label: string }[] = [
+  { id: "drive", label: "From Google Drive" },
+  { id: "computer", label: "From Computer" },
+  // Kept only until the rebuilt import is proven against the real Drive.
+  // It copies files into a folder tree the app owns; the planner references
+  // them where they are. Delete this tab once the reimport is signed off.
+  { id: "legacy", label: "Legacy (copies files)" },
+];
 
 export default function ImportPage() {
   const { data: session } = useSession();
@@ -38,7 +48,7 @@ export default function ImportPage() {
           Import Materials
         </h1>
         <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
-          AI classifies your files and organizes them into the right Drive folders
+          Point at a folder or a file, say what it is, and say where it goes
         </p>
 
         {/* What's already imported, by quarter — so you can see where you left off */}
@@ -51,29 +61,24 @@ export default function ImportPage() {
 
         {/* ── Source tabs ─── */}
         <div className="flex gap-1 mb-8">
-          <button
-            onClick={() => setSource("drive")}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              source === "drive"
-                ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            }`}
-          >
-            From Google Drive
-          </button>
-          <button
-            onClick={() => setSource("computer")}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              source === "computer"
-                ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            }`}
-          >
-            From Computer
-          </button>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSource(tab.id)}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                source === tab.id
+                  ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                  : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {source === "drive" ? <ImportFromDrive /> : <ImportFromComputer />}
+        {source === "drive" && <ImportPlanner />}
+        {source === "computer" && <ImportFromComputer />}
+        {source === "legacy" && <ImportFromDrive />}
       </div>
     </div>
   );

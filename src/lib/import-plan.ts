@@ -145,6 +145,53 @@ export function validateImportPlan(plan: unknown): PlanError[] {
   return errors;
 }
 
+/**
+ * Read a category out of the folders a file sits in.
+ *
+ * Her subfolders are already named Lessons / Assessments / Activities /
+ * Resources / Curriculum, so the category is sitting there in the path for
+ * free. Using it means the common import needs no AI classification pass and
+ * no review table — "be faithful as deep as her folders go" applied to the one
+ * level below the unit that IS consistent.
+ *
+ * Deepest match wins: "The Giver/Assessments/Retakes" is Assessments.
+ */
+export function inferCategoryFromPath(path: string[]): string | null {
+  for (let i = path.length - 1; i >= 0; i--) {
+    const match = (CATEGORIES as readonly string[]).find(
+      (c) => c.toLowerCase() === path[i].trim().toLowerCase()
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
+const TYPE_BY_CATEGORY: Record<string, string> = {
+  Lessons: "lesson",
+  Assessments: "assessment",
+  Activities: "activity",
+  Resources: "resource",
+  Curriculum: "curriculum",
+};
+
+/**
+ * Best guess at material type, cheaply. Category wins over file kind: a slide
+ * deck filed under Assessments is an assessment, not a lesson.
+ */
+export function inferMaterialType(category: string | null, mimeType: string): string {
+  if (category && TYPE_BY_CATEGORY[category]) return TYPE_BY_CATEGORY[category];
+  // A lesson is a file, usually a PowerPoint (glossary: lesson-entity).
+  if (
+    mimeType === "application/vnd.google-apps.presentation" ||
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+    mimeType === "application/vnd.ms-powerpoint"
+  ) {
+    return "lesson";
+  }
+  return "other";
+}
+
 /** One material as it will be written, after the plan and overrides are applied. */
 export type ResolvedMaterial = {
   driveFileId: string;
@@ -172,6 +219,9 @@ export function resolvePlanMaterials(
     .filter((m) => byId.get(m.fileId)?.include !== false)
     .map((m) => {
       const o = byId.get(m.fileId);
+      // Her correction, then her folder names, then nothing. Never a guess
+      // dressed up as a fact.
+      const category = o?.category ?? inferCategoryFromPath(m.path);
       return {
         driveFileId: m.fileId,
         title: m.name,
@@ -179,8 +229,8 @@ export function resolvePlanMaterials(
         // Her folders win; the target's quarter only fills a gap.
         quarter: m.quarter ?? target.defaultQuarter ?? null,
         sourceUnit: m.unit,
-        category: o?.category ?? null,
-        materialType: o?.materialType ?? "other",
+        category,
+        materialType: o?.materialType ?? inferMaterialType(category, m.mimeType),
         path: m.path,
       };
     });

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { ScannedNode } from "@/lib/drive";
 import {
   commitPlanMaterials,
+  inferCategoryFromPath,
+  inferMaterialType,
   previewPlan,
   resolvePlanMaterials,
   resolveTargetCourse,
@@ -202,6 +204,80 @@ describe("resolvePlanMaterials", () => {
       { fileId: "b", category: "Resources" },
     ]);
     expect(out).toHaveLength(2);
+  });
+});
+
+// ── free classification from her own folder names ───
+
+describe("inferCategoryFromPath", () => {
+  it("reads the category out of a folder she already named", () => {
+    expect(inferCategoryFromPath(["The Giver", "Lessons"])).toBe("Lessons");
+    expect(inferCategoryFromPath(["Q1", "Fever 1793", "Assessments"])).toBe("Assessments");
+  });
+
+  it("is case-insensitive and trims", () => {
+    expect(inferCategoryFromPath([" resources "])).toBe("Resources");
+  });
+
+  it("takes the deepest match", () => {
+    expect(inferCategoryFromPath(["Lessons", "Assessments", "Retakes"])).toBe("Assessments");
+  });
+
+  it("returns null rather than guessing when no folder says", () => {
+    expect(inferCategoryFromPath(["The Giver", "Handouts"])).toBeNull();
+    expect(inferCategoryFromPath([])).toBeNull();
+  });
+});
+
+describe("inferMaterialType", () => {
+  it("maps a known category onto its type", () => {
+    expect(inferMaterialType("Assessments", "application/pdf")).toBe("assessment");
+    expect(inferMaterialType("Activities", "application/pdf")).toBe("activity");
+  });
+
+  it("treats a slide deck as a lesson — a lesson is a file, usually a PowerPoint", () => {
+    expect(inferMaterialType(null, "application/vnd.google-apps.presentation")).toBe("lesson");
+    expect(
+      inferMaterialType(
+        null,
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe("lesson");
+  });
+
+  it("lets the category win over the file kind", () => {
+    // A deck filed under Assessments is an assessment, not a lesson.
+    expect(inferMaterialType("Assessments", "application/vnd.google-apps.presentation")).toBe(
+      "assessment",
+    );
+  });
+
+  it("falls back to other rather than inventing a type", () => {
+    expect(inferMaterialType(null, "application/pdf")).toBe("other");
+  });
+});
+
+describe("resolvePlanMaterials — classification without an AI call", () => {
+  it("uses her folder names, and her explicit override beats them", () => {
+    const planned: PlannedMaterial[] = [
+      {
+        fileId: "a",
+        name: "Giver.pptx",
+        mimeType: "application/vnd.google-apps.presentation",
+        quarter: "Q2",
+        unit: "The Giver",
+        path: ["The Giver", "Assessments"],
+      },
+    ];
+
+    expect(resolvePlanMaterials(planned, { grade: 7 })[0]).toMatchObject({
+      category: "Assessments",
+      materialType: "assessment",
+    });
+
+    expect(
+      resolvePlanMaterials(planned, { grade: 7 }, [{ fileId: "a", category: "Lessons" }])[0],
+    ).toMatchObject({ category: "Lessons", materialType: "lesson" });
   });
 });
 
