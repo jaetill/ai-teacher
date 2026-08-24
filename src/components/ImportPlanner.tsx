@@ -1,44 +1,45 @@
 "use client";
 
-// Import, in the order the teacher actually thinks:
+// One screen. Point at a folder, say what it is and where it goes, import.
 //
-//   1. point at something
-//   2. say what it IS          (the level map — her structure, declared)
-//   3. say where it GOES       (school year -> grade -> track)
-//   4. import
+// The first version was four stepped panels and it was tedious: the teacher
+// had to walk a wizard to do something she already knew the answer to before
+// she started. Everything now lives on one screen, the structure is a single
+// dropdown rather than a per-depth grid, and the only thing between her and
+// the import button is a chance to fix classifications that came out wrong.
 //
-// Step 2 runs entirely in the browser. applyLevelMap is pure, so changing a
-// dropdown re-derives the units and quarters instantly with no round trip —
-// she sees what her declaration means while she is making it, which is what
-// stops this from being a preview screen bolted on afterwards.
+// The whole preview is computed in the browser. applyLevelMap is pure, so
+// every control re-derives units, quarters and categories instantly.
 
 import { useMemo, useState } from "react";
 import type { ScannedNode } from "@/lib/drive";
 import {
   applyLevelMap,
-  validateLevelMap,
-  LEVEL_KINDS,
-  type LevelKind,
   type LevelMap,
   type LevelMapProposal,
 } from "@/lib/import-structure";
+import { inferCategoryFromPath, inferMaterialType } from "@/lib/import-classify";
+import { CATEGORIES } from "@/lib/upload-utils";
 
-const KIND_LABEL: Record<LevelKind, string> = {
-  grade: "A grade",
-  year: "A school year",
-  quarter: "A quarter",
-  unit: "A unit",
-  container: "Just a folder — no meaning",
-};
-
-const DEPTH_LABEL = [
-  "The folder you picked is…",
-  "Folders inside it are…",
-  "Folders one level deeper are…",
-  "Folders below that are…",
+/**
+ * The structural question as five plain-English answers. A per-depth grid was
+ * strictly more expressive and much worse to use — these are the shapes a
+ * teacher's folder actually takes.
+ */
+const SHAPES: { id: string; label: string; levels: LevelMap }[] = [
+  { id: "units", label: "A folder of units", levels: ["container", "unit"] },
+  { id: "unit", label: "One unit", levels: ["unit"] },
+  { id: "quarter", label: "One quarter, holding units", levels: ["quarter", "unit"] },
+  { id: "year", label: "A whole year of quarters and units", levels: ["year", "quarter", "unit"] },
+  { id: "files", label: "Just files — no units", levels: ["container"] },
 ];
 
 const QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"] as const;
+
+function shapeIdFor(levels: LevelMap): string {
+  const key = levels.join(">");
+  return SHAPES.find((s) => s.levels.join(">") === key)?.id ?? "units";
+}
 
 type SourceKind = "drive-folder" | "drive-file";
 
@@ -56,11 +57,10 @@ type Targets = {
 };
 
 type ImportResult = {
-  courseId: string;
-  courseCreated: boolean;
   created: number;
   updated: number;
   total: number;
+  courseCreated: boolean;
   units: string[];
   warnings: string[];
 };
@@ -75,79 +75,68 @@ export function extractDriveId(input: string): string {
   return m ? m[1] : s;
 }
 
-/** How deep the folder nesting actually goes, so we offer no phantom levels. */
-export function folderDepth(node: ScannedNode): number {
-  const kids = node.children.filter((c) => c.isFolder);
-  if (!kids.length) return 0;
-  return 1 + Math.max(...kids.map(folderDepth));
-}
-
-function Tree({ node, depth = 0 }: { node: ScannedNode; depth?: number }) {
-  if (depth > 2) return null;
-  const folders = node.children.filter((c) => c.isFolder);
-  const files = node.children.filter((c) => !c.isFolder);
-  return (
-    <ul className={depth === 0 ? "" : "ml-4 border-l border-zinc-200 dark:border-zinc-800 pl-3"}>
-      {folders.map((f) => (
-        <li key={f.id} className="py-0.5">
-          <span className="text-zinc-700 dark:text-zinc-300">{f.name}/</span>
-          <Tree node={f} depth={depth + 1} />
-        </li>
-      ))}
-      {files.length > 0 && (
-        <li className="py-0.5 text-zinc-400 dark:text-zinc-500">
-          {files.length} file{files.length === 1 ? "" : "s"}
-        </li>
-      )}
-    </ul>
-  );
-}
-
 export default function ImportPlanner() {
   const [sourceKind, setSourceKind] = useState<SourceKind>("drive-folder");
   const [sourceInput, setSourceInput] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scan, setScan] = useState<ScanResponse | null>(null);
-  const [levels, setLevels] = useState<LevelMap>([]);
-  const [truncated, setTruncated] = useState<LevelKind | null>(null);
+  const [shapeId, setShapeId] = useState("units");
   const [error, setError] = useState<string | null>(null);
 
   const [targets, setTargets] = useState<Targets | null>(null);
-  const [schoolYearId, setSchoolYearId] = useState<string>("");
+  const [schoolYearId, setSchoolYearId] = useState("");
   const [grade, setGrade] = useState(7);
   const [track, setTrack] = useState("");
   const [defaultQuarter, setDefaultQuarter] = useState("");
 
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [showFixes, setShowFixes] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
 
-  const maxDepth = scan ? Math.min(folderDepth(scan.tree) + 1, DEPTH_LABEL.length) : 0;
-  const levelErrors = levels.length ? validateLevelMap(levels) : [];
+  const levels = SHAPES.find((s) => s.id === shapeId)!.levels;
 
-  // Recomputed on every dropdown change, in the browser, from the tree we
-  // already have. No server round trip, so the feedback is immediate.
   const placement = useMemo(() => {
-    if (!scan || !levels.length || levelErrors.length) return null;
+    if (!scan) return null;
     try {
       return applyLevelMap(scan.tree, levels);
     } catch {
       return null;
     }
-  }, [scan, levels, levelErrors.length]);
+  }, [scan, levels]);
 
-  const needsDefaultQuarter = Boolean(
-    placement && placement.materials.some((m) => !m.quarter)
-  );
+  /** Same inference the server will run, so what she sees is what gets written. */
+  const classified = useMemo(() => {
+    if (!placement) return [];
+    return placement.materials.map((m) => {
+      const category = overrides[m.fileId] ?? inferCategoryFromPath(m.path);
+      return {
+        fileId: m.fileId,
+        name: m.name,
+        unit: m.unit,
+        quarter: m.quarter,
+        category,
+        materialType: inferMaterialType(category, m.mimeType),
+      };
+    });
+  }, [placement, overrides]);
 
-  async function runScan() {
-    const id = extractDriveId(sourceInput);
-    if (!id) {
-      setError("Paste a Google Drive link or id first.");
-      return;
-    }
+  const byCategory = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of classified) counts[c.category ?? "Unclassified"] = (counts[c.category ?? "Unclassified"] ?? 0) + 1;
+    return counts;
+  }, [classified]);
+
+  const unclassified = classified.filter((c) => !c.category);
+  const needsDefaultQuarter = classified.some((c) => !c.quarter);
+
+  async function runScan(raw: string) {
+    const id = extractDriveId(raw);
+    if (!id) return;
     setScanning(true);
     setError(null);
     setResult(null);
+    setOverrides({});
     try {
       const param = sourceKind === "drive-folder" ? "folderId" : "fileId";
       const [scanRes, targetRes] = await Promise.all([
@@ -157,18 +146,17 @@ export default function ImportPlanner() {
 
       if (!scanRes.ok) {
         setError((await scanRes.json()).error ?? "Could not read that folder.");
+        setScan(null);
         return;
       }
       const data: ScanResponse = await scanRes.json();
       setScan(data);
-      setLevels(data.proposal.levels);
+      setShapeId(shapeIdFor(data.proposal.levels));
 
-      if (targetRes) {
-        if (targetRes.ok) {
-          const t: Targets = await targetRes.json();
-          setTargets(t);
-          setSchoolYearId(t.currentSchoolYearId ?? t.schoolYears[0]?.id ?? "");
-        }
+      if (targetRes?.ok) {
+        const t: Targets = await targetRes.json();
+        setTargets(t);
+        setSchoolYearId(t.currentSchoolYearId ?? t.schoolYears[0]?.id ?? "");
       }
     } catch {
       setError("Could not reach the server.");
@@ -198,6 +186,7 @@ export default function ImportPlanner() {
             track: track.trim() || null,
             defaultQuarter: defaultQuarter || null,
           },
+          files: Object.entries(overrides).map(([fileId, category]) => ({ fileId, category })),
         }),
       });
       const data = await res.json();
@@ -213,42 +202,16 @@ export default function ImportPlanner() {
     }
   }
 
-  /**
-   * Change one level, then drop any deeper levels the change made impossible.
-   *
-   * Saying "the folder I picked is a unit" has to imply that the folders below
-   * it are no longer quarters — nothing nests under a unit. Leaving the old
-   * deeper levels in place would hand her an invalid map and an error message
-   * for a choice that was perfectly reasonable. Truncating says what happened
-   * instead of blaming her for it.
-   */
-  function setLevel(depth: number, kind: LevelKind) {
-    const next = [...levels];
-    while (next.length <= depth) next.push("container");
-    next[depth] = kind;
-
-    const kept: LevelMap = [];
-    for (const k of next) {
-      if (validateLevelMap([...kept, k]).length) break;
-      kept.push(k);
-    }
-    setTruncated(kept.length < next.length ? kind : null);
-    setLevels(kept);
-  }
-
   const card =
     "rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-4";
   const label = "block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1";
-  const input =
+  const field =
     "w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100";
-  const stepHeading = "text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3";
 
   return (
     <div>
-      {/* ── 1. What are you pointing at ─── */}
       <div className={card}>
-        <h2 className={stepHeading}>1 · What are you importing?</h2>
-
+        {/* ── Source ─── */}
         <div className="flex gap-1 mb-3">
           {(["drive-folder", "drive-file"] as SourceKind[]).map((k) => (
             <button
@@ -272,232 +235,253 @@ export default function ImportPlanner() {
         <div className="flex gap-2">
           <input
             id="source-input"
-            className={input}
+            className={field}
             value={sourceInput}
             placeholder="https://drive.google.com/drive/folders/…"
             onChange={(e) => setSourceInput(e.target.value)}
+            onBlur={(e) => e.target.value.trim() && runScan(e.target.value)}
           />
           <button
             type="button"
-            onClick={runScan}
+            onClick={() => runScan(sourceInput)}
             disabled={scanning || !sourceInput.trim()}
-            className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
+            className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40 whitespace-nowrap"
           >
-            {scanning ? "Looking…" : "Look at it"}
+            {scanning ? "Reading…" : "Read it"}
           </button>
         </div>
-      </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 mb-4 text-sm text-red-700 dark:text-red-300">
-          {error}
-        </div>
-      )}
-
-      {/* ── 2. What does it mean ─── */}
-      {scan && (
-        <div className={card}>
-          <h2 className={stepHeading}>2 · What is this?</h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-            {scan.folderCount} folder{scan.folderCount === 1 ? "" : "s"}, {scan.fileCount} file
-            {scan.fileCount === 1 ? "" : "s"}. {scan.proposal.reason}
-          </p>
-
-          <div className="rounded-md bg-zinc-50 dark:bg-zinc-950 p-3 mb-4 text-xs font-mono overflow-x-auto">
-            <div className="text-zinc-700 dark:text-zinc-300">{scan.tree.name}/</div>
-            <Tree node={scan.tree} />
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            {Array.from({ length: maxDepth }).map((_, depth) => (
-              <div key={depth}>
-                <label className={label} htmlFor={`level-${depth}`}>
-                  {DEPTH_LABEL[depth]}
+        {/* ── What it is, and where it goes — same screen, no steps ─── */}
+        {scan && placement && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 mt-4">
+              <div>
+                <label className={label} htmlFor="shape">
+                  What is it?
                 </label>
                 <select
-                  id={`level-${depth}`}
-                  className={input}
-                  value={levels[depth] ?? "container"}
-                  onChange={(e) => setLevel(depth, e.target.value as LevelKind)}
+                  id="shape"
+                  className={field}
+                  value={shapeId}
+                  onChange={(e) => setShapeId(e.target.value)}
                 >
-                  {LEVEL_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {KIND_LABEL[k]}
+                  {SHAPES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
                     </option>
                   ))}
                 </select>
               </div>
-            ))}
-          </div>
 
-          {scan.proposal.alternatives.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {scan.proposal.alternatives.map((alt, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setLevels(alt.levels)}
-                  className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left"
+              <div>
+                <label className={label} htmlFor="school-year">
+                  School year
+                </label>
+                <select
+                  id="school-year"
+                  className={field}
+                  value={schoolYearId}
+                  onChange={(e) => setSchoolYearId(e.target.value)}
                 >
-                  Or: {alt.reason}
-                </button>
-              ))}
+                  {(targets?.schoolYears ?? []).map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.name}
+                      {y.isCurrent ? " (current)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={label} htmlFor="grade">
+                  Grade
+                </label>
+                <select
+                  id="grade"
+                  className={field}
+                  value={grade}
+                  onChange={(e) => setGrade(Number(e.target.value))}
+                >
+                  {[6, 7, 8].map((g) => (
+                    <option key={g} value={g}>
+                      Grade {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={label} htmlFor="track">
+                  Track <span className="font-normal">(optional)</span>
+                </label>
+                <input
+                  id="track"
+                  className={field}
+                  value={track}
+                  placeholder="honors"
+                  onChange={(e) => setTrack(e.target.value)}
+                />
+              </div>
+
+              {needsDefaultQuarter && (
+                <div>
+                  <label className={label} htmlFor="default-quarter">
+                    Quarter for files your folders did not place
+                  </label>
+                  <select
+                    id="default-quarter"
+                    className={field}
+                    value={defaultQuarter}
+                    onChange={(e) => setDefaultQuarter(e.target.value)}
+                  >
+                    <option value="">Leave unassigned</option>
+                    {QUARTERS.map((q) => (
+                      <option key={q} value={q}>
+                        {q}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
-          )}
 
-          {truncated && (
-            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Nothing nests below {KIND_LABEL[truncated].toLowerCase()}, so the deeper levels were
-              cleared. Files further down still come in — they just belong to whatever is above
-              them.
-            </p>
-          )}
-
-          {levelErrors.length > 0 && (
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-              {levelErrors.map((e) => e.message).join(" ")}
-            </p>
-          )}
-
-          {placement && (
+            {/* ── What that works out to ─── */}
             <div className="mt-4 rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
               <p className="text-sm text-zinc-900 dark:text-zinc-100">
-                That reads as <strong>{placement.units.length}</strong> unit
+                <strong>{placement.units.length}</strong> unit
                 {placement.units.length === 1 ? "" : "s"}
-                {placement.quarters.length > 0 && (
-                  <>
-                    {" "}
-                    across <strong>{placement.quarters.join(", ")}</strong>
-                  </>
-                )}
-                , with <strong>{placement.materials.length}</strong> file
-                {placement.materials.length === 1 ? "" : "s"}.
+                {placement.quarters.length > 0 && <> in {placement.quarters.join(", ")}</>},{" "}
+                <strong>{classified.length}</strong> file
+                {classified.length === 1 ? "" : "s"}.
               </p>
               {placement.units.length > 0 && (
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   {placement.units.join(" · ")}
                 </p>
               )}
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {Object.entries(byCategory).map(([cat, n]) => (
+                  <span
+                    key={cat}
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      cat === "Unclassified"
+                        ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
+                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                    }`}
+                  >
+                    {cat} {n}
+                  </span>
+                ))}
+                {unclassified.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFixes((v) => !v)}
+                    className="text-xs underline text-zinc-600 dark:text-zinc-400"
+                  >
+                    {showFixes ? "hide" : "fix these"}
+                  </button>
+                )}
+              </div>
+
               {placement.warnings.map((w, i) => (
                 <p key={i} className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                   {w}
                 </p>
               ))}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ── 3. Where does it go ─── */}
-      {scan && targets && (
-        <div className={card}>
-          <h2 className={stepHeading}>3 · Where does it go?</h2>
+            {/* ── The half-step: fix what came out wrong ─── */}
+            {showFixes && unclassified.length > 0 && (
+              <div className="mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Set all {unclassified.length} to
+                  </span>
+                  <select
+                    aria-label="Set all unclassified files to"
+                    className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
+                    value=""
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const next = { ...overrides };
+                      for (const u of unclassified) next[u.fileId] = e.target.value;
+                      setOverrides(next);
+                    }}
+                  >
+                    <option value="">choose…</option>
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className={label} htmlFor="school-year">
-                School year
-              </label>
-              <select
-                id="school-year"
-                className={input}
-                value={schoolYearId}
-                onChange={(e) => setSchoolYearId(e.target.value)}
+                <ul className="max-h-64 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {unclassified.map((u) => (
+                    <li key={u.fileId} className="flex items-center gap-2 py-1.5">
+                      <span className="flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
+                        {u.name}
+                        {u.unit && (
+                          <span className="text-zinc-400 dark:text-zinc-500"> — {u.unit}</span>
+                        )}
+                      </span>
+                      <select
+                        aria-label={`Category for ${u.name}`}
+                        className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
+                        value={overrides[u.fileId] ?? ""}
+                        onChange={(e) =>
+                          setOverrides({ ...overrides, [u.fileId]: e.target.value })
+                        }
+                      >
+                        <option value="">—</option>
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* ── Import ─── */}
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={runImport}
+                disabled={importing || classified.length === 0}
+                className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
               >
-                {targets.schoolYears.map((y) => (
-                  <option key={y.id} value={y.id}>
-                    {y.name}
-                    {y.isCurrent ? " (current)" : ""}
-                  </option>
-                ))}
-              </select>
+                {importing
+                  ? "Importing…"
+                  : `Import ${classified.length} file${classified.length === 1 ? "" : "s"}`}
+              </button>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {(() => {
+                  const match = (targets?.courses ?? []).find(
+                    (c) =>
+                      c.grade === grade &&
+                      (c.track ?? null) === (track.trim() || null) &&
+                      (c.schoolYearId ?? null) === (schoolYearId || null)
+                  );
+                  return match
+                    ? "Adds to your existing course."
+                    : "Creates a new course for this grade and year.";
+                })()}{" "}
+                Files stay where they are in Drive.
+              </span>
             </div>
+          </>
+        )}
+      </div>
 
-            <div>
-              <label className={label} htmlFor="grade">
-                Grade
-              </label>
-              <select
-                id="grade"
-                className={input}
-                value={grade}
-                onChange={(e) => setGrade(Number(e.target.value))}
-              >
-                {[6, 7, 8].map((g) => (
-                  <option key={g} value={g}>
-                    Grade {g}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={label} htmlFor="track">
-                Track <span className="font-normal">(optional)</span>
-              </label>
-              <input
-                id="track"
-                className={input}
-                value={track}
-                placeholder="honors"
-                onChange={(e) => setTrack(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {needsDefaultQuarter && (
-            <div className="mt-3 sm:w-1/3">
-              <label className={label} htmlFor="default-quarter">
-                Quarter for files your folders did not place
-              </label>
-              <select
-                id="default-quarter"
-                className={input}
-                value={defaultQuarter}
-                onChange={(e) => setDefaultQuarter(e.target.value)}
-              >
-                <option value="">Leave unassigned</option>
-                {QUARTERS.map((q) => (
-                  <option key={q} value={q}>
-                    {q}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            {(() => {
-              const match = targets.courses.find(
-                (c) =>
-                  c.grade === grade &&
-                  (c.track ?? null) === (track.trim() || null) &&
-                  (c.schoolYearId ?? null) === (schoolYearId || null)
-              );
-              return match
-                ? "Adds to the course you already have for this grade and year."
-                : "No course exists for this grade and year yet — importing creates one.";
-            })()}
-          </p>
-        </div>
-      )}
-
-      {/* ── 4. Do it ─── */}
-      {scan && placement && (
-        <div className={card}>
-          <button
-            type="button"
-            onClick={runImport}
-            disabled={importing || levelErrors.length > 0 || placement.materials.length === 0}
-            className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
-          >
-            {importing
-              ? "Importing…"
-              : `Import ${placement.materials.length} file${placement.materials.length === 1 ? "" : "s"}`}
-          </button>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            Your files stay where they are in Drive — nothing is copied or moved.
-          </p>
+      {error && (
+        <div className="rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3 mb-4 text-sm text-red-700 dark:text-red-300">
+          {error}
         </div>
       )}
 

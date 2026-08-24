@@ -30,6 +30,12 @@ import {
 } from "./import-structure";
 import type { ScannedNode } from "./drive";
 import { CATEGORIES, MATERIAL_TYPES } from "./upload-utils";
+import { inferCategoryFromPath, inferMaterialType } from "./import-classify";
+
+// Re-exported so the plan module stays the single import site for anything
+// about an import, while the browser can pull the same logic from
+// import-classify without dragging the database in.
+export { inferCategoryFromPath, inferMaterialType };
 import { isUuid } from "./api-utils";
 
 export const MAX_PLAN_FILES = 500;
@@ -143,53 +149,6 @@ export function validateImportPlan(plan: unknown): PlanError[] {
   }
 
   return errors;
-}
-
-/**
- * Read a category out of the folders a file sits in.
- *
- * Her subfolders are already named Lessons / Assessments / Activities /
- * Resources / Curriculum, so the category is sitting there in the path for
- * free. Using it means the common import needs no AI classification pass and
- * no review table — "be faithful as deep as her folders go" applied to the one
- * level below the unit that IS consistent.
- *
- * Deepest match wins: "The Giver/Assessments/Retakes" is Assessments.
- */
-export function inferCategoryFromPath(path: string[]): string | null {
-  for (let i = path.length - 1; i >= 0; i--) {
-    const match = (CATEGORIES as readonly string[]).find(
-      (c) => c.toLowerCase() === path[i].trim().toLowerCase()
-    );
-    if (match) return match;
-  }
-  return null;
-}
-
-const TYPE_BY_CATEGORY: Record<string, string> = {
-  Lessons: "lesson",
-  Assessments: "assessment",
-  Activities: "activity",
-  Resources: "resource",
-  Curriculum: "curriculum",
-};
-
-/**
- * Best guess at material type, cheaply. Category wins over file kind: a slide
- * deck filed under Assessments is an assessment, not a lesson.
- */
-export function inferMaterialType(category: string | null, mimeType: string): string {
-  if (category && TYPE_BY_CATEGORY[category]) return TYPE_BY_CATEGORY[category];
-  // A lesson is a file, usually a PowerPoint (glossary: lesson-entity).
-  if (
-    mimeType === "application/vnd.google-apps.presentation" ||
-    mimeType ===
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
-    mimeType === "application/vnd.ms-powerpoint"
-  ) {
-    return "lesson";
-  }
-  return "other";
 }
 
 /** One material as it will be written, after the plan and overrides are applied. */

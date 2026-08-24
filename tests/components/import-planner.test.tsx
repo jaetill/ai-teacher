@@ -1,20 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ImportPlanner, { extractDriveId, folderDepth } from "@/components/ImportPlanner";
+import ImportPlanner, { extractDriveId } from "@/components/ImportPlanner";
 import type { ScannedNode } from "@/lib/drive";
 
-// ── tree fixtures ───
-
 let seq = 0;
-function file(name: string): ScannedNode {
-  return {
-    id: `f${++seq}`,
-    name,
-    mimeType: "application/vnd.google-apps.presentation",
-    isFolder: false,
-    children: [],
-  };
+function file(name: string, mimeType = "application/vnd.google-apps.presentation"): ScannedNode {
+  return { id: `f${++seq}`, name, mimeType, isFolder: false, children: [] };
 }
 function folder(name: string, ...children: ScannedNode[]): ScannedNode {
   return {
@@ -26,10 +18,12 @@ function folder(name: string, ...children: ScannedNode[]): ScannedNode {
   };
 }
 
-const YEAR_TREE = folder(
-  "Grade 7 English",
-  folder("Q1", folder("Fever 1793", file("fever.pptx"), file("fever-quiz.docx"))),
-  folder("Q2", folder("The Westing Game", file("westing.pptx"))),
+// Her real Grade 6 folder: eight units, each named for the book with the
+// quarter after it, and a Lessons subfolder inside one of them.
+const GRADE6 = folder(
+  "Grade 6 English",
+  folder("Dash Q3", folder("Lessons", file("dash.pptx")), file("dash-notes.docx")),
+  folder("Refugee Q4", file("refugee.pptx")),
 );
 
 const TARGETS = {
@@ -41,62 +35,57 @@ const TARGETS = {
   currentSchoolYearId: "sy-26",
 };
 
-/** Route fetch by URL so tests do not depend on call order. */
-function mockFetch(overrides: Record<string, unknown> = {}) {
+function mockFetch() {
   const planBody = vi.fn();
-  const impl = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.startsWith("/api/import/scan")) {
-      return {
-        ok: true,
-        json: async () => ({
-          tree: YEAR_TREE,
-          proposal: {
-            levels: ["year", "quarter", "unit"],
-            reason: "2 of 2 subfolders read as quarters, so this looks like a whole year.",
-            alternatives: [
-              { levels: ["container", "quarter", "unit"], reason: "Not a school year" },
-            ],
-          },
-          fileCount: 3,
-          folderCount: 4,
-          ...(overrides.scan as object),
-        }),
-      };
-    }
-    if (url.startsWith("/api/import/targets")) {
-      return { ok: true, json: async () => TARGETS };
-    }
-    if (url.startsWith("/api/import/plan")) {
-      planBody(JSON.parse(String(init?.body)));
-      return {
-        ok: true,
-        json: async () => ({
-          courseId: "c1",
-          courseCreated: false,
-          created: 3,
-          updated: 0,
-          total: 3,
-          units: ["Fever 1793", "The Westing Game"],
-          warnings: [],
-          ...(overrides.plan as object),
-        }),
-      };
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  });
-  vi.stubGlobal("fetch", impl);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith("/api/import/scan")) {
+        return {
+          ok: true,
+          json: async () => ({
+            tree: GRADE6,
+            proposal: {
+              levels: ["container", "unit"],
+              reason:
+                "2 of 2 subfolders are named for something with a quarter after it, so each one is a unit.",
+              alternatives: [],
+            },
+            fileCount: 3,
+            folderCount: 3,
+          }),
+        };
+      }
+      if (url.startsWith("/api/import/targets")) return { ok: true, json: async () => TARGETS };
+      if (url.startsWith("/api/import/plan")) {
+        planBody(JSON.parse(String(init?.body)));
+        return {
+          ok: true,
+          json: async () => ({
+            created: 3,
+            updated: 0,
+            total: 3,
+            courseCreated: true,
+            units: ["Dash Q3", "Refugee Q4"],
+            warnings: [],
+          }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
   return { planBody };
 }
 
-async function scanFolder() {
+async function scan() {
   const user = userEvent.setup();
   render(<ImportPlanner />);
   await user.type(
     screen.getByLabelText(/google drive link or id/i),
     "https://drive.google.com/drive/folders/abc123",
   );
-  await user.click(screen.getByRole("button", { name: /look at it/i }));
-  await screen.findByText(/what is this/i);
+  await user.click(screen.getByRole("button", { name: /read it/i }));
+  await screen.findByLabelText(/what is it/i);
   return user;
 }
 
@@ -106,8 +95,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
-// ── pure helpers ───
 
 describe("extractDriveId", () => {
   it.each([
@@ -120,128 +107,112 @@ describe("extractDriveId", () => {
   });
 });
 
-describe("folderDepth", () => {
-  it("counts folder nesting and ignores files", () => {
-    expect(folderDepth(folder("a", file("x")))).toBe(0);
-    expect(folderDepth(folder("a", folder("b", file("x"))))).toBe(1);
-    expect(folderDepth(YEAR_TREE)).toBe(2);
-  });
-});
-
-// ── the flow ───
-
-describe("ImportPlanner", () => {
-  it("asks what before where — the destination step appears only after a scan", async () => {
+describe("ImportPlanner — one screen, not a wizard", () => {
+  it("puts structure, destination and the import button on one screen", async () => {
     mockFetch();
-    render(<ImportPlanner />);
+    await scan();
 
-    expect(screen.getByText(/1 · what are you importing/i)).toBeInTheDocument();
-    expect(screen.queryByText(/where does it go/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/school year/i)).not.toBeInTheDocument();
+    // No stepped panels: everything is visible at once after a single read.
+    expect(screen.getByLabelText(/what is it/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/school year/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^grade$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^import 3 files$/i })).toBeInTheDocument();
   });
 
-  it("shows the proposed reading and what it works out to", async () => {
+  it("offers the structure as one plain-English choice, not a per-depth grid", async () => {
     mockFetch();
-    await scanFolder();
+    await scan();
 
-    expect(screen.getByText(/subfolders read as quarters/i)).toBeInTheDocument();
-    // Derived in the browser from the tree, not fetched. The sentence is split
-    // across <strong> tags, so match on the element's whole text.
+    const shape = screen.getByLabelText(/what is it/i);
+    expect(shape).toHaveValue("units");
+    expect(screen.queryByLabelText(/folders one level deeper/i)).not.toBeInTheDocument();
+  });
+
+  it("reads her book-plus-quarter folders as units and places them by name", async () => {
+    mockFetch();
+    await scan();
+
+    // Two units, and their quarters come from the folder names — no clicks.
     const summary = screen.getByText(
-      (_, el) =>
-        el?.tagName === "P" &&
-        /That reads as 2 units across Q1, Q2, with 3 files/.test(el.textContent ?? ""),
+      (_, el) => el?.tagName === "P" && /2 units in Q3, Q4, 3 files/.test(el.textContent ?? ""),
     );
     expect(summary).toBeInTheDocument();
-    expect(screen.getByText(/Fever 1793 · The Westing Game/)).toBeInTheDocument();
+    expect(screen.getByText(/Dash Q3 · Refugee Q4/)).toBeInTheDocument();
   });
 
-  it("re-derives units immediately when she changes what a level means", async () => {
+  it("re-derives everything instantly when she changes what it is", async () => {
     mockFetch();
-    const user = await scanFolder();
+    const user = await scan();
 
-    expect(screen.getByText(/Fever 1793 · The Westing Game/)).toBeInTheDocument();
-
-    // Say the whole thing is one unit instead.
-    await user.selectOptions(screen.getByLabelText(/the folder you picked is/i), "unit");
-
-    // The deeper levels said "quarter" and "unit"; nothing nests under a unit,
-    // so they are cleared rather than left as an impossible map.
-    expect(await screen.findByText(/deeper levels were cleared/i)).toBeInTheDocument();
-    expect(screen.getByText("Grade 7 English")).toBeInTheDocument();
-    expect(screen.queryByText(/Fever 1793 · The Westing Game/)).not.toBeInTheDocument();
-  });
-
-  it("offers the alternative reading as one click", async () => {
-    mockFetch();
-    const user = await scanFolder();
-
-    await user.click(screen.getByRole("button", { name: /not a school year/i }));
+    await user.selectOptions(screen.getByLabelText(/what is it/i), "unit");
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/the folder you picked is/i)).toHaveValue("container");
+      expect(screen.getByText("Grade 6 English")).toBeInTheDocument();
     });
+    expect(screen.queryByText(/Dash Q3 · Refugee Q4/)).not.toBeInTheDocument();
   });
 
-  it("never lets her build a map whose levels do not nest", async () => {
+  it("classifies from her folder names and flags only what it could not place", async () => {
     mockFetch();
-    const user = await scanFolder();
+    await scan();
 
-    await user.selectOptions(screen.getByLabelText(/the folder you picked is/i), "unit");
-    // A quarter inside a unit is nonsense; the choice is dropped rather than
-    // accepted and then rejected with an error.
-    await user.selectOptions(screen.getByLabelText(/folders inside it are/i), "quarter");
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(/folders inside it are/i)).toHaveValue("container");
-    });
-    expect(screen.queryByText(/cannot contain/i)).not.toBeInTheDocument();
-    // Still importable — she is never stuck in an invalid state.
-    expect(screen.getByRole("button", { name: /^import /i })).toBeEnabled();
+    // dash.pptx sits under a "Lessons" folder; the other two do not.
+    expect(screen.getByText("Lessons 1")).toBeInTheDocument();
+    expect(screen.getByText("Unclassified 2")).toBeInTheDocument();
   });
 
-  it("defaults the destination to the current school year but lets her pick a past one", async () => {
+  it("lets her fix the unclassified ones in bulk without a review table", async () => {
     mockFetch();
-    const user = await scanFolder();
+    const user = await scan();
 
-    const yearSelect = await screen.findByLabelText(/school year/i);
-    expect(yearSelect).toHaveValue("sy-26");
+    await user.click(screen.getByRole("button", { name: /fix these/i }));
+    await user.selectOptions(screen.getByLabelText(/set all unclassified files to/i), "Resources");
 
-    await user.selectOptions(yearSelect, "sy-25");
-    expect(yearSelect).toHaveValue("sy-25");
-    // Importing into a year with no course must say so rather than silently creating one.
-    expect(await screen.findByText(/no course exists/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Resources 2")).toBeInTheDocument());
+    expect(screen.queryByText(/Unclassified/)).not.toBeInTheDocument();
   });
 
-  it("says when the import will land in a course that already exists", async () => {
+  it("does not show a fix-up step when nothing needs fixing", async () => {
     mockFetch();
-    await scanFolder();
-    expect(await screen.findByText(/adds to the course you already have/i)).toBeInTheDocument();
+    await scan();
+    expect(screen.queryByLabelText(/set all unclassified files to/i)).not.toBeInTheDocument();
   });
 
-  it("sends source, levels and target together, and reports the result", async () => {
+  it("sends structure, destination and her corrections in one request", async () => {
     const { planBody } = mockFetch();
-    const user = await scanFolder();
+    const user = await scan();
 
-    await user.click(await screen.findByRole("button", { name: /import 3 files/i }));
+    await user.click(screen.getByRole("button", { name: /fix these/i }));
+    await user.selectOptions(screen.getByLabelText(/set all unclassified files to/i), "Resources");
+    await user.selectOptions(screen.getByLabelText(/school year/i), "sy-25");
+    await user.selectOptions(screen.getByLabelText(/^grade$/i), "6");
+    await user.click(screen.getByRole("button", { name: /^import 3 files$/i }));
 
     await waitFor(() => expect(planBody).toHaveBeenCalled());
-    expect(planBody.mock.calls[0][0]).toMatchObject({
+    const body = planBody.mock.calls[0][0];
+    expect(body).toMatchObject({
       source: { kind: "drive-folder", folderId: "abc123" },
-      levels: ["year", "quarter", "unit"],
-      target: { grade: 7, schoolYearId: "sy-26", track: null },
+      levels: ["container", "unit"],
+      target: { grade: 6, schoolYearId: "sy-25", track: null },
     });
+    expect(body.files).toHaveLength(2);
+    expect(body.files.every((f: { category: string }) => f.category === "Resources")).toBe(true);
 
     expect(await screen.findByText(/imported 3 files/i)).toBeInTheDocument();
   });
 
-  it("promises that nothing is copied or moved", async () => {
+  it("says whether the import creates a course or joins one", async () => {
     mockFetch();
-    await scanFolder();
-    expect(screen.getByText(/nothing is copied or moved/i)).toBeInTheDocument();
+    const user = await scan();
+
+    // Grade 7 / current year exists in TARGETS; the default grade is 7.
+    expect(screen.getByText(/adds to your existing course/i)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/^grade$/i), "6");
+    expect(await screen.findByText(/creates a new course/i)).toBeInTheDocument();
   });
 
-  it("surfaces a scan failure instead of a blank step 2", async () => {
+  it("surfaces a scan failure rather than an empty screen", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) =>
@@ -253,24 +224,9 @@ describe("ImportPlanner", () => {
     const user = userEvent.setup();
     render(<ImportPlanner />);
     await user.type(screen.getByLabelText(/google drive link or id/i), "abc");
-    await user.click(screen.getByRole("button", { name: /look at it/i }));
+    await user.click(screen.getByRole("button", { name: /read it/i }));
 
     expect(await screen.findByText("Failed to scan")).toBeInTheDocument();
-    expect(screen.queryByText(/what is this/i)).not.toBeInTheDocument();
-  });
-
-  it("offers a quarter for loose files only when some files have none", async () => {
-    mockFetch();
-    const user = await scanFolder();
-
-    // Every file is inside a quarter folder, so the fallback is not offered.
-    expect(screen.queryByLabelText(/quarter for files your folders did not place/i)).toBeNull();
-
-    // Declaring no quarters leaves every file unplaced.
-    await user.selectOptions(screen.getByLabelText(/the folder you picked is/i), "unit");
-
-    expect(
-      await screen.findByLabelText(/quarter for files your folders did not place/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/what is it/i)).not.toBeInTheDocument();
   });
 });
