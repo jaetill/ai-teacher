@@ -51,9 +51,11 @@ export async function GET(req: Request) {
     .from(units)
     .where(eq(units.courseId, courseId));
 
-  if (courseUnits.length === 0) {
-    return Response.json({ materials: [] });
-  }
+  // No early return on an empty unit list any more. A course can hold imported
+  // materials before anything is built — that is the normal state between
+  // import and build now — and bailing here would show her an empty pool for
+  // files she just imported. The queries below all degrade to empty on their
+  // own, and the placement query at the end finds the materials.
 
   // Get Drive folder IDs for this course's quarters
   const quarters = [...new Set(courseUnits.map((u) => u.quarter).filter(Boolean))];
@@ -134,6 +136,20 @@ export async function GET(req: Request) {
           .from(materials)
           .where(and(inArray(materials.id, materialIds), ownedMaterials(userEmail)))
       : [];
+  }
+
+  // Materials imported by the plan pipeline belong to the course directly —
+  // they live in her own Drive, so no folder of ours points at them and
+  // neither branch above can find them. Merged rather than substituted so a
+  // course holding both pre- and post-rebuild materials shows all of them.
+  const placedMaterials = await db
+    .select()
+    .from(materials)
+    .where(and(eq(materials.courseId, courseId), ownedMaterials(userEmail)));
+
+  if (placedMaterials.length) {
+    const merged = new Map([...courseMaterials, ...placedMaterials].map((m) => [m.id, m]));
+    courseMaterials = [...merged.values()];
   }
 
   if (courseMaterials.length === 0) {

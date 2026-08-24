@@ -83,6 +83,15 @@ function material(over: Record<string, unknown> = {}) {
 describe("GET /api/curriculum/editor/pool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // mockReset, not just clearAllMocks: clearing leaves the mockReturnValueOnce
+    // queue intact, so a test that primes more chains than the route consumes
+    // silently shifts every query in the NEXT test by one.
+    mockDbSelect.mockReset();
+    // The route ends with a placement query for materials the plan pipeline
+    // imported (course_id set, no folder of ours). Default every unprimed
+    // select to empty so these folder-era cases stay about the folder path,
+    // and so adding a query later does not break the whole file again.
+    mockDbSelect.mockImplementation(() => makeChain([]));
   });
 
   it("returns 401 when there is no session", async () => {
@@ -183,6 +192,7 @@ describe("GET /api/curriculum/editor/pool", () => {
     mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 8 }])); // grade
     mockDbSelect.mockReturnValueOnce(makeChain([{ driveId: "drive-folder-1" }])); // folders
     mockDbSelect.mockReturnValueOnce(makeChain([material()])); // materials
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // materials by placement → none
     mockDbSelect.mockReturnValueOnce(makeChain([ATTACHMENT])); // attachments
 
     const res = await GET(makeRequest(COURSE_ID));
@@ -192,6 +202,29 @@ describe("GET /api/curriculum/editor/pool", () => {
     expect(mat.materialType).toBe("reading");
     expect(mat.sourceUnit).toBe("The Giver");
     expect(mat.attachments[0]).toMatchObject({ attachableType: "lesson", role: "primary" });
+  });
+
+  // Between import and build a course has materials but no units. The route
+  // used to bail on an empty unit list, which meant she imported files and the
+  // pool showed her nothing.
+  it("returns placement-imported materials for a course that has no units yet", async () => {
+    mockSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(makeChain([{ id: COURSE_ID }])); // ownership
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // units → none built yet
+    // No units means no quarters, so no folder keys are built and the
+    // driveFolders query is skipped entirely.
+    mockDbSelect.mockReturnValueOnce(makeChain([{ grade: 7 }])); // grade
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // fallback: lessons
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // fallback: assessments
+    mockDbSelect.mockReturnValueOnce(makeChain([material()])); // materials by placement
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // attachments
+
+    const res = await GET(makeRequest(COURSE_ID));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.materials).toHaveLength(1);
+    expect(body.materials[0].id).toBe("mat-1");
   });
 
   it("fallback (no registered folders) matches attachments on units, lessons AND assessments", async () => {
@@ -204,6 +237,7 @@ describe("GET /api/curriculum/editor/pool", () => {
     mockDbSelect.mockReturnValueOnce(makeChain([{ id: "assess-1" }])); // fallback: assessments
     mockDbSelect.mockReturnValueOnce(makeChain([{ materialId: "mat-1" }])); // attachments → materialIds
     mockDbSelect.mockReturnValueOnce(makeChain([material({ materialType: "activity" })])); // materials
+    mockDbSelect.mockReturnValueOnce(makeChain([])); // materials by placement → none
     mockDbSelect.mockReturnValueOnce(makeChain([])); // final attachments
 
     const res = await GET(makeRequest(COURSE_ID));

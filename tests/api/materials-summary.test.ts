@@ -6,16 +6,25 @@ vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({ db: { select: mockDbSelect } }));
 vi.mock("@/db/schema", () => ({
-  materials: { title: {}, materialType: {}, driveFolderId: {}, createdAt: {} },
+  materials: {
+    title: {},
+    materialType: {},
+    driveFolderId: {},
+    createdAt: {},
+    courseId: {},
+    quarter: {},
+    category: {},
+  },
   driveFolders: { folderKey: {}, driveId: {}, ownerEmail: {} },
   courses: { id: {}, grade: {}, ownerEmail: {} },
-  units: { courseId: {}, quarter: {} },
+  units: { courseId: {}, quarter: {}, createdAt: {} },
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn(),
   eq: vi.fn(),
   inArray: vi.fn(),
   isNull: vi.fn(),
+  isNotNull: vi.fn(),
   or: vi.fn(),
   like: vi.fn(),
   desc: vi.fn(),
@@ -33,7 +42,7 @@ function chain(rows: unknown) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: Record<string, any> = {};
   const self = () => c;
-  for (const m of ["from", "innerJoin", "where", "orderBy"]) c[m] = vi.fn(self);
+  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy"]) c[m] = vi.fn(self);
   c.then = (r: (v: unknown) => unknown) => p.then(r);
   return c;
 }
@@ -108,6 +117,66 @@ describe("GET /api/materials/summary", () => {
     const res = await GET();
     const data = await res.json();
     expect(data.grades).toEqual([]);
+  });
+
+  // Materials imported by the plan pipeline reference her own Drive, so they
+  // belong to no folder of ours and have no folder key at all. Before the read
+  // cutover the inner join dropped them silently and the import page showed
+  // her nothing for files she had just imported.
+  it("counts materials placed by course, not just by folder key", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(
+      chain([
+        {
+          title: "Westing Game deck",
+          materialType: "lesson",
+          folderKey: null,
+          createdAt: 2,
+          courseId: "course-7",
+          quarter: "Q2",
+          category: "Lessons",
+          courseGrade: 7,
+        },
+        {
+          title: "Old handout",
+          materialType: "reading",
+          folderKey: "grade_7_Q2_Resources",
+          createdAt: 1,
+          courseId: null,
+          quarter: null,
+          category: null,
+          courseGrade: null,
+        },
+      ]),
+    );
+
+    const data = await (await GET()).json();
+
+    const q2 = data.grades[0].quarters.find((q: { quarter: string }) => q.quarter === "Q2");
+    expect(data.grades[0].grade).toBe(7);
+    expect(q2.total).toBe(2);
+    // Both readings of "where does this material live" land in the same bucket.
+    expect(q2.categories).toEqual({ Lessons: 1, Resources: 1 });
+  });
+
+  it("skips a material whose grade cannot be determined either way", async () => {
+    mockGetServerSession.mockResolvedValueOnce(SESSION);
+    mockDbSelect.mockReturnValueOnce(
+      chain([
+        {
+          title: "Orphan",
+          materialType: "other",
+          folderKey: null,
+          createdAt: 1,
+          courseId: null,
+          quarter: null,
+          category: null,
+          courseGrade: null,
+        },
+      ]),
+    );
+
+    expect((await (await GET()).json()).grades).toEqual([]);
   });
 
   it("orders the Summer bucket before the quarters", async () => {

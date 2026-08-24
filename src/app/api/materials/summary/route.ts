@@ -10,7 +10,8 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { courses, materials, driveFolders, units } from "@/db/schema";
 import { ownedMaterials } from "@/lib/material-scope";
-import { and, eq, inArray, isNull, or, like, desc } from "drizzle-orm";
+import { derivePlacement } from "@/lib/material-placement";
+import { and, eq, inArray, isNotNull, isNull, or, like, desc } from "drizzle-orm";
 
 type FileRow = { title: string; materialType: string; category: string };
 type QuarterSummary = {
@@ -45,19 +46,34 @@ export async function GET() {
     return Response.json({ error: "Session missing email" }, { status: 401 });
   }
 
+  // LEFT joins, not inner: a material imported by the plan pipeline is
+  // referenced in her own Drive and belongs to no folder of ours, so an inner
+  // join on drive_folders would silently hide every newly imported file.
+  // Placement now comes from the columns when they are set and from the folder
+  // key when they are not — see src/lib/material-placement.ts.
   const rows = await db
     .select({
       title: materials.title,
       materialType: materials.materialType,
       folderKey: driveFolders.folderKey,
       createdAt: materials.createdAt,
+      courseId: materials.courseId,
+      quarter: materials.quarter,
+      category: materials.category,
+      courseGrade: courses.grade,
     })
     .from(materials)
-    .innerJoin(driveFolders, eq(materials.driveFolderId, driveFolders.driveId))
+    .leftJoin(driveFolders, eq(materials.driveFolderId, driveFolders.driveId))
+    .leftJoin(courses, eq(materials.courseId, courses.id))
     .where(
       and(
-        like(driveFolders.folderKey, "grade\\_%"),
-        or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail)),
+        or(
+          isNotNull(materials.courseId),
+          and(
+            like(driveFolders.folderKey, "grade\\_%"),
+            or(eq(driveFolders.ownerEmail, ownerEmail), isNull(driveFolders.ownerEmail)),
+          ),
+        ),
         ownedMaterials(ownerEmail),
       ),
     )
@@ -99,15 +115,11 @@ export async function GET() {
     courseIdByGrade.set(c.grade, c.id);
   }
 
-  // folderKey shape: grade_<n>_<quarter>[_<category>]
   const grades = new Map<number, GradeSummary>();
 
   for (const r of rows) {
-    const parts = r.folderKey.split("_"); // ["grade","7","Q1","Lessons"]
-    const grade = parseInt(parts[1], 10);
-    const quarter = parts[2] ?? "Other";
-    const category = parts[3] ?? "Uncategorized";
-    if (!Number.isFinite(grade)) continue;
+    const { grade, quarter, category } = derivePlacement(r);
+    if (grade == null) continue;
 
     let g = grades.get(grade);
     if (!g) {
