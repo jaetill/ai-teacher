@@ -85,9 +85,11 @@ async function scan() {
     "https://drive.google.com/drive/folders/abc123",
   );
   await user.click(screen.getByRole("button", { name: /read it/i }));
-  await screen.findByLabelText(/what is it/i);
+  await screen.findByLabelText(/what did you point at/i);
   return user;
 }
+
+const crumb = () => screen.getByTestId("placement-breadcrumb").textContent ?? "";
 
 beforeEach(() => {
   seq = 0;
@@ -107,44 +109,81 @@ describe("extractDriveId", () => {
   });
 });
 
-describe("ImportPlanner — one screen, not a wizard", () => {
-  it("puts structure, destination and the import button on one screen", async () => {
+describe("ImportPlanner — the hierarchy, stated out loud", () => {
+  it("spells out grade > year > quarter > unit rather than leaving her to infer it", async () => {
     mockFetch();
     await scan();
 
-    // No stepped panels: everything is visible at once after a single read.
-    expect(screen.getByLabelText(/what is it/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/school year/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^grade$/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^import 3 files$/i })).toBeInTheDocument();
-  });
-
-  it("offers the structure as one plain-English choice, not a per-depth grid", async () => {
-    mockFetch();
-    await scan();
-
-    const shape = screen.getByLabelText(/what is it/i);
-    expect(shape).toHaveValue("units");
-    expect(screen.queryByLabelText(/folders one level deeper/i)).not.toBeInTheDocument();
-  });
-
-  it("reads her book-plus-quarter folders as units and places them by name", async () => {
-    mockFetch();
-    await scan();
-
-    // Two units, and their quarters come from the folder names — no clicks.
-    const summary = screen.getByText(
-      (_, el) => el?.tagName === "P" && /2 units in Q3, Q4, 3 files/.test(el.textContent ?? ""),
+    const explainer = screen.getByText(
+      (_, el) =>
+        el?.tagName === "P" &&
+        /grade[\s\S]+school years[\s\S]+quarters[\s\S]+units[\s\S]+files/i.test(
+          el.textContent ?? "",
+        ),
     );
-    expect(summary).toBeInTheDocument();
-    expect(screen.getByText(/Dash Q3 · Refugee Q4/)).toBeInTheDocument();
+    expect(explainer).toBeInTheDocument();
   });
 
-  it("re-derives everything instantly when she changes what it is", async () => {
+  it("asks what she pointed at, then only the rungs above it", async () => {
     mockFetch();
     const user = await scan();
 
-    await user.selectOptions(screen.getByLabelText(/what is it/i), "unit");
+    // Pointing at units needs a quarter, a year and a grade.
+    expect(screen.getByLabelText(/what did you point at/i)).toHaveValue("units");
+    expect(screen.getByLabelText(/belongs to quarter/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/belongs to school year/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/which is grade/i)).toBeInTheDocument();
+
+    // A whole year already contains its quarters, so it is not asked for.
+    await user.selectOptions(screen.getByLabelText(/what did you point at/i), "year");
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/belongs to quarter/i)).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/belongs to school year/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/which is grade/i)).toBeInTheDocument();
+  });
+
+  it("shows the chain back to her as a breadcrumb", async () => {
+    mockFetch();
+    await scan();
+
+    expect(crumb()).toMatch(/Grade 7\s+›\s+2026-2027\s+›\s+Q3, Q4\s+›\s+2 units\s+›\s+3 files/);
+  });
+
+  it("puts everything and the import button on one screen", async () => {
+    mockFetch();
+    await scan();
+
+    expect(screen.getByRole("button", { name: /^import 3 files$/i })).toBeInTheDocument();
+    // No per-depth grid.
+    expect(screen.queryByLabelText(/folders one level deeper/i)).not.toBeInTheDocument();
+  });
+
+  it("defaults the quarter to her folder names when they answer the question", async () => {
+    mockFetch();
+    await scan();
+
+    expect(screen.getByLabelText(/belongs to quarter/i)).toHaveValue("__auto__");
+    expect(screen.getByRole("option", { name: /from the folder names \(Q3, Q4\)/i })).toBeTruthy();
+  });
+
+  it("lets her state a quarter outright, which outranks the folder names", async () => {
+    mockFetch();
+    const user = await scan();
+
+    expect(crumb()).toContain("Q3, Q4");
+
+    await user.selectOptions(screen.getByLabelText(/belongs to quarter/i), "Q1");
+
+    await waitFor(() => expect(crumb()).toContain("Q1"));
+    expect(crumb()).not.toContain("Q3, Q4");
+  });
+
+  it("re-derives everything instantly when she changes what she pointed at", async () => {
+    mockFetch();
+    const user = await scan();
+
+    await user.selectOptions(screen.getByLabelText(/what did you point at/i), "unit");
 
     await waitFor(() => {
       expect(screen.getByText("Grade 6 English")).toBeInTheDocument();
@@ -184,8 +223,8 @@ describe("ImportPlanner — one screen, not a wizard", () => {
 
     await user.click(screen.getByRole("button", { name: /fix these/i }));
     await user.selectOptions(screen.getByLabelText(/set all unclassified files to/i), "Resources");
-    await user.selectOptions(screen.getByLabelText(/school year/i), "sy-25");
-    await user.selectOptions(screen.getByLabelText(/^grade$/i), "6");
+    await user.selectOptions(screen.getByLabelText(/belongs to school year/i), "sy-25");
+    await user.selectOptions(screen.getByLabelText(/which is grade/i), "6");
     await user.click(screen.getByRole("button", { name: /^import 3 files$/i }));
 
     await waitFor(() => expect(planBody).toHaveBeenCalled());
@@ -193,7 +232,7 @@ describe("ImportPlanner — one screen, not a wizard", () => {
     expect(body).toMatchObject({
       source: { kind: "drive-folder", folderId: "abc123" },
       levels: ["container", "unit"],
-      target: { grade: 6, schoolYearId: "sy-25", track: null },
+      target: { grade: 6, schoolYearId: "sy-25", track: null, overrideQuarter: null },
     });
     expect(body.files).toHaveLength(2);
     expect(body.files.every((f: { category: string }) => f.category === "Resources")).toBe(true);
@@ -208,7 +247,7 @@ describe("ImportPlanner — one screen, not a wizard", () => {
     // Grade 7 / current year exists in TARGETS; the default grade is 7.
     expect(screen.getByText(/adds to your existing course/i)).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText(/^grade$/i), "6");
+    await user.selectOptions(screen.getByLabelText(/which is grade/i), "6");
     expect(await screen.findByText(/creates a new course/i)).toBeInTheDocument();
   });
 
@@ -227,6 +266,6 @@ describe("ImportPlanner — one screen, not a wizard", () => {
     await user.click(screen.getByRole("button", { name: /read it/i }));
 
     expect(await screen.findByText("Failed to scan")).toBeInTheDocument();
-    expect(screen.queryByLabelText(/what is it/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/what did you point at/i)).not.toBeInTheDocument();
   });
 });

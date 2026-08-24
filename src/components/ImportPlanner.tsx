@@ -21,20 +21,40 @@ import {
 import { inferCategoryFromPath, inferMaterialType } from "@/lib/import-classify";
 import { CATEGORIES } from "@/lib/upload-utils";
 
-/**
- * The structural question as five plain-English answers. A per-depth grid was
- * strictly more expressive and much worse to use — these are the shapes a
- * teacher's folder actually takes.
- */
-const SHAPES: { id: string; label: string; levels: LevelMap }[] = [
-  { id: "units", label: "A folder of units", levels: ["container", "unit"] },
-  { id: "unit", label: "One unit", levels: ["unit"] },
-  { id: "quarter", label: "One quarter, holding units", levels: ["quarter", "unit"] },
-  { id: "year", label: "A whole year of quarters and units", levels: ["year", "quarter", "unit"] },
-  { id: "files", label: "Just files — no units", levels: ["container"] },
+// The hierarchy the app actually stores, stated out loud rather than left for
+// her to infer: a grade has school years, a year has quarters, a quarter has
+// units, a unit has files. She says which rung she is pointing at, and then
+// what it belongs to — the rungs above it.
+//
+// `needs` is the parent chain to ask for. Pointing at a unit needs a quarter, a
+// year and a grade; pointing at a whole year only needs a grade.
+const SHAPES: {
+  id: string;
+  label: string;
+  levels: LevelMap;
+  needsQuarter: boolean;
+}[] = [
+  { id: "unit", label: "One unit", levels: ["unit"], needsQuarter: true },
+  { id: "units", label: "Several units", levels: ["container", "unit"], needsQuarter: true },
+  {
+    id: "quarter",
+    label: "One quarter (holding units)",
+    levels: ["quarter", "unit"],
+    needsQuarter: false,
+  },
+  {
+    id: "year",
+    label: "One school year (holding quarters)",
+    levels: ["year", "quarter", "unit"],
+    needsQuarter: false,
+  },
+  { id: "files", label: "Just files — no units", levels: ["container"], needsQuarter: true },
 ];
 
 const QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"] as const;
+
+/** Quarter comes from each folder's own name rather than from one choice. */
+const FROM_FOLDER_NAMES = "__auto__";
 
 function shapeIdFor(levels: LevelMap): string {
   const key = levels.join(">");
@@ -87,14 +107,15 @@ export default function ImportPlanner() {
   const [schoolYearId, setSchoolYearId] = useState("");
   const [grade, setGrade] = useState(7);
   const [track, setTrack] = useState("");
-  const [defaultQuarter, setDefaultQuarter] = useState("");
+  const [quarterChoice, setQuarterChoice] = useState<string>(FROM_FOLDER_NAMES);
 
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [showFixes, setShowFixes] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
 
-  const levels = SHAPES.find((s) => s.id === shapeId)!.levels;
+  const shape = SHAPES.find((s) => s.id === shapeId)!;
+  const levels = shape.levels;
 
   const placement = useMemo(() => {
     if (!scan) return null;
@@ -105,6 +126,14 @@ export default function ImportPlanner() {
     }
   }, [scan, levels]);
 
+  // Did her folder names answer the quarter question for us? If so, offering
+  // "from the folder names" is both the faithful default and one fewer choice.
+  const foldersNameTheirQuarter = Boolean(placement && placement.quarters.length > 0);
+  const overrideQuarter =
+    shape.needsQuarter && quarterChoice && quarterChoice !== FROM_FOLDER_NAMES
+      ? quarterChoice
+      : null;
+
   /** Same inference the server will run, so what she sees is what gets written. */
   const classified = useMemo(() => {
     if (!placement) return [];
@@ -114,12 +143,14 @@ export default function ImportPlanner() {
         fileId: m.fileId,
         name: m.name,
         unit: m.unit,
-        quarter: m.quarter,
+        // Mirrors the server's precedence exactly: her stated answer, then her
+        // folder names, then nothing.
+        quarter: overrideQuarter ?? m.quarter ?? null,
         category,
         materialType: inferMaterialType(category, m.mimeType),
       };
     });
-  }, [placement, overrides]);
+  }, [placement, overrides, overrideQuarter]);
 
   const byCategory = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -128,7 +159,20 @@ export default function ImportPlanner() {
   }, [classified]);
 
   const unclassified = classified.filter((c) => !c.category);
-  const needsDefaultQuarter = classified.some((c) => !c.quarter);
+
+  /** The chain she has declared, shown back to her: grade > year > quarter > unit. */
+  const breadcrumb = useMemo(() => {
+    const year = targets?.schoolYears.find((y) => y.id === schoolYearId)?.name;
+    const quarters = [...new Set(classified.map((c) => c.quarter).filter(Boolean))];
+    const parts = [`Grade ${grade}${track.trim() ? ` ${track.trim()}` : ""}`];
+    if (year) parts.push(year);
+    parts.push(quarters.length ? quarters.join(", ") : "no quarter");
+    if (placement?.units.length) {
+      parts.push(`${placement.units.length} unit${placement.units.length === 1 ? "" : "s"}`);
+    }
+    parts.push(`${classified.length} file${classified.length === 1 ? "" : "s"}`);
+    return parts;
+  }, [grade, track, targets, schoolYearId, classified, placement]);
 
   async function runScan(raw: string) {
     const id = extractDriveId(raw);
@@ -184,7 +228,7 @@ export default function ImportPlanner() {
             grade,
             schoolYearId: schoolYearId || null,
             track: track.trim() || null,
-            defaultQuarter: defaultQuarter || null,
+            overrideQuarter,
           },
           files: Object.entries(overrides).map(([fileId, category]) => ({ fileId, category })),
         }),
@@ -254,10 +298,18 @@ export default function ImportPlanner() {
         {/* ── What it is, and where it goes — same screen, no steps ─── */}
         {scan && placement && (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 mt-4">
-              <div>
+            {/* The hierarchy, said out loud. She names the rung she pointed
+                at, then the rungs above it. */}
+            <p className="mt-5 mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+              A <strong>grade</strong> has <strong>school years</strong>, a year has{" "}
+              <strong>quarters</strong>, a quarter has <strong>units</strong>, and a unit has your
+              files.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
                 <label className={label} htmlFor="shape">
-                  What is it?
+                  What did you point at?
                 </label>
                 <select
                   id="shape"
@@ -273,9 +325,36 @@ export default function ImportPlanner() {
                 </select>
               </div>
 
+              {/* Parent chain — only the rungs above whatever she picked. */}
+              {shape.needsQuarter && (
+                <div>
+                  <label className={label} htmlFor="quarter">
+                    …which belongs to quarter
+                  </label>
+                  <select
+                    id="quarter"
+                    className={field}
+                    value={quarterChoice}
+                    onChange={(e) => setQuarterChoice(e.target.value)}
+                  >
+                    {foldersNameTheirQuarter && (
+                      <option value={FROM_FOLDER_NAMES}>
+                        From the folder names ({placement.quarters.join(", ")})
+                      </option>
+                    )}
+                    <option value="">Not sure yet</option>
+                    {QUARTERS.map((q) => (
+                      <option key={q} value={q}>
+                        {q}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className={label} htmlFor="school-year">
-                  School year
+                  …which belongs to school year
                 </label>
                 <select
                   id="school-year"
@@ -294,7 +373,7 @@ export default function ImportPlanner() {
 
               <div>
                 <label className={label} htmlFor="grade">
-                  Grade
+                  …which is grade
                 </label>
                 <select
                   id="grade"
@@ -322,37 +401,15 @@ export default function ImportPlanner() {
                   onChange={(e) => setTrack(e.target.value)}
                 />
               </div>
-
-              {needsDefaultQuarter && (
-                <div>
-                  <label className={label} htmlFor="default-quarter">
-                    Quarter for files your folders did not place
-                  </label>
-                  <select
-                    id="default-quarter"
-                    className={field}
-                    value={defaultQuarter}
-                    onChange={(e) => setDefaultQuarter(e.target.value)}
-                  >
-                    <option value="">Leave unassigned</option>
-                    {QUARTERS.map((q) => (
-                      <option key={q} value={q}>
-                        {q}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             {/* ── What that works out to ─── */}
             <div className="mt-4 rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
-              <p className="text-sm text-zinc-900 dark:text-zinc-100">
-                <strong>{placement.units.length}</strong> unit
-                {placement.units.length === 1 ? "" : "s"}
-                {placement.quarters.length > 0 && <> in {placement.quarters.join(", ")}</>},{" "}
-                <strong>{classified.length}</strong> file
-                {classified.length === 1 ? "" : "s"}.
+              <p
+                data-testid="placement-breadcrumb"
+                className="text-sm text-zinc-900 dark:text-zinc-100"
+              >
+                {breadcrumb.join("  ›  ")}
               </p>
               {placement.units.length > 0 && (
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">

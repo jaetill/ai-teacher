@@ -57,6 +57,16 @@ export type ImportTarget = {
    * from her folders.
    */
   defaultQuarter?: CanonicalQuarter | null;
+  /**
+   * Quarter the teacher stated outright, which beats everything.
+   *
+   * The hierarchy is grade > year > quarter > unit, and the import screen makes
+   * her say where in it the thing she pointed at belongs. When she picks a
+   * quarter by hand she is answering "what does this unit belong to", and that
+   * answer outranks a quarter guessed from a folder name — she is the one who
+   * knows.
+   */
+  overrideQuarter?: CanonicalQuarter | null;
 };
 
 /** Per-file corrections from the review table: classification and opt-out. */
@@ -185,8 +195,9 @@ export function resolvePlanMaterials(
         driveFileId: m.fileId,
         title: m.name,
         driveMimeType: m.mimeType,
-        // Her folders win; the target's quarter only fills a gap.
-        quarter: m.quarter ?? target.defaultQuarter ?? null,
+        // What she said outright, then what her folders say, then the
+        // gap-filler. She outranks her own folder names; both outrank a guess.
+        quarter: target.overrideQuarter ?? m.quarter ?? target.defaultQuarter ?? null,
         sourceUnit: m.unit,
         category,
         materialType: o?.materialType ?? inferMaterialType(category, m.mimeType),
