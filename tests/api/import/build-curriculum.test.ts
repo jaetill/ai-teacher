@@ -85,6 +85,8 @@ function makeChain(value: unknown) {
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   chain.from = self;
+  chain.innerJoin = self;
+  chain.leftJoin = self;
   chain.where = self;
   chain.orderBy = self;
   chain.limit = self;
@@ -176,6 +178,7 @@ function setupMocks({
     .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
     .mockReturnValueOnce(makeChain([FOLDER])) // 1. driveFolders
     .mockReturnValueOnce(makeChain([MATERIAL])) // 2. materials
+    .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
     .mockReturnValueOnce(makeChain([STANDARD])) // 3. standards
     .mockReturnValueOnce(makeChain([])) // 3b. lesson_templates default (#647) → none
     .mockReturnValueOnce(makeChain([SCHOOL_YEAR])) // 4. schoolYears
@@ -360,6 +363,7 @@ describe("POST /api/import/build-curriculum", () => {
             },
           ]),
         )
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -414,6 +418,7 @@ describe("POST /api/import/build-curriculum", () => {
             },
           ]),
         )
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -496,6 +501,7 @@ describe("POST /api/import/build-curriculum", () => {
             },
           ]),
         )
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -551,6 +557,7 @@ describe("POST /api/import/build-curriculum", () => {
             },
           ]),
         )
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -591,6 +598,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -689,7 +697,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // 8 selects: early guard (schoolYears, course) + folders, materials,
       // standards, schoolYears, courses, existingUnits
-      expect(mockDbSelect).toHaveBeenCalledTimes(9);
+      expect(mockDbSelect).toHaveBeenCalledTimes(10); // +1 for the placement query
       // No courses insert — units, unitStandards, lessons, lessonStandards, materialAttachments
       expect(mockDbInsert).toHaveBeenCalledTimes(5);
     });
@@ -705,7 +713,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT should NOT have been called — 6 selects total
       // (folders, materials, standards, schoolYears, courses select-first, existingUnits)
-      expect(mockDbSelect).toHaveBeenCalledTimes(9); // +2 for the early guard (#611)
+      expect(mockDbSelect).toHaveBeenCalledTimes(10); // +2 early guard (#611), +1 placement
     });
 
     it("scopes DB lookups by the session ownerEmail (#142)", async () => {
@@ -733,7 +741,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.unitCount).toBe(1);
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT must have been called — 7 selects total
-      expect(mockDbSelect).toHaveBeenCalledTimes(10); // +2 for the early guard (#611)
+      expect(mockDbSelect).toHaveBeenCalledTimes(11); // +2 early guard (#611), +1 placement
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
@@ -747,6 +755,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -779,6 +788,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -863,6 +873,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -927,6 +938,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: no course yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -970,6 +982,7 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // 0b. early guard: course lookup → none yet
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
@@ -1017,6 +1030,7 @@ describe("POST /api/import/build-curriculum", () => {
       mockDbSelect
         .mockReturnValueOnce(makeChain([FOLDER]))
         .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([])) // 2b. materials by placement (none)
         .mockReturnValueOnce(makeChain([STANDARD]))
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))

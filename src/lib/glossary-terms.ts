@@ -30,18 +30,25 @@ export const DEFAULT_TERMS: GlossaryTerm[] = [
       "One grade's English class for one school year — e.g. \"Grade 7 English Language Arts, 2026-27\". A course holds units, and a new school year gets a new course.",
   },
   {
+    key: "track",
+    term: "Track",
+    category: "Curriculum structure",
+    definition:
+      "A variant of a grade that has its own curriculum — \"Grade 8 Honors\" next to \"Grade 8 Regular.\" Different pacing and often different texts, so each track is its own course, not another class period of the same one. Most grades have no track; none of yours do.",
+  },
+  {
     key: "unit",
     term: "Unit",
     category: "Curriculum structure",
     definition:
-      "A multi-week arc of study, usually anchored by a novel or genre — \"The Westing Game,\" \"Persuasive Essay,\" \"Poetry.\" Matches the unit folders you keep in Drive. Units live in a quarter.",
+      "A multi-week arc of study, usually anchored by a novel or genre — \"The Westing Game,\" \"Persuasive Essay,\" \"Poetry.\" Matches the unit folders you keep in Drive. Units generally live in a quarter, but sometimes cross quarter boundaries.",
   },
   {
     key: "lesson-entity",
     term: "Lesson (in a unit)",
     category: "Curriculum structure",
     definition:
-      "A teaching chunk inside a unit — often spanning several class days, the way your lesson files do (\"The Giver: Ch. 13–23 (6 days)\"). Not necessarily one class period.",
+      "A lesson is a file — usually a PowerPoint — that you teach from. It can run several class days (\"The Giver: Ch. 13–23 (6 days)\"), and two lessons can land on the same day when you're finishing one before starting the next. So a lesson is not a class period, and the app never assumes one lesson means one day.",
   },
   {
     key: "assessment-entity",
@@ -78,6 +85,13 @@ export const DEFAULT_TERMS: GlossaryTerm[] = [
     definition:
       "All the files imported for a course that aren't currently attached to a lesson. Deleting a lesson returns its files here — nothing is ever lost, it just goes back to the pool.",
   },
+  {
+    key: "import-scope",
+    term: "Import scope",
+    category: "Curriculum structure",
+    definition:
+      "What you're telling the app a folder or file *is* when you import it: one material, one unit, a quarter's worth of units, or a whole year. You declare this first, and where it should go is a separate, second choice. The app used to infer it from how deep your folders went, which is how a sub-project folder could turn into a unit of its own.",
+  },
 
   // ── Material types ───
   {
@@ -106,7 +120,7 @@ export const DEFAULT_TERMS: GlossaryTerm[] = [
     term: "Lesson (document)",
     category: "Material types",
     definition:
-      "A lesson-plan document — the teaching plan itself, like the files in your Lessons folders (\"Westing Game: Vocabulary Words\"). Note: this is the *document*; a lesson in a unit is the schedule slot it fills.",
+      "The file you teach from, usually a PowerPoint — the ones in your Lessons folders (\"Westing Game: Vocabulary Words\"). For you the file and the lesson are the same thing: this type tag is how the app knows which files become lessons in a unit and which are supporting material hung off them.",
   },
   {
     key: "assessment",

@@ -17,6 +17,9 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/db-migrate.mjs",
+    "db:backup": "node scripts/db-backup.mjs",
+    "db:restore": "node scripts/db-restore.mjs",
+    "db:reset": "node scripts/db-reset.mjs",
     "db:studio": "drizzle-kit studio",
     "prepare": "husky"
   },

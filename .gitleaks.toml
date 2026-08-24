@@ -10,3 +10,13 @@ useDefault = true
 
 [allowlist]
 description = "ai-teacher allowlist — minimal; add entries with justification"
+
+# Drive folder keys. "grade_8_Q1_Lessons" is a curriculum coordinate — grade,
+# quarter, category — and it appears as a literal all over the schema, the
+# route code and the tests. The default generic-api-key rule scores it as
+# high-entropy because it is a long underscore-separated token, which is
+# exactly what an API key also looks like. Scoped to the shape of a folder key
+# rather than to a file, so a real secret sitting next to one still fails.
+regexes = [
+  '''grade_\d+_(Summer|Q[1-4]|YearPlan)(_[A-Za-z]+)?''',
+]

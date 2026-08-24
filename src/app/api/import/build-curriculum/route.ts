@@ -157,14 +157,41 @@ export async function POST(req: Request) {
     folders.map((f) => [f.driveId, f.folderKey.split("_").pop()!])
   );
 
-  if (folderDriveIds.length === 0) {
-    return Response.json({ error: "No Drive folders found for this quarter" }, { status: 400 });
-  }
+  // Materials imported by the plan pipeline live in her own Drive and have no
+  // folder of ours, so they are found by placement instead: joined to any
+  // owned course of this grade, in this quarter. Both sources are read and
+  // merged — the folder-key path stays until no pre-rebuild rows remain, so
+  // that restoring an older backup does not make the build find nothing.
+  const [byFolder, byPlacement] = await Promise.all([
+    folderDriveIds.length
+      ? db
+          .select()
+          .from(materials)
+          .where(
+            and(inArray(materials.driveFolderId, folderDriveIds), ownedMaterials(ownerEmail))
+          )
+      : Promise.resolve([]),
+    db
+      .select()
+      .from(materials)
+      .innerJoin(courses, eq(materials.courseId, courses.id))
+      .where(
+        and(
+          eq(courses.grade, grade),
+          eq(courses.ownerEmail, ownerEmail),
+          eq(materials.quarter, quarter),
+          ownedMaterials(ownerEmail)
+        )
+      ),
+  ]);
 
-  const quarterMaterials = await db
-    .select()
-    .from(materials)
-    .where(and(inArray(materials.driveFolderId, folderDriveIds), ownedMaterials(ownerEmail)));
+  // A row can satisfy both queries during the transition; keep one copy.
+  const byId = new Map([
+    ...byFolder.map((m) => [m.id, m] as const),
+    // A joined select returns { materials, courses } rather than a flat row.
+    ...byPlacement.map((r) => [r.materials.id, r.materials] as const),
+  ]);
+  const quarterMaterials = [...byId.values()];
 
   if (quarterMaterials.length === 0) {
     return Response.json({
@@ -205,7 +232,9 @@ export async function POST(req: Request) {
 
   // ── 3. Build AI prompt (mode-aware) ───
   const describeMaterial = (m: (typeof quarterMaterials)[number]) => {
-    const cat = driveIdToCategory.get(m.driveFolderId ?? "") ?? "unknown";
+    // Placement column first, folder path as the legacy fallback.
+    const cat =
+      m.category ?? driveIdToCategory.get(m.driveFolderId ?? "") ?? "unknown";
     return `- "${m.title}" (type: ${m.materialType}, folder: ${cat})`;
   };
   const standardsList = gradeStandards
@@ -453,7 +482,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
-  // Select-before-insert: uq_courses_grade_subject_year_owner is NULLS
+  // Select-before-insert: uq_courses_grade_subject_track_year_owner is NULLS
   // DISTINCT on databases that predate the NULLS NOT DISTINCT migration, so
   // when no school year is marked current (schoolYearId = NULL) the
   // onConflictDoNothing() below never fires and every import used to create a
@@ -461,9 +490,13 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   const yearFilter = currentYear?.id
     ? eq(courses.schoolYearId, currentYear.id)
     : isNull(courses.schoolYearId);
+  // Untracked only. Once a grade has an honors course alongside a regular one,
+  // this build path must not silently adopt whichever it finds first — the
+  // track comes from the import target, and this route has no target yet.
   const courseWhere = and(
     eq(courses.grade, grade),
     eq(courses.subject, "ELA"),
+    isNull(courses.track),
     yearFilter,
     eq(courses.ownerEmail, ownerEmail),
   );

@@ -118,6 +118,75 @@ export type ScannedFile = {
   sourceUnit: string | null;
 };
 
+// A folder subtree, exactly as Drive has it — no interpretation. What the
+// levels MEAN is decided separately, by the level map the teacher declares
+// (src/lib/import-structure.ts). Keeping the scan dumb is the point: every
+// structural bug so far came from the scanner deciding what a folder was
+// while it walked (#682 turned "Dash Q3/Letters/" into a unit called
+// "Letters"). A scanner that only reports shape cannot make that mistake, and
+// the interpretation is a pure function that can be tested without Drive.
+export type ScannedNode = {
+  id: string;
+  name: string;
+  mimeType: string;
+  isFolder: boolean;
+  children: ScannedNode[]; // always [] for files
+};
+
+export async function scanTree(
+  accessToken: string,
+  folderId: string,
+  opts: { maxDepth?: number } = {}
+): Promise<ScannedNode> {
+  const drive = getDriveClient(accessToken);
+  const maxDepth = opts.maxDepth ?? 10;
+
+  const root = await drive.files.get({
+    fileId: folderId,
+    fields: "id, name, mimeType",
+    supportsAllDrives: true,
+  });
+
+  async function walk(node: ScannedNode, depth: number): Promise<ScannedNode> {
+    if (!node.isFolder || depth >= maxDepth) return node;
+    let pageToken: string | undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${escapeDriveQueryValue(node.id)}' in parents and trashed = false`,
+        fields: "nextPageToken, files(id, name, mimeType)",
+        pageSize: 200,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      for (const f of res.data.files ?? []) {
+        const isFolder = f.mimeType === "application/vnd.google-apps.folder";
+        const child: ScannedNode = {
+          id: f.id!,
+          name: f.name!,
+          mimeType: f.mimeType!,
+          isFolder,
+          children: [],
+        };
+        node.children.push(await walk(child, depth + 1));
+      }
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
+    return node;
+  }
+
+  return walk(
+    {
+      id: root.data.id!,
+      name: root.data.name ?? "",
+      mimeType: root.data.mimeType!,
+      isFolder: root.data.mimeType === "application/vnd.google-apps.folder",
+      children: [],
+    },
+    0
+  );
+}
+
 export async function scanFolderUnits(
   accessToken: string,
   folderId: string
