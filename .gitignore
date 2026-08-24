@@ -51,3 +51,6 @@ next-env.d.ts
 # Cowork staging tarballs (transient)
 _to_delete/
 CLAUDE_COMMIT_MSG*.txt
+
+# Local DB dumps from scripts/db-backup.mjs — real curriculum data, never commit
+/backups/
