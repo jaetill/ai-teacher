@@ -56,20 +56,57 @@ export const CANONICAL_QUARTERS = [
 ] as const;
 export type CanonicalQuarter = (typeof CANONICAL_QUARTERS)[number];
 
+// Words that carry no meaning of their own in a folder name, so their presence
+// does not stop a name from being "just a quarter".
+const NOISE = /\b(grade\s*\d+|grade|reading|ela|english|materials?|docs?|folder|plan|guide)\b/g;
+
 /**
- * Map a folder name onto a canonical quarter, or null if it is not one.
- * Deliberately generous about how she writes it — "Q1", "Quarter 1",
- * "1st Quarter", "Grade 7 Q1" all land on "Q1".
+ * The quarter a name MENTIONS, wherever it appears. "Dash Q3" -> "Q3".
+ *
+ * This is a tag, not an identity: her unit folders are named for the book and
+ * suffixed with the quarter she teaches it in, which is a free and faithful
+ * quarter assignment for that unit.
  */
-export function normalizeQuarter(name: string): CanonicalQuarter | null {
+export function quarterTagIn(name: string): CanonicalQuarter | null {
   const s = name.trim().toLowerCase();
   if (/\bsummer\b/.test(s)) return "Summer";
-  if (/\byear\s*[-_ ]?plan\b|\bpacing\b|\byearlong\b/.test(s)) return "YearPlan";
+  if (/\byear\s*[-_ ]?plan\b|\bpacing\s*guide\b|\byearlong\b/.test(s)) return "YearPlan";
   const m =
     s.match(/\bq\s*([1-4])\b/) ??
     s.match(/\bquarter\s*([1-4])\b/) ??
     s.match(/\b([1-4])(?:st|nd|rd|th)\s*quarter\b/);
   return m ? (`Q${m[1]}` as CanonicalQuarter) : null;
+}
+
+/**
+ * The quarter a name IS — null unless the name is nothing but a quarter.
+ *
+ * "Q1", "Quarter 2", "Grade 7 Q1" and "Summer Reading" are quarters. "Dash Q3"
+ * and "Refugee Q4" are NOT: strip the quarter token and a real name is left
+ * over, which means the folder is a unit that mentions its quarter.
+ *
+ * Getting this wrong is not cosmetic. Reading every unit folder as a quarter
+ * produced "8 of 8 subfolders read as quarters" against a Grade 6 folder that
+ * contained eight units and no quarter folders at all.
+ */
+export function normalizeQuarter(name: string): CanonicalQuarter | null {
+  const tag = quarterTagIn(name);
+  if (!tag) return null;
+
+  const remainder = name
+    .trim()
+    .toLowerCase()
+    // Remove whichever quarter phrase matched.
+    .replace(/\bsummer\b/g, " ")
+    .replace(/\byear\s*[-_ ]?plan\b|\bpacing\s*guide\b|\byearlong\b/g, " ")
+    .replace(/\bq\s*[1-4]\b/g, " ")
+    .replace(/\bquarter\s*[1-4]\b/g, " ")
+    .replace(/\b[1-4](?:st|nd|rd|th)\s*quarter\b/g, " ")
+    .replace(/\bquarter\b/g, " ")
+    .replace(NOISE, " ")
+    .replace(/[^a-z0-9]+/g, "");
+
+  return remainder === "" ? tag : null;
 }
 
 export type LevelMapError = { code: string; message: string };
@@ -183,6 +220,17 @@ export function applyLevelMap(
       if (unitName) {
         next.unit = unitName;
         record(units, unitName);
+        // She names unit folders for the book and suffixes the quarter she
+        // teaches it in ("Dash Q3"). If no quarter level was declared above,
+        // that suffix IS her quarter — reading it costs nothing and is more
+        // faithful than leaving the unit unplaced.
+        if (!next.quarter) {
+          const tagged = quarterTagIn(unitName);
+          if (tagged) {
+            next.quarter = tagged;
+            record(quarters, tagged);
+          }
+        }
       }
     }
 
@@ -240,17 +288,38 @@ export function proposeLevelMap(root: ScannedNode): LevelMapProposal {
     };
   }
 
-  const quarterish = folders.filter((f) => normalizeQuarter(f.name)).length;
-  if (quarterish >= Math.ceil(folders.length / 2)) {
+  // A folder is a quarter only if its name is nothing BUT a quarter, and only
+  // if the set of them behaves like quarters: at most six exist (Summer, Q1-Q4,
+  // YearPlan) and no two are the same one. Eight folders claiming to be
+  // quarters are eight units that mention their quarter.
+  const quarterNames = folders.map((f) => normalizeQuarter(f.name)).filter(Boolean);
+  const distinctQuarters = new Set(quarterNames);
+  const looksLikeQuarters =
+    quarterNames.length >= Math.ceil(folders.length / 2) &&
+    distinctQuarters.size === quarterNames.length &&
+    distinctQuarters.size <= CANONICAL_QUARTERS.length;
+
+  if (looksLikeQuarters) {
     return {
       levels: ["year", "quarter", "unit"],
-      reason: `${quarterish} of ${folders.length} subfolders read as quarters, so this looks like a whole year.`,
+      reason: `${quarterNames.length} of ${folders.length} subfolders are named for a quarter, so this looks like a whole year.`,
       alternatives: [
         {
           levels: ["container", "quarter", "unit"],
           reason: "Same shape, but do not treat the folder itself as a school year.",
         },
       ],
+    };
+  }
+
+  // Folders named for a book with a quarter suffix — "Dash Q3", "Refugee Q4".
+  // These are units, and the suffix tells us which quarter each belongs to.
+  const tagged = folders.filter((f) => quarterTagIn(f.name)).length;
+  if (tagged >= Math.ceil(folders.length / 2)) {
+    return {
+      levels: ["container", "unit"],
+      reason: `${tagged} of ${folders.length} subfolders are named for something with a quarter after it, so each one is a unit and its quarter comes from its name.`,
+      alternatives: [{ levels: ["unit"], reason: "Treat the whole folder as one unit." }],
     };
   }
 

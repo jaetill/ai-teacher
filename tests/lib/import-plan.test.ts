@@ -185,6 +185,18 @@ describe("resolvePlanMaterials", () => {
     expect(out.find((m) => m.driveFileId === "b")!.quarter).toBeNull();
   });
 
+  it("lets a quarter she stated outright beat one read off her folder names", () => {
+    // She answered "which quarter does this belong to" on the import screen.
+    // That is her, not a guess, so it wins over the folder-derived Q2.
+    const out = resolvePlanMaterials(planned, { grade: 7, overrideQuarter: "Q1" });
+    expect(out.map((m) => m.quarter)).toEqual(["Q1", "Q1"]);
+  });
+
+  it("keeps the folder-derived quarter when she states nothing", () => {
+    const out = resolvePlanMaterials(planned, { grade: 7, overrideQuarter: null });
+    expect(out.find((m) => m.driveFileId === "a")!.quarter).toBe("Q2");
+  });
+
   it("applies per-file classification overrides", () => {
     const out = resolvePlanMaterials(planned, { grade: 7 }, [
       { fileId: "a", category: "Lessons", materialType: "lesson" },

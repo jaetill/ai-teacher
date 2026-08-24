@@ -4,6 +4,7 @@ import {
   applyLevelMap,
   normalizeQuarter,
   proposeLevelMap,
+  quarterTagIn,
   validateLevelMap,
 } from "@/lib/import-structure";
 
@@ -29,7 +30,7 @@ function folder(name: string, ...children: ScannedNode[]): ScannedNode {
   };
 }
 
-describe("normalizeQuarter", () => {
+describe("normalizeQuarter — the name IS a quarter", () => {
   it.each([
     ["Q1", "Q1"],
     ["q3", "Q3"],
@@ -43,13 +44,38 @@ describe("normalizeQuarter", () => {
     expect(normalizeQuarter(input)).toBe(expected);
   });
 
-  it("returns null for names that are not quarters", () => {
+  // The bug this function exists to prevent: her Grade 6 folders are named for
+  // the book with the quarter after it, and reading them as quarters produced
+  // "8 of 8 subfolders read as quarters" for a folder holding eight units.
+  it.each(["Dash Q3", "Refugee Q4", "Before the Ever After Q2", "The Giver Q1"])(
+    "does NOT read %s as a quarter — it is a unit that mentions one",
+    (name) => {
+      expect(normalizeQuarter(name)).toBeNull();
+    },
+  );
+
+  it("returns null for names that are not quarters at all", () => {
     expect(normalizeQuarter("The Westing Game")).toBeNull();
     expect(normalizeQuarter("Roll of Thunder")).toBeNull();
   });
 
   it("does not read a bare digit as a quarter", () => {
     expect(normalizeQuarter("Unit 2")).toBeNull();
+  });
+});
+
+describe("quarterTagIn — the quarter a name MENTIONS", () => {
+  it.each([
+    ["Dash Q3", "Q3"],
+    ["Refugee Q4", "Q4"],
+    ["Before the Ever After Q2", "Q2"],
+    ["Q1", "Q1"],
+  ])("pulls %s out of the name as %s", (input, expected) => {
+    expect(quarterTagIn(input)).toBe(expected);
+  });
+
+  it("is null when no quarter is mentioned", () => {
+    expect(quarterTagIn("The Westing Game")).toBeNull();
   });
 });
 
@@ -216,6 +242,46 @@ describe("proposeLevelMap", () => {
 
     expect(proposal.levels).toEqual(["year", "quarter", "unit"]);
     expect(proposal.alternatives[0].levels).toEqual(["container", "quarter", "unit"]);
+  });
+
+  // Her real Grade 6 folder, 2026-08-24. Eight units, each named for the book
+  // with the quarter after it, and no quarter folders at all. The first version
+  // called this "8 of 8 subfolders read as quarters" and proposed a whole year.
+  it("reads book-name-plus-quarter folders as units, not as eight quarters", () => {
+    const tree = folder(
+      "Grade 6 English",
+      folder("Dash Q3", file("dash.pptx")),
+      folder("Refugee Q4", file("refugee.pptx")),
+      folder("Before the Ever After Q2", file("beforeafter.pptx")),
+      folder("The Giver Q1", file("giver.pptx")),
+      folder("Wonder Q1", file("wonder.pptx")),
+      folder("Hatchet Q2", file("hatchet.pptx")),
+      folder("Freak the Mighty Q3", file("freak.pptx")),
+      folder("Esperanza Rising Q4", file("esperanza.pptx")),
+    );
+
+    const proposal = proposeLevelMap(tree);
+
+    expect(proposal.levels).toEqual(["container", "unit"]);
+    expect(proposal.reason).toMatch(/each one is a unit/i);
+
+    const plan = applyLevelMap(tree, proposal.levels);
+    expect(plan.units).toHaveLength(8);
+    expect(plan.units).toContain("Dash Q3");
+    // And the quarter suffix places each unit for free.
+    expect(plan.materials.find((m) => m.unit === "Dash Q3")!.quarter).toBe("Q3");
+    expect(plan.materials.find((m) => m.unit === "Refugee Q4")!.quarter).toBe("Q4");
+    expect(new Set(plan.quarters)).toEqual(new Set(["Q1", "Q2", "Q3", "Q4"]));
+  });
+
+  it("does not call it a year when two subfolders claim the same quarter", () => {
+    const tree = folder(
+      "Grade 6",
+      folder("Q1", file("a.pptx")),
+      folder("Quarter 1", file("b.pptx")),
+    );
+
+    expect(proposeLevelMap(tree).levels).not.toEqual(["year", "quarter", "unit"]);
   });
 
   it("reads a quarter-named root as a quarter of units", () => {
