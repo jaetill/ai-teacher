@@ -7,6 +7,7 @@ import {
   index,
   unique,
 } from "drizzle-orm/pg-core";
+import { courses } from "./courses";
 
 export const materials = pgTable(
   "materials",
@@ -17,6 +18,27 @@ export const materials = pgTable(
     materialType: text("material_type").notNull(),
     // 'google_drive' | 'url' | 'inline'
     storageType: text("storage_type").notNull(),
+
+    // ── Placement ───
+    // Where this material sits in the curriculum, as data rather than as a
+    // Drive folder path. Before these columns, a material's grade, term and
+    // category existed only inside `drive_folders.folder_key`
+    // ("grade_7_Q2_Lessons") — which made storage location and curriculum
+    // placement the same fact, and made import inherently per-quarter.
+    //
+    // Grade is deliberately absent: it is `courses.grade`, one join away.
+    // Storing it again invites the two copies to disagree.
+    courseId: uuid("course_id").references(() => courses.id, {
+      onDelete: "cascade",
+    }),
+    // 'Summer' | 'Q1'..'Q4' | 'YearPlan'. Nullable on purpose: a material can
+    // belong to a course without belonging to a term, the same way the
+    // hand-made "Where I'm From Poem" unit does.
+    term: text("term"),
+    // 'Curriculum' | 'Lessons' | 'Activities' | 'Assessments' | 'Resources'.
+    // The teacher-facing bucket. Distinct from materialType, which is the
+    // AI/display tag — the redundancy between the two is known debt.
+    category: text("category"),
 
     // ── Google Drive fields ───
     driveFileId: text("drive_file_id"),
@@ -53,6 +75,8 @@ export const materials = pgTable(
     index("idx_materials_drive_file").on(table.driveFileId),
     index("idx_materials_type").on(table.materialType),
     index("idx_materials_owner_email").on(table.ownerEmail),
+    // The pool query: "everything placed in this course, optionally this term."
+    index("idx_materials_placement").on(table.courseId, table.term),
   ]
 );
 

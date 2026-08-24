@@ -16,6 +16,12 @@ export const courses = pgTable(
     title: text("title").notNull(), // "Grade 8 English Language Arts"
     grade: smallint("grade").notNull(), // 6, 7, or 8
     subject: text("subject").notNull().default("ELA"),
+    // Curriculum track within a grade — "honors", "regular", "co-taught".
+    // NULL means the grade is untracked, which is the common case and the only
+    // one Heidi has. Part of the course identity: honors and regular are two
+    // different curricula (different pacing, different anchor texts), not two
+    // sections of one. Class periods are `sections`; this is not that.
+    track: text("track"),
     schoolYearId: uuid("school_year_id").references(() => schoolYears.id),
     ownerEmail: text("owner_email"), // Google account email of the teacher who created this course
     // ISO weekdays this class meets, CSV ("1,2,3,4,5" = Mon-Fri). Feeds the
@@ -42,8 +48,19 @@ export const courses = pgTable(
     // constraint never fires for NULL year rows — so onConflictDoNothing() in
     // import/build-curriculum silently created a duplicate course per import.
     // Matches the drive_folders constraint style.
-    unique("uq_courses_grade_subject_year_owner")
-      .on(table.grade, table.subject, table.schoolYearId, table.ownerEmail)
+    //
+    // `track` joined the key so one teacher can hold Grade 8 Honors and Grade 8
+    // Regular in the same year. Without it the constraint made that impossible
+    // — the two rows differ in nothing else. NULLS NOT DISTINCT still applies,
+    // so an untracked grade collides with itself exactly as before.
+    unique("uq_courses_grade_subject_track_year_owner")
+      .on(
+        table.grade,
+        table.subject,
+        table.track,
+        table.schoolYearId,
+        table.ownerEmail
+      )
       .nullsNotDistinct(),
   ]
 );

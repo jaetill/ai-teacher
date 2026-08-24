@@ -453,7 +453,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     .where(eq(schoolYears.isCurrent, true))
     .limit(1);
 
-  // Select-before-insert: uq_courses_grade_subject_year_owner is NULLS
+  // Select-before-insert: uq_courses_grade_subject_track_year_owner is NULLS
   // DISTINCT on databases that predate the NULLS NOT DISTINCT migration, so
   // when no school year is marked current (schoolYearId = NULL) the
   // onConflictDoNothing() below never fires and every import used to create a
@@ -461,9 +461,13 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   const yearFilter = currentYear?.id
     ? eq(courses.schoolYearId, currentYear.id)
     : isNull(courses.schoolYearId);
+  // Untracked only. Once a grade has an honors course alongside a regular one,
+  // this build path must not silently adopt whichever it finds first — the
+  // track comes from the import target, and this route has no target yet.
   const courseWhere = and(
     eq(courses.grade, grade),
     eq(courses.subject, "ELA"),
+    isNull(courses.track),
     yearFilter,
     eq(courses.ownerEmail, ownerEmail),
   );
