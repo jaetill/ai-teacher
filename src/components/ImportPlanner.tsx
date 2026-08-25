@@ -19,7 +19,7 @@ import {
   type LevelMapProposal,
 } from "@/lib/import-structure";
 import { inferCategoryFromPath, inferMaterialType } from "@/lib/import-classify";
-import { CATEGORIES } from "@/lib/upload-utils";
+import { MATERIAL_TYPES } from "@/lib/upload-utils";
 
 // The hierarchy the app actually stores, stated out loud rather than left for
 // her to infer: a grade has school years, a year has quarters, a quarter has
@@ -55,6 +55,22 @@ const QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"] as const;
 
 /** Quarter comes from each folder's own name rather than from one choice. */
 const FROM_FOLDER_NAMES = "__auto__";
+
+// "2 activitys" would undercut every careful word on this screen.
+const PLURAL: Record<string, string> = {
+  reading: "readings",
+  activity: "activities",
+  rubric: "rubrics",
+  lesson: "lessons",
+  assessment: "assessments",
+  resource: "resources",
+  curriculum: "curriculum",
+  other: "unsure",
+};
+
+function countLabel(type: string, n: number): string {
+  return n === 1 ? `1 ${type === "other" ? "unsure" : type}` : `${n} ${PLURAL[type] ?? type}`;
+}
 
 function shapeIdFor(levels: LevelMap): string {
   const key = levels.join(">");
@@ -112,6 +128,10 @@ export default function ImportPlanner() {
   const [track, setTrack] = useState("");
   const [quarterChoice, setQuarterChoice] = useState<string>(FROM_FOLDER_NAMES);
 
+  // What the material IS — reading, activity, rubric, lesson, assessment,
+  // resource, curriculum, other. This is the tag the editor shows and the one
+  // worth her attention; the category (which folder it came out of) is
+  // placement and she already answered that by pointing at the folder.
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   // What the model worked out for files her folders said nothing about. Kept
   // apart from `overrides` so the fix-up list can lead with the guesses.
@@ -145,10 +165,15 @@ export default function ImportPlanner() {
   const classified = useMemo(() => {
     if (!placement) return [];
     return placement.materials.map((m) => {
-      // Her correction, then her folder names, then the model. Certainty
-      // first: a guess never displaces something she actually told us.
-      const fromFolder = inferCategoryFromPath(m.path);
-      const category = overrides[m.fileId] ?? fromFolder ?? guesses[m.fileId] ?? null;
+      // Category is placement — which of her folders it came out of. It needs
+      // no review; she chose the folder.
+      const category = inferCategoryFromPath(m.path);
+      // Material type is the judgement call, so it carries the precedence:
+      // her correction, then her folder names, then the model. A guess never
+      // displaces something she actually told us.
+      const fromFolder = category ? inferMaterialType(category, m.mimeType) : null;
+      const materialType =
+        overrides[m.fileId] ?? fromFolder ?? guesses[m.fileId] ?? inferMaterialType(null, m.mimeType);
       return {
         fileId: m.fileId,
         name: m.name,
@@ -157,24 +182,27 @@ export default function ImportPlanner() {
         // folder names, then nothing.
         quarter: overrideQuarter ?? m.quarter ?? null,
         category,
-        materialType: inferMaterialType(category, m.mimeType),
+        materialType,
         // True when nothing but the model's reading of the filename put it here.
         guessed: !overrides[m.fileId] && !fromFolder && Boolean(guesses[m.fileId]),
       };
     });
   }, [placement, overrides, guesses, overrideQuarter]);
 
-  const byCategory = useMemo(() => {
+  const byType = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const c of classified) counts[c.category ?? "Unclassified"] = (counts[c.category ?? "Unclassified"] ?? 0) + 1;
+    for (const c of classified) counts[c.materialType] = (counts[c.materialType] ?? 0) + 1;
     return counts;
   }, [classified]);
 
-  const unclassified = classified.filter((c) => !c.category);
+  // "other" is the app admitting it does not know, so it needs her eye just as
+  // much as a guess does.
+  const unclassified = classified.filter((c) => c.materialType === "other");
   const guessedCount = classified.filter((c) => c.guessed).length;
-  // The fix-up list leads with what nothing could place, then what the model
-  // guessed. Anything her folders answered is not up for review.
-  const needsAttention = [...unclassified, ...classified.filter((c) => c.guessed)];
+  const needsAttention = [
+    ...unclassified,
+    ...classified.filter((c) => c.guessed && c.materialType !== "other"),
+  ];
 
   /** The chain she has declared, shown back to her: grade > year > quarter > unit. */
   const breadcrumb = useMemo(() => {
@@ -259,10 +287,10 @@ export default function ImportPlanner() {
           body: JSON.stringify({ files: todo.slice(i, i + BATCH) }),
         });
         if (!res.ok) break; // Leave the rest unclassified; she can still fix them.
-        const data: { classifications: { id: string; category: string | null }[] } =
+        const data: { classifications: { id: string; materialType: string | null }[] } =
           await res.json();
         const add: Record<string, string> = {};
-        for (const c of data.classifications) if (c.category) add[c.id] = c.category;
+        for (const c of data.classifications) if (c.materialType) add[c.id] = c.materialType;
         setGuesses((g) => ({ ...g, ...add }));
       }
     } catch {
@@ -298,8 +326,8 @@ export default function ImportPlanner() {
           // its own but cannot re-derive her corrections or the model's
           // guesses, and silently dropping them would lose the whole pass.
           files: classified
-            .filter((c) => c.category && (overrides[c.fileId] || c.guessed))
-            .map((c) => ({ fileId: c.fileId, category: c.category })),
+            .filter((c) => overrides[c.fileId] || c.guessed)
+            .map((c) => ({ fileId: c.fileId, materialType: c.materialType })),
         }),
       });
       const data = await res.json();
@@ -487,18 +515,20 @@ export default function ImportPlanner() {
               )}
 
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {Object.entries(byCategory).map(([cat, n]) => (
-                  <span
-                    key={cat}
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      cat === "Unclassified"
-                        ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
-                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
-                    }`}
-                  >
-                    {cat} {n}
-                  </span>
-                ))}
+                {Object.entries(byType)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([type, n]) => (
+                    <span
+                      key={type}
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        type === "other"
+                          ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
+                          : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                      }`}
+                    >
+                      {countLabel(type, n)}
+                    </span>
+                  ))}
                 {classifying && (
                   <span className="text-xs text-zinc-500 dark:text-zinc-400">
                     working out the rest…
@@ -517,8 +547,7 @@ export default function ImportPlanner() {
 
               {guessedCount > 0 && !classifying && (
                 <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  {classified.length - guessedCount - unclassified.length} came from your folder
-                  names. {guessedCount}{" "}
+                  {classified.length - guessedCount} typed from your folder names. {guessedCount}{" "}
                   {guessedCount === 1 ? "was worked out" : "were worked out"} from the filename —
                   worth a glance.
                 </p>
@@ -551,9 +580,9 @@ export default function ImportPlanner() {
                       }}
                     >
                       <option value="">choose…</option>
-                      {CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
+                      {MATERIAL_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
                         </option>
                       ))}
                     </select>
@@ -575,17 +604,16 @@ export default function ImportPlanner() {
                         </span>
                       )}
                       <select
-                        aria-label={`Category for ${u.name}`}
+                        aria-label={`Type for ${u.name}`}
                         className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
-                        value={overrides[u.fileId] ?? u.category ?? ""}
+                        value={overrides[u.fileId] ?? u.materialType}
                         onChange={(e) =>
                           setOverrides({ ...overrides, [u.fileId]: e.target.value })
                         }
                       >
-                        <option value="">—</option>
-                        {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
+                        {MATERIAL_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
                           </option>
                         ))}
                       </select>

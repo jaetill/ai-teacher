@@ -91,10 +91,13 @@ export async function POST(req: Request) {
 
   const system = `You classify a middle-school English teacher's existing teaching materials.
 
-You are given filenames, each with the unit it belongs to. Decide two things only:
+You are given filenames, each with the unit it belongs to. Decide ONE thing:
 
-1. **category** — one of: ${CATEGORIES.join(", ")}
-2. **materialType** — one of: ${MATERIAL_TYPES.join(", ")}
+**materialType** — one of: ${MATERIAL_TYPES.join(", ")}
+
+This is what the material IS, which is the tag she sees on it everywhere in the
+app. Category (which folder it came out of) is not your call — she answered
+that by choosing the folder.
 
 What the types mean, in the teacher's own words:
 ${await definitions(ownerEmail)}
@@ -106,7 +109,7 @@ A lesson is a file she teaches from, usually a slide deck, and it can span
 several days. Prefer "other" over a confident wrong answer.
 
 Return ONLY a JSON array, one object per file, echoing the id you were given:
-[{"id":"...","category":"Lessons","materialType":"lesson"}]
+[{"id":"...","materialType":"lesson"}]
 
 No markdown fencing, no explanation.`;
 
@@ -130,28 +133,25 @@ No markdown fencing, no explanation.`;
     return Response.json({ error: "Classification failed" }, { status: 502 });
   }
 
-  const parsed = parseAiJson<{ id?: string; category?: string; materialType?: string }[]>(raw);
+  const parsed = parseAiJson<{ id?: string; materialType?: string }[]>(raw);
   if (!Array.isArray(parsed)) {
     console.error("[import/classify] unparseable response:", raw.slice(0, 500));
     return Response.json({ error: "Failed to parse classification" }, { status: 500 });
   }
 
-  // Keep only rows that name a file we asked about and a value we recognise.
-  // A hallucinated id or category becomes "unclassified", which she can see
-  // and fix — never a silently wrong row in her curriculum.
+  // Keep only rows that name a file we asked about and a type we recognise.
+  // A hallucinated id or type is dropped, so the file shows as "other" — which
+  // she can see and fix — rather than as a silently wrong row.
   const asked = new Set(body.files.map((f) => f.id));
   const classifications = parsed
-    .filter((c) => c && typeof c.id === "string" && asked.has(c.id))
-    .map((c) => ({
-      id: c.id!,
-      category: (CATEGORIES as readonly string[]).includes(c.category ?? "")
-        ? c.category!
-        : null,
-      materialType: (MATERIAL_TYPES as readonly string[]).includes(c.materialType ?? "")
-        ? c.materialType!
-        : null,
-    }))
-    .filter((c) => c.category || c.materialType);
+    .filter(
+      (c) =>
+        c &&
+        typeof c.id === "string" &&
+        asked.has(c.id) &&
+        (MATERIAL_TYPES as readonly string[]).includes(c.materialType ?? "")
+    )
+    .map((c) => ({ id: c.id!, materialType: c.materialType! }));
 
   return Response.json({ classifications });
 }
