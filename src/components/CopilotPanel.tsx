@@ -7,6 +7,14 @@ import remarkGfm from "remark-gfm";
 import { useCopilot } from "./CopilotProvider";
 import DraftCard from "./DraftCard";
 import { parseDraftBlock } from "@/lib/draft-protocol";
+import {
+  ACCEPT_ATTR,
+  DOCX_MIME,
+  MAX_ATTACHMENTS,
+  kindFor,
+  rejectionReason,
+  type OutgoingAttachment,
+} from "@/lib/copilot-attachments";
 
 // Extract the raw text of a ```draft code block from the <pre> renderer's
 // children, or null when this <pre> isn't a (complete) draft block.
@@ -22,6 +30,43 @@ function draftFromPreChildren(children: ReactNode): string | null {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  /** Filenames she attached, so the transcript shows them on her own turn. */
+  attachments?: string[];
+}
+
+type PendingAttachment = OutgoingAttachment & { localId: string };
+
+/** Read a File into the shape the route wants: base64, or text for text. */
+async function readAttachment(file: File): Promise<PendingAttachment> {
+  const kind = kindFor(file.type, file.name)!;
+  const mediaType =
+    file.type || (/\.docx$/i.test(file.name) ? DOCX_MIME : "text/plain");
+
+  // .docx is binary but becomes text server-side, so it travels as base64.
+  const asText = kind === "text" && mediaType !== DOCX_MIME;
+  const data = asText
+    ? await file.text()
+    : arrayBufferToBase64(await file.arrayBuffer());
+
+  return {
+    localId: `${file.name}-${file.size}-${Date.now()}`,
+    name: file.name,
+    mediaType,
+    kind,
+    data,
+    size: file.size,
+  };
+}
+
+/** btoa needs a binary string; chunked so a 4MB file does not blow the stack. */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 export default function CopilotPanel() {
@@ -30,6 +75,10 @@ export default function CopilotPanel() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // In-flight stream, so "New" can cancel it. Without this, clicking New while
   // streaming emptied `messages` while the read loop kept appending to
@@ -41,14 +90,72 @@ export default function CopilotPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  /** Take files from the picker, a drop, or a paste. */
+  async function addFiles(files: FileList | File[]) {
+    const incoming = Array.from(files);
+    if (!incoming.length) return;
+
+    const problems: string[] = [];
+    const accepted: PendingAttachment[] = [];
+
+    for (const file of incoming) {
+      if (pending.length + accepted.length >= MAX_ATTACHMENTS) {
+        problems.push(`Only ${MAX_ATTACHMENTS} files at a time.`);
+        break;
+      }
+      const reason = rejectionReason(file);
+      if (reason) {
+        problems.push(reason);
+        continue;
+      }
+      try {
+        accepted.push(await readAttachment(file));
+      } catch {
+        problems.push(`${file.name} could not be read.`);
+      }
+    }
+
+    if (accepted.length) setPending((p) => [...p, ...accepted]);
+    setAttachError(problems.length ? problems.join(" ") : null);
+  }
+
+  function removeAttachment(localId: string) {
+    setPending((p) => p.filter((a) => a.localId !== localId));
+  }
+
+  /** Screenshots arrive as clipboard files with no filename worth keeping. */
+  function handlePaste(e: React.ClipboardEvent) {
+    const files = Array.from(e.clipboardData.files);
+    if (!files.length) return;
+    e.preventDefault();
+    void addFiles(
+      files.map((f) =>
+        f.name && f.name !== "image.png"
+          ? f
+          : new File([f], `pasted-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.png`, {
+              type: f.type,
+            })
+      )
+    );
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || streaming) return;
+    // An attachment on its own is a legitimate turn — "what do you make of
+    // this?" is implied by dropping a file in.
+    if ((!text && pending.length === 0) || streaming) return;
 
-    const userMessage: Message = { role: "user", content: text };
+    const outgoing = pending;
+    const userMessage: Message = {
+      role: "user",
+      content: text,
+      attachments: outgoing.length ? outgoing.map((a) => a.name) : undefined,
+    };
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     setInput("");
+    setPending([]);
+    setAttachError(null);
     setStreaming(true);
 
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
@@ -62,9 +169,14 @@ export default function CopilotPanel() {
         headers: { "Content-Type": "application/json" },
         signal: abort.signal,
         body: JSON.stringify({
-          messages: nextMessages,
+          // The panel's own Message shape carries a filename list for display;
+          // the API wants plain role/content plus the attachment payloads.
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
           conversationId,
           context: pageContext || undefined,
+          attachments: outgoing.length
+            ? outgoing.map(({ localId: _localId, ...a }) => a)
+            : undefined,
         }),
       });
 
@@ -221,7 +333,14 @@ export default function CopilotPanel() {
                   )}
                 </div>
               ) : (
-                <span className="whitespace-pre-wrap">{msg.content}</span>
+                <span className="whitespace-pre-wrap">
+                  {msg.content}
+                  {msg.attachments?.length ? (
+                    <span className="mt-1 block text-xs opacity-70">
+                      📎 {msg.attachments.join(", ")}
+                    </span>
+                  ) : null}
+                </span>
               )}
             </div>
           </div>
@@ -229,21 +348,87 @@ export default function CopilotPanel() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div className="border-t border-zinc-200 dark:border-zinc-800 px-4 py-3 shrink-0">
+      {/* Input. Dropping anywhere on this footer attaches. */}
+      <div
+        className={`border-t px-4 py-3 shrink-0 transition-colors ${
+          dragging
+            ? "border-zinc-400 dark:border-zinc-500 bg-zinc-100 dark:bg-zinc-800/60"
+            : "border-zinc-200 dark:border-zinc-800"
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!streaming) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!streaming) void addFiles(e.dataTransfer.files);
+        }}
+      >
+        {pending.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 mb-2">
+            {pending.map((a) => (
+              <li
+                key={a.localId}
+                className="flex items-center gap-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300"
+              >
+                <span aria-hidden="true">
+                  {a.kind === "image" ? "🖼" : a.kind === "pdf" ? "📄" : "📝"}
+                </span>
+                <span className="max-w-[160px] truncate">{a.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(a.localId)}
+                  aria-label={`Remove ${a.name}`}
+                  className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {attachError && (
+          <p className="mb-2 text-xs text-amber-700 dark:text-amber-400">{attachError}</p>
+        )}
+
         <div className="flex gap-2 items-end">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ACCEPT_ATTR}
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
+              e.target.value = ""; // so the same file can be picked twice
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={streaming || pending.length >= MAX_ATTACHMENTS}
+            title="Attach a file — or drag one in, or paste a screenshot"
+            aria-label="Attach a file"
+            className="h-10 w-10 shrink-0 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+          >
+            +
+          </button>
           <textarea
             className="flex-1 resize-none rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 min-h-[40px] max-h-[120px]"
-            placeholder="Ask your copilot..."
+            placeholder={dragging ? "Drop it here…" : "Ask your copilot..."}
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={streaming}
           />
           <button
             onClick={send}
-            disabled={!input.trim() || streaming}
+            disabled={(!input.trim() && pending.length === 0) || streaming}
             className="h-10 px-4 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-40 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shrink-0"
           >
             Send
