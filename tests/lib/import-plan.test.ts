@@ -371,10 +371,43 @@ describe("resolveTargetCourse", () => {
     });
   });
 
+  it("marks a course with no school year as a library", async () => {
+    // Her 1998 Grade 12 material: a real course, just not one she teaches now.
+    // Without the suffix it is indistinguishable from a live course in a list.
+    const { db, calls } = fakeDb([[], [{ id: "lib" }]]);
+
+    await resolveTargetCourse({ grade: 12, schoolYearId: null }, "t@s.edu", {
+      db,
+      create: true,
+    });
+
+    expect((calls.inserted[0] as { title: string }).title).toBe(
+      "Grade 12 English Language Arts — Library",
+    );
+    expect((calls.inserted[0] as { schoolYearId: unknown }).schoolYearId).toBeNull();
+  });
+
+  it("does not call a course with a year a library", async () => {
+    const { db, calls } = fakeDb([[], [{ id: "c" }]]);
+
+    await resolveTargetCourse(
+      { grade: 12, schoolYearId: "11111111-1111-1111-1111-111111111111" },
+      "t@s.edu",
+      { db, create: true },
+    );
+
+    expect((calls.inserted[0] as { title: string }).title).not.toMatch(/Library/);
+  });
+
   it("stores an untracked course with a null track, not an empty string", async () => {
     const { db, calls } = fakeDb([[], [{ id: "c" }]]);
 
-    await resolveTargetCourse({ grade: 6 }, "t@s.edu", { db, create: true });
+    // With a year, so this stays a test about track rather than the library suffix.
+    await resolveTargetCourse(
+      { grade: 6, schoolYearId: "11111111-1111-1111-1111-111111111111" },
+      "t@s.edu",
+      { db, create: true },
+    );
 
     expect((calls.inserted[0] as { track: unknown }).track).toBeNull();
     expect((calls.inserted[0] as { title: string }).title).toBe("Grade 6 English Language Arts");

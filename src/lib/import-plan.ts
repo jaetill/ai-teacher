@@ -240,7 +240,10 @@ export async function resolveTargetCourse(
   if (existing) return { id: existing.id, created: false };
   if (!opts.create) return null;
 
-  const suffix = track ? ` (${track})` : "";
+  // A course with no school year is a library — material she keeps on hand
+  // rather than a year she teaches. Saying so in the title is the only thing
+  // separating it from a real course in a list.
+  const suffix = `${track ? ` (${track})` : ""}${schoolYearId ? "" : " — Library"}`;
   const [inserted] = await db
     .insert(courses)
     .values({

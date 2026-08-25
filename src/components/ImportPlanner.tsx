@@ -56,6 +56,18 @@ const QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4", "YearPlan"] as const;
 /** Quarter comes from each folder's own name rather than from one choice. */
 const FROM_FOLDER_NAMES = "__auto__";
 
+/**
+ * "No school year" — the empty string, which the submit already turns into a
+ * null schoolYearId. A yearless course is the library: old material, another
+ * teacher's material, anything she wants on hand without it being a year she
+ * teaches.
+ */
+const LIBRARY = "";
+
+// Grades her material can come from. The server has always accepted 1-12; the
+// picker was stuck on 6-8, which made a Grade 12 archive un-importable.
+const GRADES = [6, 7, 8, 9, 10, 11, 12];
+
 // "2 activitys" would undercut every careful word on this screen.
 const PLURAL: Record<string, string> = {
   reading: "readings",
@@ -144,6 +156,14 @@ export default function ImportPlanner() {
   const shape = SHAPES.find((s) => s.id === shapeId)!;
   const levels = shape.levels;
 
+  // A course with no school year is a shelf: material she can draw on without
+  // it being part of a year she teaches. courses.school_year_id was already
+  // nullable, so this needed no new concept — and a shelf is a truer model
+  // than an orphan unit, because her 1998 Grade 12 English really was a course.
+  const isLibrary = schoolYearId === LIBRARY;
+  // Nothing in a library belongs to a quarter, so the question is not asked.
+  const showQuarter = shape.needsQuarter && !isLibrary;
+
   const placement = useMemo(() => {
     if (!scan) return null;
     try {
@@ -157,9 +177,7 @@ export default function ImportPlanner() {
   // "from the folder names" is both the faithful default and one fewer choice.
   const foldersNameTheirQuarter = Boolean(placement && placement.quarters.length > 0);
   const overrideQuarter =
-    shape.needsQuarter && quarterChoice && quarterChoice !== FROM_FOLDER_NAMES
-      ? quarterChoice
-      : null;
+    showQuarter && quarterChoice && quarterChoice !== FROM_FOLDER_NAMES ? quarterChoice : null;
 
   /** Same inference the server will run, so what she sees is what gets written. */
   const classified = useMemo(() => {
@@ -209,14 +227,16 @@ export default function ImportPlanner() {
     const year = targets?.schoolYears.find((y) => y.id === schoolYearId)?.name;
     const quarters = [...new Set(classified.map((c) => c.quarter).filter(Boolean))];
     const parts = [`Grade ${grade}${track.trim() ? ` ${track.trim()}` : ""}`];
-    if (year) parts.push(year);
-    parts.push(quarters.length ? quarters.join(", ") : "no quarter");
+    parts.push(year ?? "Library");
+    // A library has no quarters to report, so the rung is skipped rather than
+    // shown as an absence.
+    if (!isLibrary) parts.push(quarters.length ? quarters.join(", ") : "no quarter");
     if (placement?.units.length) {
       parts.push(`${placement.units.length} unit${placement.units.length === 1 ? "" : "s"}`);
     }
     parts.push(`${classified.length} file${classified.length === 1 ? "" : "s"}`);
     return parts;
-  }, [grade, track, targets, schoolYearId, classified, placement]);
+  }, [grade, track, targets, schoolYearId, classified, placement, isLibrary]);
 
   async function runScan(raw: string) {
     const id = extractDriveId(raw);
@@ -423,7 +443,7 @@ export default function ImportPlanner() {
               </div>
 
               {/* Parent chain — only the rungs above whatever she picked. */}
-              {shape.needsQuarter && (
+              {showQuarter && (
                 <div>
                   <label className={label} htmlFor="quarter">
                     …which belongs to quarter
@@ -465,6 +485,7 @@ export default function ImportPlanner() {
                       {y.isCurrent ? " (current)" : ""}
                     </option>
                   ))}
+                  <option value={LIBRARY}>No school year — keep it in the library</option>
                 </select>
               </div>
 
@@ -478,7 +499,7 @@ export default function ImportPlanner() {
                   value={grade}
                   onChange={(e) => setGrade(Number(e.target.value))}
                 >
-                  {[6, 7, 8].map((g) => (
+                  {GRADES.map((g) => (
                     <option key={g} value={g}>
                       Grade {g}
                     </option>
@@ -665,8 +686,9 @@ export default function ImportPlanner() {
                       (c.track ?? null) === (track.trim() || null) &&
                       (c.schoolYearId ?? null) === (schoolYearId || null)
                   );
-                  return match
-                    ? "Adds to your existing course."
+                  if (match) return "Adds to what you already have.";
+                  return isLibrary
+                    ? `Starts a Grade ${grade} library — material on hand, not a year you teach.`
                     : "Creates a new course for this grade and year.";
                 })()}{" "}
                 Files stay where they are in Drive.
