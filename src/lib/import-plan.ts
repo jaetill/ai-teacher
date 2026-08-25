@@ -20,7 +20,7 @@
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db as database } from "@/db";
-import { courses, materials } from "@/db/schema";
+import { courses, materialAttachments, materials, units } from "@/db/schema";
 import {
   applyLevelMap,
   validateLevelMap,
@@ -336,6 +336,111 @@ export async function commitPlanMaterials(
 
   if (inserts.length) await db.insert(materials).values(inserts);
   return { created: inserts.length, updated };
+}
+
+/**
+ * Create the units the import implies, and hang the materials off them.
+ *
+ * There is no staging step any more. An import that only wrote `materials`
+ * rows left the teacher looking at a "Build" button and a pile of files that
+ * were in the app but not in her curriculum — a seam in our architecture
+ * showing through as a chore of hers. Her folders ARE her units, so the units
+ * can be created from them the moment she imports, with no AI involved.
+ *
+ * What is deliberately NOT done here: lessons, standards, durations, essential
+ * questions. Those are enrichment, they need the model, and they belong to a
+ * later opt-in pass over a curriculum that already exists.
+ *
+ * Idempotent: a unit is matched by title within the course, so re-importing
+ * the same folder reuses the unit instead of making a second one, and
+ * attachments are unique on (material, type, id).
+ */
+export async function commitPlanUnits(
+  resolved: ResolvedMaterial[],
+  courseId: string,
+  opts: { db?: typeof database; userId?: string } = {}
+): Promise<{ unitsCreated: number; unitsReused: number; attached: number }> {
+  const db = opts.db ?? database;
+
+  // Distinct unit names, in the order the tree presented them.
+  const order: string[] = [];
+  const quarterOf = new Map<string, string | null>();
+  for (const m of resolved) {
+    if (!m.sourceUnit) continue;
+    if (!quarterOf.has(m.sourceUnit)) {
+      order.push(m.sourceUnit);
+      quarterOf.set(m.sourceUnit, m.quarter);
+    }
+  }
+  if (!order.length) return { unitsCreated: 0, unitsReused: 0, attached: 0 };
+
+  const existing = await db
+    .select({ id: units.id, title: units.title, sortOrder: units.sortOrder })
+    .from(units)
+    .where(eq(units.courseId, courseId));
+  const idByTitle = new Map(existing.map((u) => [u.title.trim().toLowerCase(), u.id]));
+  let nextSort = existing.reduce((max, u) => Math.max(max, u.sortOrder), -1) + 1;
+
+  let unitsCreated = 0;
+  let unitsReused = 0;
+
+  for (const title of order) {
+    if (idByTitle.has(title.trim().toLowerCase())) {
+      unitsReused++;
+      continue;
+    }
+    const [row] = await db
+      .insert(units)
+      .values({
+        courseId,
+        title,
+        sortOrder: nextSort++,
+        quarter: quarterOf.get(title) ?? null,
+        durationWeeks: 2,
+        // Factual, not invented. Describing the unit is the model's job later.
+        summary: "Captured from your Drive folder.",
+        // Her folder, her unit — not an AI proposal, and the badge must say so.
+        source: "human",
+        userId: opts.userId,
+      })
+      .returning({ id: units.id });
+    if (row) {
+      idByTitle.set(title.trim().toLowerCase(), row.id);
+      unitsCreated++;
+    }
+  }
+
+  // Reload so freshly written materials can be attached by drive file id.
+  const fileIds = resolved.map((m) => m.driveFileId);
+  const rows = fileIds.length
+    ? await db
+        .select({ id: materials.id, driveFileId: materials.driveFileId })
+        .from(materials)
+        .where(and(eq(materials.courseId, courseId), inArray(materials.driveFileId, fileIds)))
+    : [];
+  const materialIdByFile = new Map(rows.map((r) => [r.driveFileId!, r.id]));
+
+  const attachments = [];
+  for (const m of resolved) {
+    if (!m.sourceUnit) continue;
+    const unitId = idByTitle.get(m.sourceUnit.trim().toLowerCase());
+    const materialId = materialIdByFile.get(m.driveFileId);
+    if (!unitId || !materialId) continue;
+    attachments.push({
+      materialId,
+      attachableType: "unit" as const,
+      attachableId: unitId,
+      role: "supporting" as const,
+    });
+  }
+
+  if (attachments.length) {
+    // onConflictDoNothing against uq_material_attachment: a re-import must not
+    // duplicate a link, and must not disturb one she moved to a lesson.
+    await db.insert(materialAttachments).values(attachments).onConflictDoNothing();
+  }
+
+  return { unitsCreated, unitsReused, attached: attachments.length };
 }
 
 /** Everything a plan would do, computed without writing anything. */

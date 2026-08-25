@@ -66,6 +66,9 @@ function mockFetch() {
             updated: 0,
             total: 3,
             courseCreated: true,
+            courseId: "c1",
+            unitsCreated: 2,
+            unitsReused: 0,
             units: ["Dash Q3", "Refugee Q4"],
             warnings: [],
           }),
@@ -237,7 +240,11 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     expect(body.files).toHaveLength(2);
     expect(body.files.every((f: { category: string }) => f.category === "Resources")).toBe(true);
 
-    expect(await screen.findByText(/imported 3 files/i)).toBeInTheDocument();
+    const done = await screen.findByText(/imported 3 files/i);
+    // The curriculum exists already — no Build step is offered or implied.
+    expect(done.textContent).toMatch(/2 new units/);
+    expect(done.textContent).toMatch(/nothing left to build/i);
+    expect(screen.getByRole("link", { name: /open the curriculum/i })).toBeInTheDocument();
   });
 
   it("says whether the import creates a course or joins one", async () => {

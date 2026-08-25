@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { ScannedNode } from "@/lib/drive";
 import {
   commitPlanMaterials,
+  commitPlanUnits,
   inferCategoryFromPath,
   inferMaterialType,
   previewPlan,
@@ -466,6 +467,131 @@ describe("commitPlanMaterials", () => {
     expect(Object.keys(calls.updated[0] as object)).not.toContain("description");
   });
 
+  it("does nothing at all for an empty plan", async () => {
+    const { db, calls } = fakeDb();
+
+    expect(await commitPlanMaterials([], "course-1", "t@s.edu", { db })).toEqual({
+      created: 0,
+      updated: 0,
+    });
+    expect(calls.selects).toBe(0);
+    expect(calls.inserts).toBe(0);
+  });
+});
+
+// ── units, created at import time — there is no staging step ───
+
+describe("commitPlanUnits", () => {
+  const material = (id: string, unit: string | null, quarter = "Q1") => ({
+    driveFileId: id,
+    title: `${id}.pptx`,
+    driveMimeType: "ppt",
+    quarter: quarter as "Q1",
+    sourceUnit: unit,
+    category: "Lessons",
+    materialType: "lesson",
+    path: [],
+  });
+
+  it("creates a unit per folder and attaches its materials", async () => {
+    const { db, calls } = fakeDb([
+      [], // existing units → none
+      [{ id: "u-giver" }], // insert unit "The Giver"
+      [{ id: "u-fever" }], // insert unit "Fever 1793"
+      [
+        { id: "m1", driveFileId: "f1" },
+        { id: "m2", driveFileId: "f2" },
+      ], // reload materials
+    ]);
+
+    const result = await commitPlanUnits(
+      [material("f1", "The Giver"), material("f2", "Fever 1793")],
+      "course-1",
+      { db },
+    );
+
+    expect(result).toEqual({ unitsCreated: 2, unitsReused: 0, attached: 2 });
+    // The unit is hers, not an AI proposal — the badge depends on this.
+    expect(calls.inserted[0]).toMatchObject({
+      title: "The Giver",
+      courseId: "course-1",
+      quarter: "Q1",
+      source: "human",
+      sortOrder: 0,
+    });
+    expect(calls.inserted[1]).toMatchObject({ title: "Fever 1793", sortOrder: 1 });
+  });
+
+  it("reuses a unit that already exists rather than making a second one", async () => {
+    const { db, calls } = fakeDb([
+      [{ id: "u-giver", title: "The Giver", sortOrder: 0 }], // already there
+      [{ id: "m1", driveFileId: "f1" }],
+    ]);
+
+    const result = await commitPlanUnits([material("f1", "The Giver")], "course-1", { db });
+
+    expect(result).toMatchObject({ unitsCreated: 0, unitsReused: 1 });
+    // Only the attachment insert ran; no unit was created.
+    expect(calls.inserted).toHaveLength(1);
+  });
+
+  it("matches an existing unit case-insensitively", async () => {
+    const { db } = fakeDb([
+      [{ id: "u", title: "the giver", sortOrder: 3 }],
+      [{ id: "m1", driveFileId: "f1" }],
+    ]);
+
+    expect(await commitPlanUnits([material("f1", "The Giver")], "c1", { db })).toMatchObject({
+      unitsCreated: 0,
+      unitsReused: 1,
+    });
+  });
+
+  it("continues numbering after the units already in the course", async () => {
+    const { db, calls } = fakeDb([
+      [{ id: "u", title: "Existing", sortOrder: 4 }],
+      [{ id: "new" }],
+      [{ id: "m1", driveFileId: "f1" }],
+    ]);
+
+    await commitPlanUnits([material("f1", "The Giver")], "c1", { db });
+
+    expect(calls.inserted[0]).toMatchObject({ sortOrder: 5 });
+  });
+
+  it("takes the unit's quarter from its first material", async () => {
+    const { db, calls } = fakeDb([[], [{ id: "u" }], [{ id: "m1", driveFileId: "f1" }]]);
+
+    await commitPlanUnits([material("f1", "Dash Q3", "Q3")], "c1", { db });
+
+    expect(calls.inserted[0]).toMatchObject({ quarter: "Q3" });
+  });
+
+  it("skips files that belong to no unit — they stay in the pool", async () => {
+    const { db, calls } = fakeDb();
+
+    expect(await commitPlanUnits([material("f1", null)], "c1", { db })).toEqual({
+      unitsCreated: 0,
+      unitsReused: 0,
+      attached: 0,
+    });
+    expect(calls.inserts).toBe(0);
+  });
+
+  it("leaves lessons, standards and durations alone — that is a later pass", async () => {
+    const { db, calls } = fakeDb([[], [{ id: "u" }], [{ id: "m1", driveFileId: "f1" }]]);
+
+    await commitPlanUnits([material("f1", "The Giver")], "c1", { db });
+
+    const unit = calls.inserted[0] as Record<string, unknown>;
+    expect(unit).not.toHaveProperty("essentialQuestions");
+    expect(unit).not.toHaveProperty("anchorTexts");
+    // A factual placeholder, not invented content.
+    expect(unit.summary).toBe("Captured from your Drive folder.");
+  });
+});
+
+describe("commitPlanMaterials (empty)", () => {
   it("does nothing at all for an empty plan", async () => {
     const { db, calls } = fakeDb();
 
