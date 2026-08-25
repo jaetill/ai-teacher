@@ -12,11 +12,25 @@ import mammoth from "mammoth";
 
 export const GOOGLE_DOC = "application/vnd.google-apps.document";
 export const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+// Google Slides exports to text/plain the same way Docs do. Worth having:
+// a lesson IS a file and usually a slide deck (glossary: lesson-entity), so
+// without this the most common kind of lesson material was unreadable.
+export const GOOGLE_SLIDES = "application/vnd.google-apps.presentation";
 export const TEXTLIKE = ["text/plain", "text/markdown", "text/csv"];
 
-/** Can we get text out of this MIME type at all? PDFs and slides cannot. */
+/**
+ * Can we get text out of this MIME type at all?
+ *
+ * Still no for PDFs (needs parsing/OCR) and for .pptx uploads, which Drive
+ * will not export unless they are converted to Google Slides first.
+ */
 export function isExtractable(mime: string | null): boolean {
-  return mime === GOOGLE_DOC || mime === DOCX || TEXTLIKE.includes(mime ?? "");
+  return (
+    mime === GOOGLE_DOC ||
+    mime === GOOGLE_SLIDES ||
+    mime === DOCX ||
+    TEXTLIKE.includes(mime ?? "")
+  );
 }
 
 /**
@@ -31,7 +45,7 @@ export async function fetchDriveText(
 ): Promise<string | null> {
   const drive = getDriveClient(accessToken);
 
-  if (mime === GOOGLE_DOC) {
+  if (mime === GOOGLE_DOC || mime === GOOGLE_SLIDES) {
     const res = await drive.files.export(
       { fileId, mimeType: "text/plain" },
       { responseType: "text" },
