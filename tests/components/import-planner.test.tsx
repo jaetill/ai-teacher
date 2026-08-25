@@ -266,7 +266,7 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     expect(screen.getByText("1 activity")).toBeInTheDocument();
   });
 
-  it("will not let her import while the classification is still running", async () => {
+  it("shows what is happening instead of dead buttons while it evaluates", async () => {
     // Never resolves, so the component stays in the classifying state.
     vi.stubGlobal(
       "fetch",
@@ -289,7 +289,12 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     await user.type(screen.getByLabelText(/google drive link or id/i), "abc");
     await user.click(screen.getByRole("button", { name: /read it/i }));
 
-    expect(await screen.findByRole("button", { name: /classifying/i })).toBeDisabled();
+    // No greyed-out buttons mid-flight: a plain statement of what is
+    // happening replaces them, and neither action is offered yet.
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(/working out what/i);
+    expect(screen.queryByRole("button", { name: /^import/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^check/i })).not.toBeInTheDocument();
   });
 
   it("sends structure, destination and her corrections in one request", async () => {
