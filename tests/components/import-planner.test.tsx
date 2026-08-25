@@ -37,6 +37,7 @@ const TARGETS = {
 
 function mockFetch() {
   const planBody = vi.fn();
+  const classifyCalls: { id: string; name: string }[][] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -53,6 +54,16 @@ function mockFetch() {
             },
             fileCount: 3,
             folderCount: 3,
+          }),
+        };
+      }
+      if (url.startsWith("/api/import/classify")) {
+        const asked = JSON.parse(String(init?.body)).files as { id: string; name: string }[];
+        classifyCalls.push(asked);
+        return {
+          ok: true,
+          json: async () => ({
+            classifications: asked.map((f) => ({ id: f.id, category: "Activities" })),
           }),
         };
       }
@@ -77,7 +88,7 @@ function mockFetch() {
       throw new Error(`unexpected fetch: ${url}`);
     }),
   );
-  return { planBody };
+  return { planBody, classifyCalls };
 }
 
 async function scan() {
@@ -194,38 +205,100 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     expect(screen.queryByText(/Dash Q3 · Refugee Q4/)).not.toBeInTheDocument();
   });
 
-  it("classifies from her folder names and flags only what it could not place", async () => {
+  it("asks the model only about files her folders did not already classify", async () => {
+    const { classifyCalls } = mockFetch();
+    await scan();
+
+    await waitFor(() => expect(classifyCalls.length).toBe(1));
+    // dash.pptx sits under a "Lessons" folder, so it is never sent — that
+    // answer is certain and free, and asking would risk overriding her.
+    const askedNames = classifyCalls[0].map((f) => f.name);
+    expect(askedNames).not.toContain("dash.pptx");
+    expect(askedNames.sort()).toEqual(["dash-notes.docx", "refugee.pptx"]);
+  });
+
+  it("fills the gaps automatically, without her asking", async () => {
     mockFetch();
     await scan();
 
-    // dash.pptx sits under a "Lessons" folder; the other two do not.
+    // Folder-derived and model-derived both land, with nothing left unplaced.
+    await waitFor(() => expect(screen.getByText("Activities 2")).toBeInTheDocument());
     expect(screen.getByText("Lessons 1")).toBeInTheDocument();
-    expect(screen.getByText("Unclassified 2")).toBeInTheDocument();
-  });
-
-  it("lets her fix the unclassified ones in bulk without a review table", async () => {
-    mockFetch();
-    const user = await scan();
-
-    await user.click(screen.getByRole("button", { name: /fix these/i }));
-    await user.selectOptions(screen.getByLabelText(/set all unclassified files to/i), "Resources");
-
-    await waitFor(() => expect(screen.getByText("Resources 2")).toBeInTheDocument());
     expect(screen.queryByText(/Unclassified/)).not.toBeInTheDocument();
   });
 
-  it("does not show a fix-up step when nothing needs fixing", async () => {
+  it("says which came from her folders and which were guessed", async () => {
     mockFetch();
     await scan();
-    expect(screen.queryByLabelText(/set all unclassified files to/i)).not.toBeInTheDocument();
+
+    const note = await screen.findByText(/came from your folder names/i);
+    expect(note.textContent).toMatch(/1 came from your folder names/);
+    expect(note.textContent).toMatch(/2 were worked out from the filename/);
+  });
+
+  it("sends the guesses along with the import, not just her corrections", async () => {
+    const { planBody } = mockFetch();
+    const user = await scan();
+
+    await waitFor(() => expect(screen.getByText("Activities 2")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /^import 3 files$/i }));
+
+    await waitFor(() => expect(planBody).toHaveBeenCalled());
+    const files = planBody.mock.calls[0][0].files as { fileId: string; category: string }[];
+    // The two guessed files travel with the plan; the folder-derived one does
+    // not need to, because the server re-derives it from the same path.
+    expect(files).toHaveLength(2);
+    expect(files.every((f) => f.category === "Activities")).toBe(true);
+  });
+
+  it("offers the guesses for review, and lets her overrule one", async () => {
+    mockFetch();
+    const user = await scan();
+
+    await waitFor(() => expect(screen.getByText("Activities 2")).toBeInTheDocument());
+    // Only the guesses need checking — the folder-derived one is not listed.
+    await user.click(screen.getByRole("button", { name: /check 2/i }));
+    expect(screen.queryByLabelText(/Category for dash\.pptx/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/Category for refugee\.pptx/i), "Resources");
+
+    await waitFor(() => expect(screen.getByText("Resources 1")).toBeInTheDocument());
+    expect(screen.getByText("Activities 1")).toBeInTheDocument();
+  });
+
+  it("will not let her import while the classification is still running", async () => {
+    // Never resolves, so the component stays in the classifying state.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.startsWith("/api/import/classify")) return new Promise(() => {});
+        if (url.startsWith("/api/import/targets")) return { ok: true, json: async () => TARGETS };
+        return {
+          ok: true,
+          json: async () => ({
+            tree: GRADE6,
+            proposal: { levels: ["container", "unit"], reason: "", alternatives: [] },
+            fileCount: 3,
+            folderCount: 3,
+          }),
+        };
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ImportPlanner />);
+    await user.type(screen.getByLabelText(/google drive link or id/i), "abc");
+    await user.click(screen.getByRole("button", { name: /read it/i }));
+
+    expect(await screen.findByRole("button", { name: /classifying/i })).toBeDisabled();
   });
 
   it("sends structure, destination and her corrections in one request", async () => {
     const { planBody } = mockFetch();
     const user = await scan();
 
-    await user.click(screen.getByRole("button", { name: /fix these/i }));
-    await user.selectOptions(screen.getByLabelText(/set all unclassified files to/i), "Resources");
+    await waitFor(() => expect(screen.getByText("Activities 2")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /check 2/i }));
+    await user.selectOptions(screen.getByLabelText(/Category for refugee\.pptx/i), "Resources");
     await user.selectOptions(screen.getByLabelText(/belongs to school year/i), "sy-25");
     await user.selectOptions(screen.getByLabelText(/which is grade/i), "6");
     await user.click(screen.getByRole("button", { name: /^import 3 files$/i }));
@@ -237,8 +310,10 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
       levels: ["container", "unit"],
       target: { grade: 6, schoolYearId: "sy-25", track: null, overrideQuarter: null },
     });
-    expect(body.files).toHaveLength(2);
-    expect(body.files.every((f: { category: string }) => f.category === "Resources")).toBe(true);
+    // Her correction plus the remaining guess; the folder-derived one is
+    // re-derived server-side from the same path.
+    const files = body.files as { fileId: string; category: string }[];
+    expect(files.map((f) => f.category).sort()).toEqual(["Activities", "Resources"]);
 
     const done = await screen.findByText(/imported 3 files/i);
     // The curriculum exists already — no Build step is offered or implied.

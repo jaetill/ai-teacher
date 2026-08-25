@@ -113,6 +113,10 @@ export default function ImportPlanner() {
   const [quarterChoice, setQuarterChoice] = useState<string>(FROM_FOLDER_NAMES);
 
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  // What the model worked out for files her folders said nothing about. Kept
+  // apart from `overrides` so the fix-up list can lead with the guesses.
+  const [guesses, setGuesses] = useState<Record<string, string>>({});
+  const [classifying, setClassifying] = useState(false);
   const [showFixes, setShowFixes] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -141,7 +145,10 @@ export default function ImportPlanner() {
   const classified = useMemo(() => {
     if (!placement) return [];
     return placement.materials.map((m) => {
-      const category = overrides[m.fileId] ?? inferCategoryFromPath(m.path);
+      // Her correction, then her folder names, then the model. Certainty
+      // first: a guess never displaces something she actually told us.
+      const fromFolder = inferCategoryFromPath(m.path);
+      const category = overrides[m.fileId] ?? fromFolder ?? guesses[m.fileId] ?? null;
       return {
         fileId: m.fileId,
         name: m.name,
@@ -151,9 +158,11 @@ export default function ImportPlanner() {
         quarter: overrideQuarter ?? m.quarter ?? null,
         category,
         materialType: inferMaterialType(category, m.mimeType),
+        // True when nothing but the model's reading of the filename put it here.
+        guessed: !overrides[m.fileId] && !fromFolder && Boolean(guesses[m.fileId]),
       };
     });
-  }, [placement, overrides, overrideQuarter]);
+  }, [placement, overrides, guesses, overrideQuarter]);
 
   const byCategory = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -162,6 +171,10 @@ export default function ImportPlanner() {
   }, [classified]);
 
   const unclassified = classified.filter((c) => !c.category);
+  const guessedCount = classified.filter((c) => c.guessed).length;
+  // The fix-up list leads with what nothing could place, then what the model
+  // guessed. Anything her folders answered is not up for review.
+  const needsAttention = [...unclassified, ...classified.filter((c) => c.guessed)];
 
   /** The chain she has declared, shown back to her: grade > year > quarter > unit. */
   const breadcrumb = useMemo(() => {
@@ -184,6 +197,7 @@ export default function ImportPlanner() {
     setError(null);
     setResult(null);
     setOverrides({});
+    setGuesses({});
     try {
       const param = sourceKind === "drive-folder" ? "folderId" : "fileId";
       const [scanRes, targetRes] = await Promise.all([
@@ -199,6 +213,8 @@ export default function ImportPlanner() {
       const data: ScanResponse = await scanRes.json();
       setScan(data);
       setShapeId(shapeIdFor(data.proposal.levels));
+      // Part of the same motion — she should not have to ask for this.
+      void classifyLeftovers(data.tree, data.proposal.levels);
 
       if (targetRes?.ok) {
         const t: Targets = await targetRes.json();
@@ -209,6 +225,50 @@ export default function ImportPlanner() {
       setError("Could not reach the server.");
     } finally {
       setScanning(false);
+    }
+  }
+
+  /**
+   * Ask the model about the files her folders did not classify — and only
+   * those. Runs on its own after a scan, because "point at it and import" is
+   * one motion and a Classify button would be another chore.
+   *
+   * Batched, because one request for several hundred filenames truncates its
+   * own JSON. Results are merged as each batch lands, so the chips fill in
+   * rather than making her wait on the whole set.
+   */
+  async function classifyLeftovers(tree: ScannedNode, levels: LevelMap) {
+    let planned;
+    try {
+      planned = applyLevelMap(tree, levels).materials;
+    } catch {
+      return;
+    }
+    const todo = planned
+      .filter((m) => !inferCategoryFromPath(m.path))
+      .map((m) => ({ id: m.fileId, name: m.name, unit: m.unit }));
+    if (!todo.length) return;
+
+    setClassifying(true);
+    try {
+      const BATCH = 60;
+      for (let i = 0; i < todo.length; i += BATCH) {
+        const res = await fetch("/api/import/classify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ files: todo.slice(i, i + BATCH) }),
+        });
+        if (!res.ok) break; // Leave the rest unclassified; she can still fix them.
+        const data: { classifications: { id: string; category: string | null }[] } =
+          await res.json();
+        const add: Record<string, string> = {};
+        for (const c of data.classifications) if (c.category) add[c.id] = c.category;
+        setGuesses((g) => ({ ...g, ...add }));
+      }
+    } catch {
+      // A classification failure is not an import failure.
+    } finally {
+      setClassifying(false);
     }
   }
 
@@ -233,7 +293,13 @@ export default function ImportPlanner() {
             track: track.trim() || null,
             overrideQuarter,
           },
-          files: Object.entries(overrides).map(([fileId, category]) => ({ fileId, category })),
+          // Everything whose category did NOT come from a folder path has to
+          // travel with the plan — the server re-derives folder categories on
+          // its own but cannot re-derive her corrections or the model's
+          // guesses, and silently dropping them would lose the whole pass.
+          files: classified
+            .filter((c) => c.category && (overrides[c.fileId] || c.guessed))
+            .map((c) => ({ fileId: c.fileId, category: c.category })),
         }),
       });
       const data = await res.json();
@@ -433,16 +499,30 @@ export default function ImportPlanner() {
                     {cat} {n}
                   </span>
                 ))}
-                {unclassified.length > 0 && (
+                {classifying && (
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    working out the rest…
+                  </span>
+                )}
+                {needsAttention.length > 0 && !classifying && (
                   <button
                     type="button"
                     onClick={() => setShowFixes((v) => !v)}
                     className="text-xs underline text-zinc-600 dark:text-zinc-400"
                   >
-                    {showFixes ? "hide" : "fix these"}
+                    {showFixes ? "hide" : `check ${needsAttention.length}`}
                   </button>
                 )}
               </div>
+
+              {guessedCount > 0 && !classifying && (
+                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  {classified.length - guessedCount - unclassified.length} came from your folder
+                  names. {guessedCount}{" "}
+                  {guessedCount === 1 ? "was worked out" : "were worked out"} from the filename —
+                  worth a glance.
+                </p>
+              )}
 
               {placement.warnings.map((w, i) => (
                 <p key={i} className="mt-2 text-xs text-amber-700 dark:text-amber-400">
@@ -452,34 +532,36 @@ export default function ImportPlanner() {
             </div>
 
             {/* ── The half-step: fix what came out wrong ─── */}
-            {showFixes && unclassified.length > 0 && (
+            {showFixes && needsAttention.length > 0 && (
               <div className="mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Set all {unclassified.length} to
-                  </span>
-                  <select
-                    aria-label="Set all unclassified files to"
-                    className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
-                    value=""
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      const next = { ...overrides };
-                      for (const u of unclassified) next[u.fileId] = e.target.value;
-                      setOverrides(next);
-                    }}
-                  >
-                    <option value="">choose…</option>
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {unclassified.length > 0 && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Set all {unclassified.length} unplaced to
+                    </span>
+                    <select
+                      aria-label="Set all unclassified files to"
+                      className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
+                      value=""
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const next = { ...overrides };
+                        for (const u of unclassified) next[u.fileId] = e.target.value;
+                        setOverrides(next);
+                      }}
+                    >
+                      <option value="">choose…</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-                <ul className="max-h-64 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {unclassified.map((u) => (
+                <ul className="max-h-72 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {needsAttention.map((u) => (
                     <li key={u.fileId} className="flex items-center gap-2 py-1.5">
                       <span className="flex-1 truncate text-xs text-zinc-700 dark:text-zinc-300">
                         {u.name}
@@ -487,10 +569,15 @@ export default function ImportPlanner() {
                           <span className="text-zinc-400 dark:text-zinc-500"> — {u.unit}</span>
                         )}
                       </span>
+                      {u.guessed && (
+                        <span className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                          guess
+                        </span>
+                      )}
                       <select
                         aria-label={`Category for ${u.name}`}
                         className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 py-1 text-xs"
-                        value={overrides[u.fileId] ?? ""}
+                        value={overrides[u.fileId] ?? u.category ?? ""}
                         onChange={(e) =>
                           setOverrides({ ...overrides, [u.fileId]: e.target.value })
                         }
@@ -513,12 +600,14 @@ export default function ImportPlanner() {
               <button
                 type="button"
                 onClick={runImport}
-                disabled={importing || classified.length === 0}
+                disabled={importing || classifying || classified.length === 0}
                 className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
               >
                 {importing
                   ? "Importing…"
-                  : `Import ${classified.length} file${classified.length === 1 ? "" : "s"}`}
+                  : classifying
+                    ? "Classifying…"
+                    : `Import ${classified.length} file${classified.length === 1 ? "" : "s"}`}
               </button>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {(() => {
