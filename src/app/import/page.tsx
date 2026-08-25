@@ -1,24 +1,24 @@
 "use client";
 
+// One motion, from the teacher's side: point at a folder, say what it is,
+// import. Everything that used to sit around this page — the per-quarter
+// "Imported so far" staging cards with their Build/Rebuild buttons, the
+// unit-retrofit panel, the summarize-materials pass, the legacy copy-based
+// importer — was our architecture showing through as her chores. Import now
+// creates the curriculum outright, so there is nothing to stage and nothing to
+// come back and finish.
+
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ImportFromComputer from "@/components/ImportFromComputer";
-import ImportFromDrive from "@/components/ImportFromDrive";
 import ImportPlanner from "@/components/ImportPlanner";
-import ImportedSummary from "@/components/ImportedSummary";
-import SummarizeMaterials from "@/components/SummarizeMaterials";
-import RetrofitUnits from "@/components/RetrofitUnits";
 
-type Source = "drive" | "computer" | "legacy";
+type Source = "drive" | "computer";
 
 const TABS: { id: Source; label: string }[] = [
   { id: "drive", label: "From Google Drive" },
   { id: "computer", label: "From Computer" },
-  // Kept only until the rebuilt import is proven against the real Drive.
-  // It copies files into a folder tree the app owns; the planner references
-  // them where they are. Delete this tab once the reimport is signed off.
-  { id: "legacy", label: "Legacy (copies files)" },
 ];
 
 export default function ImportPage() {
@@ -48,18 +48,9 @@ export default function ImportPage() {
           Import Materials
         </h1>
         <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
-          Point at a folder or a file, say what it is, and say where it goes
+          Point at a folder or a file, say what it is, and import it
         </p>
 
-        {/* What's already imported, by quarter — so you can see where you left off */}
-        <ImportedSummary />
-
-        <SummarizeMaterials />
-
-        {/* Backfill units for material imported before unit-capture existed */}
-        <RetrofitUnits />
-
-        {/* ── Source tabs ─── */}
         <div className="flex gap-1 mb-8">
           {TABS.map((tab) => (
             <button
@@ -76,9 +67,7 @@ export default function ImportPage() {
           ))}
         </div>
 
-        {source === "drive" && <ImportPlanner />}
-        {source === "computer" && <ImportFromComputer />}
-        {source === "legacy" && <ImportFromDrive />}
+        {source === "drive" ? <ImportPlanner /> : <ImportFromComputer />}
       </div>
     </div>
   );

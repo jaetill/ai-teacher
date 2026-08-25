@@ -17,6 +17,7 @@ import { readJson } from "@/lib/api-utils";
 import { scanTree, getDriveClient, type ScannedNode } from "@/lib/drive";
 import {
   commitPlanMaterials,
+  commitPlanUnits,
   previewPlan,
   resolveTargetCourse,
   validateImportPlan,
@@ -121,8 +122,14 @@ export async function POST(req: Request) {
   }
 
   let written;
+  let built;
   try {
     written = await commitPlanMaterials(preview.materials, course.id, ownerEmail);
+    // No staging step: the units exist the moment she imports. Her folders are
+    // her units, so building them needs no model and no second click.
+    built = await commitPlanUnits(preview.materials, course.id, {
+      userId: session.user?.id,
+    });
   } catch (err) {
     console.error("import plan commit failed:", err instanceof Error ? err.message : err);
     return Response.json({ error: "Failed to save the imported materials" }, { status: 500 });
@@ -134,6 +141,8 @@ export async function POST(req: Request) {
     created: written.created,
     updated: written.updated,
     total: preview.materials.length,
+    unitsCreated: built.unitsCreated,
+    unitsReused: built.unitsReused,
     units: preview.units,
     quarters: preview.quarters,
     warnings: preview.warnings,

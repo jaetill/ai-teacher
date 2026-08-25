@@ -81,8 +81,11 @@ type ImportResult = {
   updated: number;
   total: number;
   courseCreated: boolean;
+  unitsCreated: number;
+  unitsReused: number;
   units: string[];
   warnings: string[];
+  courseId: string;
 };
 
 /** Accepts a full Drive URL or a bare id. */
@@ -545,15 +548,25 @@ export default function ImportPlanner() {
       {result && (
         <div className="rounded-lg border border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-4 text-sm">
           <p className="text-emerald-800 dark:text-emerald-300">
-            Imported {result.total} file{result.total === 1 ? "" : "s"} — {result.created} new,{" "}
-            {result.updated} updated
-            {result.courseCreated ? ", and a new course was created" : ""}.
+            Imported {result.total} file{result.total === 1 ? "" : "s"} into{" "}
+            {result.unitsCreated} new unit{result.unitsCreated === 1 ? "" : "s"}
+            {result.unitsReused > 0 && ` and ${result.unitsReused} you already had`}
+            {result.courseCreated ? ", in a new course" : ""}. It is in your curriculum now —
+            nothing left to build.
           </p>
           {result.units.length > 0 && (
             <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
-              Units: {result.units.join(" · ")}
+              {result.units.join(" · ")}
             </p>
           )}
+          <p className="mt-2">
+            <a
+              href={`/curriculum/edit/${result.courseId}`}
+              className="text-sm underline text-emerald-800 dark:text-emerald-300"
+            >
+              Open the curriculum
+            </a>
+          </p>
           {result.warnings.map((w, i) => (
             <p key={i} className="mt-1 text-xs text-amber-700 dark:text-amber-400">
               {w}
