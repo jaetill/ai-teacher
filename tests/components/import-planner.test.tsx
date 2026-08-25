@@ -193,6 +193,50 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     expect(crumb()).not.toContain("Q3, Q4");
   });
 
+  // Her late-90s Grade 12 material: something to draw on later, not a year she
+  // teaches. A course with no school year is the shelf.
+  it("can import into a library instead of a school year", async () => {
+    const { planBody } = mockFetch();
+    const user = await scan();
+
+    await user.selectOptions(screen.getByLabelText(/belongs to school year/i), "");
+    await user.selectOptions(screen.getByLabelText(/which is grade/i), "12");
+
+    await waitFor(() => expect(crumb()).toMatch(/Grade 12\s+›\s+Library/));
+    // Nothing in a library sits in a quarter, so the rung is not shown at all.
+    expect(screen.queryByLabelText(/belongs to quarter/i)).not.toBeInTheDocument();
+    expect(crumb()).not.toMatch(/Q3|Q4|no quarter/);
+    expect(screen.getByText(/starts a Grade 12 library/i)).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByText("2 activities")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /^import 3 files$/i }));
+
+    await waitFor(() => expect(planBody).toHaveBeenCalled());
+    expect(planBody.mock.calls[0][0].target).toMatchObject({
+      grade: 12,
+      schoolYearId: null,
+      overrideQuarter: null,
+    });
+  });
+
+  it("offers the grades the server has always accepted, not just 6-8", async () => {
+    mockFetch();
+    await scan();
+
+    const options = Array.from(
+      screen.getByLabelText(/which is grade/i).querySelectorAll("option"),
+    ).map((o) => o.textContent);
+    expect(options).toEqual([
+      "Grade 6",
+      "Grade 7",
+      "Grade 8",
+      "Grade 9",
+      "Grade 10",
+      "Grade 11",
+      "Grade 12",
+    ]);
+  });
+
   it("re-derives everything instantly when she changes what she pointed at", async () => {
     mockFetch();
     const user = await scan();
@@ -332,7 +376,7 @@ describe("ImportPlanner — the hierarchy, stated out loud", () => {
     const user = await scan();
 
     // Grade 7 / current year exists in TARGETS; the default grade is 7.
-    expect(screen.getByText(/adds to your existing course/i)).toBeInTheDocument();
+    expect(screen.getByText(/adds to what you already have/i)).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText(/which is grade/i), "6");
     expect(await screen.findByText(/creates a new course/i)).toBeInTheDocument();
