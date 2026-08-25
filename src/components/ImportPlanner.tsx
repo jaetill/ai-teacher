@@ -488,13 +488,16 @@ export default function ImportPlanner() {
 
               <div>
                 <label className={label} htmlFor="track">
-                  Track <span className="font-normal">(optional)</span>
+                  Track <span className="font-normal">— optional, usually blank</span>
                 </label>
+                {/* The placeholder used to read "honors", which looks like a
+                    filled-in value rather than an example. Italic, lighter,
+                    and prefixed so it cannot be mistaken for one. */}
                 <input
                   id="track"
-                  className={field}
+                  className={`${field} placeholder:italic placeholder:text-zinc-400 dark:placeholder:text-zinc-600`}
                   value={track}
-                  placeholder="honors"
+                  placeholder="e.g. honors"
                   onChange={(e) => setTrack(e.target.value)}
                 />
               </div>
