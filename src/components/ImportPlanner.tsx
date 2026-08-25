@@ -532,20 +532,6 @@ export default function ImportPlanner() {
                       {countLabel(type, n)}
                     </span>
                   ))}
-                {classifying && (
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    working out the rest…
-                  </span>
-                )}
-                {needsAttention.length > 0 && !classifying && (
-                  <button
-                    type="button"
-                    onClick={() => setShowFixes((v) => !v)}
-                    className="text-xs underline text-zinc-600 dark:text-zinc-400"
-                  >
-                    {showFixes ? "hide" : `check ${needsAttention.length}`}
-                  </button>
-                )}
               </div>
 
               {guessedCount > 0 && !classifying && (
@@ -627,19 +613,50 @@ export default function ImportPlanner() {
             )}
 
             {/* ── Import ─── */}
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={runImport}
-                disabled={importing || classifying || classified.length === 0}
-                className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
-              >
-                {importing
-                  ? "Importing…"
-                  : classifying
-                    ? "Classifying…"
-                    : `Import ${classified.length} file${classified.length === 1 ? "" : "s"}`}
-              </button>
+            {/* While the model is working there is nothing to press, so the
+                buttons are not shown greyed out — they are replaced by a plain
+                statement of what is happening. Both actions then appear
+                together, because checking the guesses and importing are the
+                two things she can do at that point and one should not be a
+                text link hiding next to the chips. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {classifying ? (
+                <span
+                  role="status"
+                  className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-700 border-t-zinc-900 dark:border-t-zinc-100"
+                  />
+                  Working out what {classified.length} file
+                  {classified.length === 1 ? " is" : "s are"}…
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={runImport}
+                    disabled={importing || classified.length === 0}
+                    className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 disabled:opacity-40"
+                  >
+                    {importing
+                      ? "Importing…"
+                      : `Import ${classified.length} file${classified.length === 1 ? "" : "s"}`}
+                  </button>
+
+                  {needsAttention.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFixes((v) => !v)}
+                      className="rounded-md border border-zinc-300 dark:border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      {showFixes ? "Hide" : `Check ${needsAttention.length}`}
+                    </button>
+                  )}
+                </>
+              )}
+
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {(() => {
                   const match = (targets?.courses ?? []).find(
