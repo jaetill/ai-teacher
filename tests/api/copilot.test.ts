@@ -23,6 +23,7 @@ vi.mock("@/db", () => ({ db: { select: mockDbSelect, insert: mockDbInsert } }));
 vi.mock("@/db/schema", () => ({
   copilotConversations: {},
   copilotMessages: {},
+  errorEvents: {},
   courses: {},
   units: {},
   lessons: {},

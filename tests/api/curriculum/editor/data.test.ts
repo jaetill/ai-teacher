@@ -34,6 +34,8 @@ function makeChain(value: unknown) {
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   chain.from = self;
+  chain.innerJoin = self; // the material queries join materials -> attachments
+  chain.leftJoin = self;
   chain.where = self;
   chain.orderBy = self;
   chain.limit = self;
@@ -153,6 +155,97 @@ describe("GET /api/curriculum/editor/data", () => {
       const res = await GET(makeRequest(VALID_UUID));
 
       expect(res.status).toBe(404);
+    });
+
+    // Regression: attach-material writes unit/lesson/assessment and the editor's
+    // own drop handler resolves a unit drop to { type: "unit" }, but this route
+    // queried only lesson and assessment. Unit-level attachments were written
+    // and never returned, so the drop looked like it had failed and the teacher
+    // dropped the same file again — hence duplicate rows in production.
+    it("returns materials attached to the unit itself", async () => {
+      const UNIT_ID = "11111111-1111-4111-8111-111111111111";
+      mockSession.mockResolvedValueOnce(SESSION);
+      mockDbSelect
+        // course
+        .mockReturnValueOnce(
+          makeChain([{ id: VALID_UUID, ownerEmail: SESSION.user.email, title: "ELA 7", grade: 7 }]),
+        )
+        // units
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: UNIT_ID,
+              title: "Tiger, Tiger Q1",
+              quarter: "Q1",
+              sortOrder: 4,
+              durationWeeks: 4,
+              summary: "",
+            },
+          ]),
+        )
+        // lessons, assessments — none, so the lesson/assessment material
+        // queries are skipped entirely and the next select is the unit one.
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        // unit-level attachments
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              attachmentId: "att-1",
+              materialId: "mat-1",
+              title: "Esther: Faithfulness and Influence",
+              materialType: "lesson",
+              role: "supporting",
+              driveWebUrl: "https://docs.google.com/document/d/abc",
+              attachableId: UNIT_ID,
+            },
+          ]),
+        );
+
+      const res = await GET(makeRequest(VALID_UUID));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.units).toHaveLength(1);
+      expect(body.units[0].materials).toEqual([
+        {
+          attachmentId: "att-1",
+          materialId: "mat-1",
+          title: "Esther: Faithfulness and Influence",
+          materialType: "lesson",
+          role: "supporting",
+          driveWebUrl: "https://docs.google.com/document/d/abc",
+        },
+      ]);
+    });
+
+    it("gives a unit with no attachments an empty materials array, not undefined", async () => {
+      mockSession.mockResolvedValueOnce(SESSION);
+      mockDbSelect
+        .mockReturnValueOnce(
+          makeChain([{ id: VALID_UUID, ownerEmail: SESSION.user.email, title: "ELA 7", grade: 7 }]),
+        )
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: "22222222-2222-4222-8222-222222222222",
+              title: "Empty Unit",
+              quarter: null,
+              sortOrder: 0,
+              durationWeeks: 1,
+              summary: "",
+            },
+          ]),
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const res = await GET(makeRequest(VALID_UUID));
+      const body = await res.json();
+
+      // UnitColumn reads unit.materials.length unguarded — undefined crashes it.
+      expect(body.units[0].materials).toEqual([]);
     });
   });
 });

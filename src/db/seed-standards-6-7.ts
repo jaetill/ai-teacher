@@ -8,15 +8,20 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { standards } from "./schema/standards";
 
-const sql = neon(process.env.DATABASE_URL!);
-const db = drizzle(sql);
+// Built inside seed(), not at module scope. The completeness test imports these
+// rosters, and a module-scope neon() call made that import fail in CI ("No
+// database connection string was provided") where there is no .env.local —
+// reading the data should not require a database.
+function connect() {
+  return drizzle(neon(process.env.DATABASE_URL!));
+}
 
-// ── VA SOL 2024 Grade 6 English Standards ───
+// â”€â”€ VA SOL 2024 Grade 6 English Standards â”€â”€â”€
 // Source: VDOE documents
 // Naming: {grade}.{strand}.{subcategory}.{indicator}
 
-const grade6Standards = [
-  // ── Developing Skilled Readers and Building Reading Stamina (DSR) ───
+export const grade6Standards = [
+  // â”€â”€ Developing Skilled Readers and Building Reading Stamina (DSR) â”€â”€â”€
   {
     id: "6.DSR.A",
     grade: 6,
@@ -68,7 +73,7 @@ const grade6Standards = [
       "Use reading strategies as needed to aid and monitor comprehension when encountering challenging sections of text. These sense-making strategies attend to text structure, common organizational structures, summarizing, asking questions of the text, and others.",
   },
 
-  // ── Reading and Vocabulary (RV) ───
+  // â”€â”€ Reading and Vocabulary (RV) â”€â”€â”€
   {
     id: "6.RV.1.A",
     grade: 6,
@@ -150,7 +155,7 @@ const grade6Standards = [
       "Use newly learned words and phrases in multiple contexts, including in students' discussions and speaking and writing activities.",
   },
 
-  // ── Reading Literary Text (RL) ───
+  // â”€â”€ Reading Literary Text (RL) â”€â”€â”€
   {
     id: "6.RL.1.A",
     grade: 6,
@@ -252,7 +257,7 @@ const grade6Standards = [
       "Compare and contrast details in two or more paired literary fiction and nonfiction texts on the same topic or with similar themes, including how chapters, scenes, or stanzas work together to provide the overall structure of each text.",
   },
 
-  // ── Reading Informational Text (RI) ───
+  // â”€â”€ Reading Informational Text (RI) â”€â”€â”€
   {
     id: "6.RI.1.A",
     grade: 6,
@@ -334,7 +339,7 @@ const grade6Standards = [
       "Compare and contrast one author's presentation of ideas or events with another's, identifying where the texts agree or disagree.",
   },
 
-  // ── Writing (W) ───
+  // â”€â”€ Writing (W) â”€â”€â”€
   {
     id: "6.W.1.A",
     grade: 6,
@@ -406,7 +411,7 @@ const grade6Standards = [
       "Self-and peer-edit for capitalization, spelling, punctuation, sentence structure, paragraphing, and Standard English.",
   },
 
-  // ── Language Usage (LU) ───
+  // â”€â”€ Language Usage (LU) â”€â”€â”€
   {
     id: "6.LU.1.A",
     grade: 6,
@@ -498,7 +503,7 @@ const grade6Standards = [
       "Consult reference materials to check and correct spelling.",
   },
 
-  // ── Communication and Multimodal Literacies (C) ───
+  // â”€â”€ Communication and Multimodal Literacies (C) â”€â”€â”€
   {
     id: "6.C.1.A",
     grade: 6,
@@ -570,7 +575,7 @@ const grade6Standards = [
       "Explain the characteristics and analyze the effectiveness of a variety of media messages by considering the results and/or impact on the intended audience.",
   },
 
-  // ── Research (R) ───
+  // â”€â”€ Research (R) â”€â”€â”€
   {
     id: "6.R.1.A",
     grade: 6,
@@ -643,10 +648,10 @@ const grade6Standards = [
   },
 ];
 
-// ── VA SOL 2024 Grade 7 English Standards ───
+// â”€â”€ VA SOL 2024 Grade 7 English Standards â”€â”€â”€
 
-const grade7Standards = [
-  // ── Developing Skilled Readers and Building Reading Stamina (DSR) ───
+export const grade7Standards = [
+  // â”€â”€ Developing Skilled Readers and Building Reading Stamina (DSR) â”€â”€â”€
   {
     id: "7.DSR.A",
     grade: 7,
@@ -698,7 +703,7 @@ const grade7Standards = [
       "Use reading strategies as needed to aid and monitor comprehension when encountering challenging sections of text. These sense-making strategies attend to text structure, common organizational structures, summarizing, asking questions of the text, and others.",
   },
 
-  // ── Reading and Vocabulary (RV) ───
+  // â”€â”€ Reading and Vocabulary (RV) â”€â”€â”€
   {
     id: "7.RV.1.A",
     grade: 7,
@@ -780,7 +785,7 @@ const grade7Standards = [
       "Use newly learned words and phrases in multiple contexts, including in students' discussions and speaking and writing activities.",
   },
 
-  // ── Reading Literary Text (RL) ───
+  // â”€â”€ Reading Literary Text (RL) â”€â”€â”€
   {
     id: "7.RL.1.A",
     grade: 7,
@@ -862,7 +867,7 @@ const grade7Standards = [
       "Compare and contrast texts in different forms or genres (e.g., stories and poems; historical novels and fantasy stories) in terms of their approaches to similar themes and topics.",
   },
 
-  // ── Reading Informational Text (RI) ───
+  // â”€â”€ Reading Informational Text (RI) â”€â”€â”€
   {
     id: "7.RI.1.A",
     grade: 7,
@@ -944,7 +949,7 @@ const grade7Standards = [
       "Compare and contrast how two or more authors writing about the same topic shape their presentations or viewpoints of key information by emphasizing different facts, opinions, and reasoning.",
   },
 
-  // ── Writing (W) ───
+  // â”€â”€ Writing (W) â”€â”€â”€
   {
     id: "7.W.1.A",
     grade: 7,
@@ -1016,7 +1021,7 @@ const grade7Standards = [
       "Self-and peer-edit writing for capitalization, spelling, punctuation, sentence structure, paragraphing, and Standard English.",
   },
 
-  // ── Language Usage (LU) ───
+  // â”€â”€ Language Usage (LU) â”€â”€â”€
   {
     id: "7.LU.1.A",
     grade: 7,
@@ -1108,7 +1113,7 @@ const grade7Standards = [
       "Consult reference materials to check and correct spelling.",
   },
 
-  // ── Communication and Multimodal Literacies (C) ───
+  // â”€â”€ Communication and Multimodal Literacies (C) â”€â”€â”€
   {
     id: "7.C.1.A",
     grade: 7,
@@ -1190,7 +1195,7 @@ const grade7Standards = [
       "Compare and contrast the effectiveness of techniques in auditory, visual, and written media messages (e.g., authorship, format, content, purpose) on the intended audience.",
   },
 
-  // ── Research (R) ───
+  // â”€â”€ Research (R) â”€â”€â”€
   {
     id: "7.R.1.A",
     grade: 7,
@@ -1264,6 +1269,7 @@ const grade7Standards = [
 ];
 
 async function seed() {
+  const db = connect();
   console.log(`Seeding ${grade6Standards.length} Grade 6 standards...`);
 
   for (const std of grade6Standards) {
@@ -1306,7 +1312,16 @@ async function seed() {
   console.log("All Grade 6 & 7 standards seeded successfully.");
 }
 
-seed().catch((err) => {
-  console.error("Seed failed:", err);
-  process.exit(1);
-});
+// Only seed when run as a script, so the completeness test can import these
+// rosters without writing to the database.
+const invokedDirectly =
+  typeof process !== "undefined" &&
+  process.argv[1] !== undefined &&
+  import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop() ?? "\0");
+
+if (invokedDirectly) {
+  seed().catch((err) => {
+    console.error("Seed failed:", err);
+    process.exit(1);
+  });
+}

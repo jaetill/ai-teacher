@@ -5,6 +5,7 @@ import { placeUnitInQuarter } from "@/lib/unit-order";
 import type {
   EditorUnit,
   EditorLesson,
+  EditorMaterialLink,
   PoolMaterial,
 } from "@/types/curriculum-editor";
 
@@ -392,26 +393,27 @@ export function useCurriculumEditor(courseId: string) {
     attachmentId: string,
     fields: { role?: string; materialType?: string }
   ) {
-    // Optimistic update
+    // Optimistic update. Materials hang off three things — the unit itself, its
+    // lessons, and its assessments — so the patch is written once and applied to
+    // all three. Missing the unit list here is what made a unit material's
+    // dropdown snap back to its old value until the next refetch.
+    const patch = (list: EditorMaterialLink[]) =>
+      list.map((m) =>
+        m.attachmentId === attachmentId
+          ? {
+              ...m,
+              ...(fields.role && { role: fields.role }),
+              ...(fields.materialType && { materialType: fields.materialType }),
+            }
+          : m
+      );
+
     setUnits((prev) =>
       prev.map((u) => ({
         ...u,
-        lessons: u.lessons.map((l) => ({
-          ...l,
-          materials: l.materials.map((m) =>
-            m.attachmentId === attachmentId
-              ? { ...m, ...(fields.role && { role: fields.role }), ...(fields.materialType && { materialType: fields.materialType }) }
-              : m
-          ),
-        })),
-        assessments: u.assessments.map((a) => ({
-          ...a,
-          materials: a.materials.map((m) =>
-            m.attachmentId === attachmentId
-              ? { ...m, ...(fields.role && { role: fields.role }), ...(fields.materialType && { materialType: fields.materialType }) }
-              : m
-          ),
-        })),
+        materials: patch(u.materials),
+        lessons: u.lessons.map((l) => ({ ...l, materials: patch(l.materials) })),
+        assessments: u.assessments.map((a) => ({ ...a, materials: patch(a.materials) })),
       }))
     );
 

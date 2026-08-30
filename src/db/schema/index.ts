@@ -13,6 +13,7 @@ export {
 } from "./calendar";
 export { copilotConversations, copilotMessages } from "./copilot";
 export { aiInteractions } from "./ai-interactions";
+export { errorEvents } from "./error-events";
 export { driveFolders } from "./drive-folders";
 export { curriculumEditLog } from "./curriculum-edit-log";
 export { rateLimits } from "./rate-limits";

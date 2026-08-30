@@ -38,6 +38,8 @@ export type EditorUnit = {
   sortOrder: number;
   durationWeeks: number;
   summary: string;
+  /** Materials attached to the unit itself, not to any one lesson. */
+  materials: EditorMaterialLink[];
   lessons: EditorLesson[];
   assessments: EditorAssessment[];
 };

@@ -9,6 +9,7 @@ import { useDroppable } from "@dnd-kit/core";
 import type { EditorUnit } from "@/types/curriculum-editor";
 import DraggableLessonRow from "./DraggableLessonRow";
 import DraggableAssessmentRow from "./DraggableAssessmentRow";
+import AttachedMaterialRow from "./AttachedMaterialRow";
 import InlineEdit from "./InlineEdit";
 
 const QUARTER_STYLES: Record<string, { border: string; bg: string; badge: string }> = {
@@ -159,6 +160,15 @@ export default function UnitColumn({
                 <span>{unit.assessments.length} assessments</span>
               </>
             )}
+            {unit.materials.length > 0 && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+                <span>
+                  {unit.materials.length} unit{" "}
+                  {unit.materials.length === 1 ? "material" : "materials"}
+                </span>
+              </>
+            )}
           </div>
 
           {/* Collapsed preview */}
@@ -196,6 +206,37 @@ export default function UnitColumn({
               <span>weeks</span>
             </div>
           </div>
+
+          {/* ── Unit materials ───
+              Anything attached to the unit itself rather than to one lesson:
+              a syllabus, a unit-wide reading, a Copilot draft accepted with no
+              lesson in context. These rows were being written and never shown
+              (see the editor/data route) — the drop looked like it had failed.
+              Same controls as a lesson's materials, so retyping and unlinking
+              work identically wherever a material happens to live. */}
+          {unit.materials.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  Unit Materials
+                </div>
+                <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+              </div>
+              <div className="space-y-1">
+                {unit.materials.map((m) => (
+                  <AttachedMaterialRow
+                    key={m.attachmentId}
+                    material={m}
+                    fromType="unit"
+                    fromId={unit.id}
+                    variant="unit"
+                    onDetach={onDetachMaterial}
+                    onUpdate={onUpdateMaterial}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Lessons */}
           {unit.lessons.length > 0 && (
@@ -258,7 +299,9 @@ export default function UnitColumn({
             </div>
           )}
 
-          {unit.lessons.length === 0 && unit.assessments.length === 0 && (
+          {unit.lessons.length === 0 &&
+            unit.assessments.length === 0 &&
+            unit.materials.length === 0 && (
             <div className="rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 py-6 text-center">
               <p className="text-xs text-zinc-400">
                 Drop lessons or materials here

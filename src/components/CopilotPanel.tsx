@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, isValidElement } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, isValidElement } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,7 @@ import {
   ACCEPT_ATTR,
   DOCX_MIME,
   MAX_ATTACHMENTS,
+  MAX_TOTAL_BYTES,
   kindFor,
   rejectionReason,
   type OutgoingAttachment,
@@ -25,6 +26,30 @@ function draftFromPreChildren(children: ReactNode): string | null {
   if (!props.className?.includes("language-draft")) return null;
   const raw = props.children;
   return typeof raw === "string" ? raw : Array.isArray(raw) ? raw.join("") : null;
+}
+
+/**
+ * The readable half of a failed response.
+ *
+ * The route answers with plain text for the size limits and JSON `{error}` for
+ * auth failures, so try both before falling back to the status code. Never
+ * throws — an unreadable body must not replace the real failure.
+ */
+async function errorDetail(res: Response): Promise<string> {
+  const fallback = `Something went wrong (${res.status}). Please try again.`;
+  try {
+    const raw = (await res.text()).trim();
+    if (!raw) return fallback;
+    if (raw.startsWith("{")) {
+      const parsed = JSON.parse(raw) as { error?: unknown };
+      return typeof parsed.error === "string" && parsed.error ? parsed.error : fallback;
+    }
+    // Guard against an HTML error page (a platform timeout, say) landing in
+    // the transcript as markup.
+    return raw.startsWith("<") || raw.length > 300 ? fallback : raw;
+  } catch {
+    return fallback;
+  }
 }
 
 interface Message {
@@ -69,6 +94,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+/** Composer grows to this height (~8 lines), then scrolls internally. */
+const COMPOSER_MAX_PX = 200;
+
 export default function CopilotPanel() {
   const { isOpen, toggle, pageContext } = useCopilot();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -80,6 +108,7 @@ export default function CopilotPanel() {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // In-flight stream, so "New" can cancel it. Without this, clicking New while
   // streaming emptied `messages` while the read loop kept appending to
   // updated[length - 1] — undefined.content, a render-pass TypeError that
@@ -90,6 +119,18 @@ export default function CopilotPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Auto-grow the composer with its content, up to COMPOSER_MAX_PX, then scroll
+  // internally. The className already carried min-h/max-h, but nothing ever set
+  // `height`, so `rows={1}` pinned it at one line and the max-h was dead code.
+  // Layout effect, not effect: measure and resize before paint, or the box
+  // visibly flickers at one row on every keystroke that adds a line.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto"; // shrink first, or scrollHeight only ever grows
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }, [input]);
+
   /** Take files from the picker, a drop, or a paste. */
   async function addFiles(files: FileList | File[]) {
     const incoming = Array.from(files);
@@ -97,6 +138,11 @@ export default function CopilotPanel() {
 
     const problems: string[] = [];
     const accepted: PendingAttachment[] = [];
+    // The aggregate cap the route enforces (#696). rejectionReason() only knows
+    // about one file at a time, so without this the picker happily accepts five
+    // legal 4MB files — 20MB, well past MAX_TOTAL_BYTES — and the whole turn
+    // 413s at send time with nothing said about which file to drop.
+    let bytes = pending.reduce((n, a) => n + a.size, 0);
 
     for (const file of incoming) {
       if (pending.length + accepted.length >= MAX_ATTACHMENTS) {
@@ -108,8 +154,17 @@ export default function CopilotPanel() {
         problems.push(reason);
         continue;
       }
+      if (bytes + file.size > MAX_TOTAL_BYTES) {
+        problems.push(
+          `${file.name} won't fit — attachments have to total under ${Math.round(
+            MAX_TOTAL_BYTES / 1024 / 1024
+          )}MB. Send this one in a separate message.`
+        );
+        continue;
+      }
       try {
         accepted.push(await readAttachment(file));
+        bytes += file.size;
       } catch {
         problems.push(`${file.name} could not be read.`);
       }
@@ -181,7 +236,10 @@ export default function CopilotPanel() {
       });
 
       if (!res.ok || !res.body) {
-        throw new Error(`API error ${res.status}`);
+        // The route's 413s and 403s carry text worth reading ("start a new
+        // conversation"). Swallowing them for a generic apology is what made
+        // this failure impossible to act on.
+        throw new Error(await errorDetail(res));
       }
 
       const newConvId = res.headers.get("X-Conversation-Id");
@@ -215,14 +273,25 @@ export default function CopilotPanel() {
     } catch (err) {
       // A deliberate abort (New conversation) is not an error.
       if (!(err instanceof DOMException && err.name === "AbortError")) {
+        const detail =
+          err instanceof Error && err.message
+            ? err.message
+            : "Something went wrong. Please try again.";
         setMessages((prev) => {
           if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
             return prev;
           }
           const updated = [...prev];
+          const last = updated[updated.length - 1];
+          // Keep whatever streamed before the failure. A half-written unit map
+          // is worth more than a generic apology, and losing it is what made a
+          // mid-stream timeout indistinguishable from an outright rejection.
+          // (`curriculum/page.tsx` already does this.)
           updated[updated.length - 1] = {
-            role: "assistant",
-            content: "Something went wrong. Please try again.",
+            ...last,
+            content: last.content
+              ? `${last.content}\n\n---\n\n_${detail} The partial answer above is what came through._`
+              : `_${detail}_`,
           };
           return updated;
         });
@@ -417,7 +486,8 @@ export default function CopilotPanel() {
             +
           </button>
           <textarea
-            className="flex-1 resize-none rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 min-h-[40px] max-h-[120px]"
+            ref={textareaRef}
+            className="flex-1 resize-none overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500 min-h-[40px] max-h-[200px]"
             placeholder={dragging ? "Drop it here…" : "Ask your copilot..."}
             rows={1}
             value={input}
