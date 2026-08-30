@@ -29,9 +29,15 @@ import {
   units,
 } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { createDoc } from "@/lib/drive";
+import { createDoc, createSheet, createSlides } from "@/lib/drive";
 import { buildFolderKey, type MaterialType } from "@/lib/upload-utils";
 import { normalizeMaterialType, normalizeQuarter } from "@/lib/draft-protocol";
+import {
+  normalizeDraftFormat,
+  parseSlideOutline,
+  tsvToCsv,
+  type DraftFormat,
+} from "@/lib/draft-formats";
 import { readJson, UUID_RE } from "@/lib/api-utils";
 import { logEdit } from "../../curriculum/editor/log-edit";
 
@@ -47,9 +53,23 @@ const TYPE_TO_CATEGORY: Record<MaterialType, string> = {
   other: "Resources",
 };
 
+// What each format produces in Drive, and how the material row records it.
+const FORMAT_MIME: Record<DraftFormat, string> = {
+  doc: "application/vnd.google-apps.document",
+  sheet: "application/vnd.google-apps.spreadsheet",
+  slides: "application/vnd.google-apps.presentation",
+};
+
+const FORMAT_LABEL: Record<DraftFormat, string> = {
+  doc: "Google Doc",
+  sheet: "Google Sheet",
+  slides: "Google Slides deck",
+};
+
 type AcceptDraftBody = {
   title?: string;
   content?: string;
+  format?: string;
   materialType?: string;
   grade?: number;
   quarter?: string;
@@ -93,6 +113,24 @@ export async function POST(req: Request) {
   }
 
   const materialType = normalizeMaterialType(body.materialType);
+  const format = normalizeDraftFormat(body.format);
+
+  // Reject a body that cannot become the file it claims to be, before any
+  // Drive write — an empty deck or a one-column "spreadsheet" is a worse
+  // outcome for her than being told the draft was malformed.
+  if (format === "sheet" && !content.includes("\t")) {
+    return Response.json(
+      { error: "This draft is not tab-separated, so it cannot become a spreadsheet." },
+      { status: 400 }
+    );
+  }
+  const slideOutline = format === "slides" ? parseSlideOutline(content) : [];
+  if (format === "slides" && slideOutline.length === 0) {
+    return Response.json(
+      { error: "This draft has no '# Slide title' headings, so it cannot become a deck." },
+      { status: 400 }
+    );
+  }
   let grade = [6, 7, 8].includes(body.grade as number) ? (body.grade as number) : null;
   let quarter = normalizeQuarter(body.quarter);
 
@@ -190,13 +228,21 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Create the Google Doc (the one and only Drive write) ───
+  // ── Create the Drive file (the one and only Drive write) ───
   let driveFile;
   try {
-    driveFile = await createDoc(accessToken, title, content, folderId ?? undefined);
+    driveFile =
+      format === "sheet"
+        ? await createSheet(accessToken, title, tsvToCsv(content), folderId ?? undefined)
+        : format === "slides"
+          ? await createSlides(accessToken, title, slideOutline, folderId ?? undefined)
+          : await createDoc(accessToken, title, content, folderId ?? undefined);
   } catch (err) {
-    console.error("[accept-draft] Drive doc creation failed:", err);
-    return Response.json({ error: "Failed to create Google Doc" }, { status: 502 });
+    console.error(`[accept-draft] Drive ${format} creation failed:`, err);
+    return Response.json(
+      { error: `Failed to create ${FORMAT_LABEL[format]}` },
+      { status: 502 }
+    );
   }
   if (!driveFile.id) {
     return Response.json({ error: "Drive returned no file id" }, { status: 502 });
@@ -210,7 +256,7 @@ export async function POST(req: Request) {
       materialType,
       storageType: "google_drive",
       driveFileId: driveFile.id,
-      driveMimeType: "application/vnd.google-apps.document",
+      driveMimeType: FORMAT_MIME[format],
       driveWebUrl: driveFile.webViewLink ?? null,
       driveFolderId: folderId,
       description: `AI-generated ${materialType} draft accepted from a Copilot session.`,

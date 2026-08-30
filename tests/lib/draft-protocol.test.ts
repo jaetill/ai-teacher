@@ -96,10 +96,47 @@ describe("normalizeQuarter", () => {
   });
 });
 
+describe("FORMAT header", () => {
+  const withFormat = (f: string) => `TITLE: T\nTYPE: curriculum\nFORMAT: ${f}\n---\nbody`;
+
+  it("defaults to doc when the header is absent — every pre-existing draft stays a Doc", () => {
+    expect(parseDraftBlock(FULL_BLOCK)!.format).toBe("doc");
+  });
+
+  it("reads sheet and slides", () => {
+    expect(parseDraftBlock(withFormat("sheet"))!.format).toBe("sheet");
+    expect(parseDraftBlock(withFormat("slides"))!.format).toBe("slides");
+  });
+
+  it("falls back to doc on an unknown format", () => {
+    expect(parseDraftBlock(withFormat("xlsx"))!.format).toBe("doc");
+  });
+
+  it("accepts curriculum as a TYPE, so a curriculum map files under Curriculum", () => {
+    expect(parseDraftBlock(withFormat("sheet"))!.materialType).toBe("curriculum");
+  });
+});
+
 describe("DRAFT_SYSTEM_INSTRUCTIONS", () => {
   it("documents the fence and required fields", () => {
     expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("```draft");
     expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("TITLE:");
     expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("Accept & Create");
+  });
+
+  it("offers all three formats and the curriculum type", () => {
+    expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("FORMAT:");
+    for (const f of ["doc", "sheet", "slides"]) {
+      expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain(f);
+    }
+    expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("curriculum");
+  });
+
+  // The behaviour that started this: the copilot told the teacher to paste
+  // tab-separated text into a spreadsheet by hand because the prompt had
+  // banned tables and never mentioned Sheets.
+  it("tells the model not to claim it cannot produce a file", () => {
+    expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("never say you cannot produce a file");
+    expect(DRAFT_SYSTEM_INSTRUCTIONS).not.toContain("no markdown tables, no interactive elements");
   });
 });

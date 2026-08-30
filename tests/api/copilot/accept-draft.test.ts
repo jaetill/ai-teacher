@@ -1,17 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks ────────────────────────────────────────────────────────
-const { mockDbSelect, mockDbInsert, mockDbUpdate, mockCreateDoc } = vi.hoisted(() => ({
+const {
+  mockDbSelect,
+  mockDbInsert,
+  mockDbUpdate,
+  mockCreateDoc,
+  mockCreateSheet,
+  mockCreateSlides,
+} = vi.hoisted(() => ({
   mockDbSelect: vi.fn(),
   mockDbInsert: vi.fn(),
   mockDbUpdate: vi.fn(),
   mockCreateDoc: vi.fn(),
+  mockCreateSheet: vi.fn(),
+  mockCreateSlides: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/auth-helpers", () => ({ getAccessToken: vi.fn() }));
-vi.mock("@/lib/drive", () => ({ createDoc: mockCreateDoc }));
+vi.mock("@/lib/drive", () => ({
+  createDoc: mockCreateDoc,
+  createSheet: mockCreateSheet,
+  createSlides: mockCreateSlides,
+}));
 vi.mock("@/db", () => ({
   db: { select: mockDbSelect, insert: mockDbInsert, update: mockDbUpdate },
 }));
@@ -92,6 +105,16 @@ beforeEach(() => {
     name: "Animal Farm Ch. 1–4 Quiz",
     webViewLink: "https://docs.google.com/document/d/drive-file-1",
   });
+  mockCreateSheet.mockResolvedValue({
+    id: "drive-sheet-1",
+    name: "Curriculum Map",
+    webViewLink: "https://docs.google.com/spreadsheets/d/drive-sheet-1",
+  });
+  mockCreateSlides.mockResolvedValue({
+    id: "drive-slides-1",
+    name: "Vocabulary Deck",
+    webViewLink: "https://docs.google.com/presentation/d/drive-slides-1",
+  });
 });
 
 describe("POST /api/copilot/accept-draft", () => {
@@ -126,6 +149,75 @@ describe("POST /api/copilot/accept-draft", () => {
   it("400s on a non-UUID conversationId", async () => {
     const res = await POST(req({ ...VALID_BODY, conversationId: "not-a-uuid" }));
     expect(res.status).toBe(400);
+  });
+
+  // ── FORMAT routing ───
+
+  it("defaults to a Doc when no format is given", async () => {
+    insertQueue = [[{ id: "11111111-1111-1111-1111-111111111111" }]];
+    await POST(req(VALID_BODY));
+    expect(mockCreateDoc).toHaveBeenCalledOnce();
+    expect(mockCreateSheet).not.toHaveBeenCalled();
+    expect(mockCreateSlides).not.toHaveBeenCalled();
+  });
+
+  it("creates a Sheet from TSV, converting to quoted CSV on the way", async () => {
+    insertQueue = [[{ id: "11111111-1111-1111-1111-111111111111" }]];
+    const res = await POST(
+      req({
+        ...VALID_BODY,
+        format: "sheet",
+        content: "DAY\tSTANDARDS\nDay 1\t8.RV.1.E, 8.W.1.A",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockCreateDoc).not.toHaveBeenCalled();
+    // The comma inside the standards cell must arrive quoted, or Drive splits
+    // it into an extra column.
+    expect(mockCreateSheet.mock.calls[0][2]).toBe('DAY,STANDARDS\nDay 1,"8.RV.1.E, 8.W.1.A"');
+  });
+
+  it("creates Slides from an outline, passing parsed slides through", async () => {
+    insertQueue = [[{ id: "11111111-1111-1111-1111-111111111111" }]];
+    const res = await POST(
+      req({
+        ...VALID_BODY,
+        format: "slides",
+        content: "# Bystander Effect\n- Define it\n- Why it matters",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockCreateSlides.mock.calls[0][2]).toEqual([
+      { title: "Bystander Effect", bullets: ["Define it", "Why it matters"] },
+    ]);
+  });
+
+  it("400s rather than making a one-column sheet from untabbed text", async () => {
+    const res = await POST(req({ ...VALID_BODY, format: "sheet", content: "no tabs here" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateSheet).not.toHaveBeenCalled();
+  });
+
+  it("400s rather than making an empty deck from an outline with no headings", async () => {
+    const res = await POST(req({ ...VALID_BODY, format: "slides", content: "- just a bullet" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateSlides).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a Doc for an unknown format rather than erroring", async () => {
+    insertQueue = [[{ id: "11111111-1111-1111-1111-111111111111" }]];
+    const res = await POST(req({ ...VALID_BODY, format: "xlsx" }));
+    expect(res.status).toBe(200);
+    expect(mockCreateDoc).toHaveBeenCalledOnce();
+  });
+
+  it("502s with the format's own name when Drive creation fails", async () => {
+    mockCreateSheet.mockRejectedValue(new Error("drive exploded"));
+    const res = await POST(req({ ...VALID_BODY, format: "sheet", content: "A\tB\n1\t2" }));
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toContain("Google Sheet");
   });
 
   it("creates the doc in the grade/quarter category folder and inserts an ai-sourced material", async () => {
