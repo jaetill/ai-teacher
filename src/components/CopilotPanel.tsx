@@ -96,6 +96,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 /** Composer grows to this height (~8 lines), then scrolls internally. */
 const COMPOSER_MAX_PX = 200;
+/** Bounds for a height she sets by hand, which may exceed the auto-grow cap. */
+const COMPOSER_MIN_PX = 40;
+const COMPOSER_DRAG_MAX_PX = 420;
+
+const clampComposer = (px: number) =>
+  Math.min(Math.max(px, COMPOSER_MIN_PX), COMPOSER_DRAG_MAX_PX);
 
 export default function CopilotPanel() {
   const { isOpen, toggle, pageContext } = useCopilot();
@@ -109,6 +115,12 @@ export default function CopilotPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // null = follow the content. A number = she dragged the handle, and that
+  // choice outranks auto-grow until she double-clicks to hand it back. Pinning
+  // the composer open is the point — auto-grow shrinks again the moment she
+  // sends, which is wrong if she is working through a long paste.
+  const [composerHeight, setComposerHeight] = useState<number | null>(null);
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   // In-flight stream, so "New" can cancel it. Without this, clicking New while
   // streaming emptied `messages` while the read loop kept appending to
   // updated[length - 1] — undefined.content, a render-pass TypeError that
@@ -127,9 +139,61 @@ export default function CopilotPanel() {
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+
+    if (composerHeight !== null) {
+      // max-h-[200px] from the className would silently clamp anything she
+      // drags past the auto-grow cap, so the inline max-height has to be
+      // released for her height to mean what it says.
+      el.style.maxHeight = "none";
+      el.style.height = `${composerHeight}px`;
+      return;
+    }
+
+    el.style.maxHeight = ""; // back to the class
     el.style.height = "auto"; // shrink first, or scrollHeight only ever grows
     el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
-  }, [input]);
+  }, [input, composerHeight]);
+
+  // ── Resize handle ───
+  // Pointer events rather than mouse: one code path covers trackpad, touch and
+  // pen. Pointer capture keeps the drag alive when she moves faster than the
+  // 12px handle, which is most drags.
+  function startResize(e: React.PointerEvent<HTMLDivElement>) {
+    const el = textareaRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeRef.current = { startY: e.clientY, startHeight: el.offsetHeight };
+  }
+
+  function onResizeMove(e: React.PointerEvent<HTMLDivElement>) {
+    const start = resizeRef.current;
+    if (!start) return;
+    // The composer grows upward, so dragging up (a smaller clientY) makes it
+    // taller.
+    setComposerHeight(clampComposer(start.startHeight + (start.startY - e.clientY)));
+  }
+
+  function endResize(e: React.PointerEvent<HTMLDivElement>) {
+    resizeRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  function onResizeKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const el = textareaRef.current;
+    if (!el) return;
+    const STEP = 24;
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const from = composerHeight ?? el.offsetHeight;
+      setComposerHeight(clampComposer(from + (e.key === "ArrowUp" ? STEP : -STEP)));
+    } else if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setComposerHeight(null);
+    }
+  }
 
   /** Take files from the picker, a drop, or a paste. */
   async function addFiles(files: FileList | File[]) {
@@ -435,6 +499,37 @@ export default function CopilotPanel() {
           if (!streaming) void addFiles(e.dataTransfer.files);
         }}
       >
+        {/* Resize handle. Auto-grow covers the common case; this is for
+            pinning the box open while she works through something long, which
+            auto-grow undoes on every send. Double-click (or Enter/Escape when
+            focused) gives the height back to the content. */}
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the message box. Arrow keys adjust, Enter restores automatic height."
+          tabIndex={0}
+          onPointerDown={startResize}
+          onPointerMove={onResizeMove}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onDoubleClick={() => setComposerHeight(null)}
+          onKeyDown={onResizeKeyDown}
+          title={
+            composerHeight === null
+              ? "Drag to set a height"
+              : "Drag to resize — double-click to fit the text again"
+          }
+          className="group -mt-1.5 mb-1.5 flex h-3 w-full cursor-ns-resize touch-none items-center justify-center rounded focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+        >
+          <div
+            className={`h-[3px] w-8 rounded-full transition-colors ${
+              composerHeight === null
+                ? "bg-zinc-200 group-hover:bg-zinc-400 dark:bg-zinc-700 dark:group-hover:bg-zinc-500"
+                : "bg-zinc-400 dark:bg-zinc-500"
+            }`}
+          />
+        </div>
+
         {pending.length > 0 && (
           <ul className="flex flex-wrap gap-1.5 mb-2">
             {pending.map((a) => (
