@@ -39,8 +39,13 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { standards } from "./schema/standards";
 
-const sql = neon(process.env.DATABASE_URL!);
-const db = drizzle(sql);
+// Built inside seed(), not at module scope. The completeness test imports the
+// roster from this file, and a module-scope neon() call made that import fail
+// in CI ("No database connection string was provided") where there is no
+// .env.local — reading the data should not require a database.
+function connect() {
+  return drizzle(neon(process.env.DATABASE_URL!));
+}
 
 // ── VA SOL 2024 Grade 8 English Standards ───
 // id = {grade}.{strand}.{subcategory}.{indicator}, and the id IS the code the
@@ -684,6 +689,7 @@ export const grade8Standards = [
 export const MISLABELLED_IDS = ["8.C.1.B"];
 
 async function seed() {
+  const db = connect();
   console.log(`Seeding ${grade8Standards.length} Grade 8 standards...`);
 
   let inserted = 0;
