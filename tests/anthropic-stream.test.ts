@@ -31,6 +31,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/db/schema", () => ({
   copilotConversations: {},
   copilotMessages: {},
+  errorEvents: {},
   courses: {},
   units: {},
   lessons: {},

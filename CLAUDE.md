@@ -115,6 +115,22 @@ empty — see `unmatchedUnits` in the build response.
   `new Anthropic()` at module scope (breaks builds where the key env var is scoped).
 - Atomic multi-statement writes use `db.batch([...])`; `db.transaction()` throws on the
   neon-http driver.
+- **Never return a bare `new Response(...)` for an error.** Use `refuse()` from
+  `src/lib/error-log.ts`: it builds the response *and* writes a row to `error_events`,
+  so a refusal path cannot be added that forgets to log. Each call needs a stable
+  `reason` code — never reword an existing one; grouping across releases depends on it.
+  `detail` holds counts, byte sizes and limits **only** — never message text, filenames,
+  or file contents.
+
+  Why this exists: on 2026-08-30 a copilot turn returned 413 and the panel replaced the
+  server's sentence with "Something went wrong." Vercel logs the status code but not the
+  body, and six separate guards on that route return 413 — so which one fired could only
+  be narrowed by elimination, never confirmed. Triage now starts here:
+
+  ```sql
+  select created_at, route, status, reason, message, detail
+  from error_events order by created_at desc limit 20;
+  ```
 - Migrations: 0007_platform_scope.sql consolidates the former hand-written 0007–0010
   (which had broken journal timestamps and no snapshots). Always create migrations with
   `drizzle-kit generate` — never hand-write SQL + journal entries.

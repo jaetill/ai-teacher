@@ -12,6 +12,7 @@ import { getAnthropic } from "@/lib/anthropic";
 import { DRAFT_SYSTEM_INSTRUCTIONS } from "@/lib/draft-protocol";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson, UUID_RE } from "@/lib/api-utils";
+import { refuse, logErrorEvent } from "@/lib/error-log";
 import { MODELS } from "@/lib/models";
 import mammoth from "mammoth";
 import {
@@ -38,6 +39,12 @@ import {
   driveFolders,
 } from "@/db/schema";
 import { and, eq, sql, asc, inArray, isNull, or } from "drizzle-orm";
+
+// Opus with adaptive thinking and a 64k output budget can run long on a big ask
+// (a full unit table, a 20-lesson rewrite). Every other AI route here sets its
+// own ceiling; this one was left on the platform default, so a slow generation
+// died mid-stream and reached the teacher as a generic failure.
+export const maxDuration = 300;
 
 const BASE_SYSTEM_PROMPT = `You are an expert teacher planning assistant with full access to this teacher's curriculum database. You help teachers with:
 - Creating rubrics, lesson plans, unit maps, and pacing guides
@@ -298,13 +305,23 @@ async function toContentBlock(
   };
 }
 
+const ROUTE = "/api/copilot";
+
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return refuse({
+      route: ROUTE,
+      status: 401,
+      reason: "unauthorized",
+      message: "Unauthorized",
+      asJson: true,
+    });
   }
 
-  const rateLimited = await checkAiRateLimit(session.user?.email);
+  const email = session.user?.email ?? null;
+
+  const rateLimited = await checkAiRateLimit(email);
   if (rateLimited) return rateLimited;
 
   const body = await readJson<{
@@ -314,42 +331,148 @@ export async function POST(request: Request) {
     attachments?: OutgoingAttachment[];
   }>(request);
   if (!body) {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return refuse({
+      route: ROUTE,
+      status: 400,
+      reason: "invalid_json",
+      message: "Invalid JSON body",
+      ownerEmail: email,
+      asJson: true,
+    });
   }
   const { messages, context, conversationId, attachments } = body;
 
   if (!messages || messages.length === 0) {
-    return new Response("messages are required", { status: 400 });
+    return refuse({
+      route: ROUTE,
+      status: 400,
+      reason: "missing_messages",
+      message: "messages are required",
+      ownerEmail: email,
+    });
   }
 
   const MAX_CONTEXT_CHARS = 8_000;
   const MAX_MESSAGES = 50;
-  const MAX_MESSAGE_CONTENT_CHARS = 10_000;
+  // The per-message cap (#366) exists to stop one turn from pasting a novel
+  // into the prompt. It belongs on HER turns only. Applied to the whole
+  // transcript it also policed the model's own replies — which this route
+  // authorises to be up to `max_tokens` (64k ≈ 250k chars) — so the first time
+  // the copilot wrote a long answer, every later turn in that conversation
+  // 413'd on the history and the conversation was permanently unusable.
+  const MAX_USER_MESSAGE_CHARS = 10_000;
+  // Quota protection lives here instead: bound the whole conversation, which is
+  // what actually drives input-token spend, rather than any single turn.
+  const MAX_TRANSCRIPT_CHARS = 400_000;
 
-  if (context && context.length > MAX_CONTEXT_CHARS) {
-    return new Response(`context too large (max ${MAX_CONTEXT_CHARS} chars)`, { status: 413 });
-  }
-  if (messages.length > MAX_MESSAGES) {
-    return new Response(`too many messages (max ${MAX_MESSAGES})`, { status: 413 });
-  }
+  // Measure the whole request up front rather than bailing inside the loop, so
+  // that whichever guard fires, the logged row carries every number. Working
+  // out which of these six 413s a user hit is exactly what was impossible on
+  // 2026-08-30.
+  let transcriptChars = 0;
+  let longestUserMessageChars = 0;
   for (const msg of messages) {
     const contentLen =
       typeof msg.content === "string"
         ? msg.content.length
         : JSON.stringify(msg.content).length;
-    if (contentLen > MAX_MESSAGE_CONTENT_CHARS) {
-      return new Response(`message content too large (max ${MAX_MESSAGE_CONTENT_CHARS} chars)`, { status: 413 });
+    transcriptChars += contentLen;
+    if (msg.role !== "assistant" && contentLen > longestUserMessageChars) {
+      longestUserMessageChars = contentLen;
     }
+  }
+  const attachmentCount = Array.isArray(attachments) ? attachments.length : 0;
+  const attachmentBytes = Array.isArray(attachments)
+    ? attachments.reduce((n, a) => n + (typeof a?.data === "string" ? a.data.length : 0), 0)
+    : 0;
+
+  /** Every 413 carries the same measurements, so they can be compared. */
+  const shape = {
+    contextChars: context?.length ?? 0,
+    messageCount: messages.length,
+    transcriptChars,
+    longestUserMessageChars,
+    attachmentCount,
+    attachmentBytes,
+  };
+
+  if (context && context.length > MAX_CONTEXT_CHARS) {
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "context_too_large",
+      message:
+        "There's too much on this page for the copilot to take in at once. Open the copilot from a single unit or lesson instead.",
+      ownerEmail: email,
+      conversationId,
+      detail: { ...shape, limit: MAX_CONTEXT_CHARS },
+    });
+  }
+  if (messages.length > MAX_MESSAGES) {
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "too_many_messages",
+      message:
+        "This conversation has too many turns to continue. Start a new conversation to keep going.",
+      ownerEmail: email,
+      conversationId,
+      detail: { ...shape, limit: MAX_MESSAGES },
+    });
+  }
+  if (longestUserMessageChars > MAX_USER_MESSAGE_CHARS) {
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "user_message_too_long",
+      // Deliberately not quoting her character count back at her: rounding both
+      // numbers to thousands made a 10,001-character message read "about 10,000
+      // characters; the limit is 10,000", which reads as a bug. The limit is the
+      // only number that helps.
+      message: `That message is too long to send — the limit is about ${Math.round(
+        MAX_USER_MESSAGE_CHARS / 1000
+      )},000 characters. Attach it as a file instead, or send it in pieces.`,
+      ownerEmail: email,
+      conversationId,
+      detail: { ...shape, limit: MAX_USER_MESSAGE_CHARS },
+    });
+  }
+  if (transcriptChars > MAX_TRANSCRIPT_CHARS) {
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "transcript_too_long",
+      message:
+        "This conversation has grown too long to continue. Start a new conversation to keep going.",
+      ownerEmail: email,
+      conversationId,
+      detail: { ...shape, limit: MAX_TRANSCRIPT_CHARS },
+    });
   }
 
   if (conversationId && !UUID_RE.test(conversationId)) {
-    return Response.json({ error: "Bad Request" }, { status: 400 });
+    return refuse({
+      route: ROUTE,
+      status: 400,
+      reason: "bad_conversation_id",
+      message: "Bad Request",
+      ownerEmail: email,
+      asJson: true,
+    });
   }
 
   // The browser reads the files, but this route must not trust it (#536).
   if (attachments) {
     if (!Array.isArray(attachments) || attachments.length > MAX_ATTACHMENTS) {
-      return new Response(`too many attachments (max ${MAX_ATTACHMENTS})`, { status: 413 });
+      return refuse({
+        route: ROUTE,
+        status: 413,
+        reason: "too_many_attachments",
+        message: `Only ${MAX_ATTACHMENTS} files can go with one message.`,
+        ownerEmail: email,
+        conversationId,
+        detail: { ...shape, limit: MAX_ATTACHMENTS },
+      });
     }
     if (
       !attachments.every(
@@ -360,11 +483,29 @@ export async function POST(request: Request) {
           kindFor(a.mediaType, a.name) === a.kind
       )
     ) {
-      return new Response("malformed attachment", { status: 400 });
+      return refuse({
+        route: ROUTE,
+        status: 400,
+        reason: "malformed_attachment",
+        message: "One of those files didn't attach properly. Try attaching it again.",
+        ownerEmail: email,
+        conversationId,
+        detail: shape,
+      });
     }
     const total = attachments.reduce((n, a) => n + a.data.length, 0);
     if (total > MAX_TOTAL_BYTES * 1.4) {
-      return new Response("attachments too large", { status: 413 });
+      return refuse({
+        route: ROUTE,
+        status: 413,
+        reason: "attachments_too_large",
+        message: `Those files add up to more than ${Math.round(
+          MAX_TOTAL_BYTES / 1024 / 1024
+        )}MB altogether. Send the largest one in its own message.`,
+        ownerEmail: email,
+        conversationId,
+        detail: { ...shape, attachmentBytes: total, limit: Math.round(MAX_TOTAL_BYTES * 1.4) },
+      });
     }
   }
 
@@ -384,8 +525,17 @@ export async function POST(request: Request) {
       .select({ ownerEmail: copilotConversations.ownerEmail })
       .from(copilotConversations)
       .where(eq(copilotConversations.id, convId));
-    if (!conv || !conv.ownerEmail || !session.user?.email || conv.ownerEmail !== session.user.email) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
+    if (!conv || !conv.ownerEmail || !email || conv.ownerEmail !== email) {
+      return refuse({
+        route: ROUTE,
+        status: 403,
+        reason: "forbidden",
+        message: "Forbidden",
+        ownerEmail: email,
+        conversationId,
+        detail: { ...shape, conversationExists: Boolean(conv) },
+        asJson: true,
+      });
     }
   }
 
@@ -487,6 +637,24 @@ export async function POST(request: Request) {
       } catch (err) {
         streamError = err;
         console.error("[copilot] Anthropic stream failed:", err);
+        // A mid-stream failure is the one case where the user sees a broken
+        // answer rather than a status code, so it needs a row more than the
+        // refusals above do. `charsDelivered` separates "died immediately"
+        // from "died three paragraphs in" — a distinction the console line
+        // alone never carried.
+        await logErrorEvent({
+          route: ROUTE,
+          status: 200,
+          reason: "stream_failed",
+          message: err instanceof Error ? err.message : String(err),
+          ownerEmail: email,
+          conversationId: convId,
+          detail: {
+            ...shape,
+            charsDelivered: assistantText.length,
+            clientGone,
+          },
+        });
       }
 
       // ── Persist whatever the model produced, even on disconnect/error ───

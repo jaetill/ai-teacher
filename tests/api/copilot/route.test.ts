@@ -29,6 +29,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/db/schema", () => ({
   copilotConversations: {},
   copilotMessages: {},
+  errorEvents: {},
   courses: {},
   units: {},
   lessons: {},
@@ -204,7 +205,7 @@ describe("POST /api/copilot — input-size guards", () => {
     expect(res.status).toBe(413);
   });
 
-  it("returns 413 when a single message content exceeds 10000 chars", async () => {
+  it("returns 413 when a single USER message content exceeds 10000 chars", async () => {
     authedSession();
 
     const res = await POST(
@@ -214,6 +215,43 @@ describe("POST /api/copilot — input-size guards", () => {
     );
 
     expect(res.status).toBe(413);
+  });
+
+  // Regression: the per-message cap used to apply to every role, so the first
+  // long copilot answer (this route authorises 64k output tokens) made every
+  // subsequent turn 413 and bricked the conversation.
+  it("does not reject a long ASSISTANT turn in the history", async () => {
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: [
+          { role: "user", content: "Map Q1." },
+          { role: "assistant", content: "z".repeat(120_000) },
+          { role: "user", content: "Each lesson should be its own row." },
+        ],
+      }),
+    );
+
+    expect(res.status).not.toBe(413);
+  });
+
+  it("returns 413 when the whole transcript exceeds 400000 chars", async () => {
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: [
+          { role: "user", content: "Map Q1." },
+          { role: "assistant", content: "z".repeat(200_000) },
+          { role: "assistant", content: "z".repeat(200_001) },
+          { role: "user", content: "Again please." },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toContain("new conversation");
   });
 
   it("does not reject context at exactly 8000 chars", async () => {
@@ -304,7 +342,11 @@ describe("POST /api/copilot — input size caps (quota-exhaustion prevention)", 
     const res = await POST(makeRequest({ messages: VALID_MESSAGES, context: "x".repeat(8_001) }));
 
     expect(res.status).toBe(413);
-    expect(await res.text()).toContain("context too large");
+    // These bodies are read verbatim by the copilot panel, so they assert the
+    // teacher-facing wording rather than the old developer strings ("context
+    // too large"). The stable machine code lives in error_events.reason and is
+    // pinned separately, below.
+    expect(await res.text()).toMatch(/too much on this page/i);
   });
 
   it("returns 413 when messages array exceeds MAX_MESSAGES (50)", async () => {
@@ -318,7 +360,8 @@ describe("POST /api/copilot — input size caps (quota-exhaustion prevention)", 
     const res = await POST(makeRequest({ messages: tooManyMessages }));
 
     expect(res.status).toBe(413);
-    expect(await res.text()).toContain("too many messages");
+    // No /s flag — tsconfig targets ES2017, where dotAll is not available.
+    expect(await res.text()).toMatch(/too many turns[\s\S]*start a new conversation/i);
   });
 
   it("returns 413 when a single message content exceeds MAX_MESSAGE_CONTENT_CHARS (10 000)", async () => {
@@ -329,7 +372,12 @@ describe("POST /api/copilot — input size caps (quota-exhaustion prevention)", 
     );
 
     expect(res.status).toBe(413);
-    expect(await res.text()).toContain("message content too large");
+    const body = await res.text();
+    expect(body).toMatch(/too long to send/i);
+    // Say what to do about it, not just that it failed.
+    expect(body).toMatch(/attach it as a file|send it in pieces/i);
+    // And don't quote her own count back at her — see the route comment.
+    expect(body).not.toMatch(/about 10,000 characters; the limit is 10,000/);
   });
 
   it("proceeds normally when all inputs are within limits", async () => {
@@ -455,11 +503,137 @@ describe("POST /api/copilot — assistant persistence after the stream", () => {
     expect(res.status).toBe(200);
     // the response stream surfaces the error to the client
     await expect(res.text()).rejects.toBe(streamError);
-    // the partial assistant text is still persisted (conversation + user + assistant)
-    expect(mockDbInsert).toHaveBeenCalledTimes(3);
+    // the partial assistant text is still persisted, and the failure is now
+    // recorded too: conversation + user + error_events + assistant
+    expect(mockDbInsert).toHaveBeenCalledTimes(4);
     expect(mockDbUpdate).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).toHaveBeenCalledWith("[copilot] Anthropic stream failed:", streamError);
 
     consoleErrorSpy.mockRestore();
+  });
+});
+
+// ── Refusals are recorded, and say which guard fired ─────────────────────────
+// Six guards on this route return 413. On 2026-08-30 one of them fired for a
+// real user and there was no way afterwards to tell which, because Vercel logs
+// the status code and not the body. These tests pin the distinguishing bit.
+describe("POST /api/copilot — refusals are logged with a distinct reason", () => {
+  /** Records every row handed to db.insert(...).values(...). */
+  function recordingInserts() {
+    const rows: Record<string, unknown>[] = [];
+    mockDbInsert.mockImplementation(() => {
+      const chain = makeChain([{ id: VALID_UUID }]) as Record<string, unknown>;
+      chain.values = (v: Record<string, unknown>) => {
+        rows.push(v);
+        return chain;
+      };
+      return chain;
+    });
+    return rows;
+  }
+
+  const reasonOf = (rows: Record<string, unknown>[]) =>
+    rows.find((r) => typeof r.reason === "string")?.reason;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDbSelect.mockReturnValue(makeChain([]));
+    mockDbUpdate.mockReturnValue(makeChain(undefined));
+  });
+
+  it("records unauthorized when there is no session", async () => {
+    const rows = recordingInserts();
+    mockSession.mockResolvedValueOnce(null);
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES }));
+
+    expect(res.status).toBe(401);
+    expect(reasonOf(rows)).toBe("unauthorized");
+  });
+
+  it("records bad_conversation_id for a malformed id", async () => {
+    const rows = recordingInserts();
+    authedSession();
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES, conversationId: "nope" }));
+
+    expect(res.status).toBe(400);
+    expect(reasonOf(rows)).toBe("bad_conversation_id");
+  });
+
+  it("records user_message_too_long, and tells her what to do instead", async () => {
+    const rows = recordingInserts();
+    authedSession();
+
+    const res = await POST(
+      makeRequest({ messages: [{ role: "user", content: "x".repeat(10_001) }] }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(reasonOf(rows)).toBe("user_message_too_long");
+    // The body is what reaches the panel — it has to be actionable, not "413".
+    expect(await res.text()).toMatch(/attach it as a file|send it in pieces/i);
+  });
+
+  it("records too_many_messages", async () => {
+    const rows = recordingInserts();
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: Array.from({ length: 51 }, () => ({ role: "user", content: "hi" })),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(reasonOf(rows)).toBe("too_many_messages");
+  });
+
+  it("records too_many_attachments", async () => {
+    const rows = recordingInserts();
+    authedSession();
+
+    const res = await POST(
+      makeRequest({
+        messages: VALID_MESSAGES,
+        attachments: Array.from({ length: 6 }, (_, i) => ({
+          name: `f${i}.txt`,
+          mediaType: "text/plain",
+          kind: "text",
+          data: "hello",
+          size: 5,
+        })),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(reasonOf(rows)).toBe("too_many_attachments");
+  });
+
+  it("carries the measurements that identify the guard", async () => {
+    const rows = recordingInserts();
+    authedSession();
+
+    await POST(makeRequest({ messages: [{ role: "user", content: "x".repeat(10_001) }] }));
+
+    const logged = rows.find((r) => typeof r.reason === "string");
+    expect(logged?.detail).toMatchObject({
+      messageCount: 1,
+      longestUserMessageChars: 10_001,
+      limit: 10_000,
+    });
+  });
+
+  it("still refuses when the error log itself cannot be written", async () => {
+    mockDbInsert.mockImplementation(() => ({
+      values: () => Promise.reject(new Error("neon unreachable")),
+    }));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    authedSession();
+
+    const res = await POST(makeRequest({ messages: VALID_MESSAGES, conversationId: "nope" }));
+
+    expect(res.status).toBe(400);
+    spy.mockRestore();
   });
 });

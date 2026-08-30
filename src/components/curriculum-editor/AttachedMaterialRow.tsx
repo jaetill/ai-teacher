@@ -37,8 +37,9 @@ const ROLE_COLORS: Record<string, string> = {
   teacher_reference: "text-violet-600 dark:text-violet-400",
 };
 
-// Per-variant chrome so a material row looks at home inside either a lesson
-// (zinc) or an assessment (amber) block.
+// Per-variant chrome so a material row looks at home inside a lesson (zinc),
+// an assessment (amber), or the unit itself (slate — it sits outside both
+// lists, so it reads as belonging to the unit rather than to a child).
 const VARIANTS = {
   lesson: {
     row: "bg-zinc-50 dark:bg-zinc-800/60",
@@ -50,12 +51,17 @@ const VARIANTS = {
     selectBorder:
       "hover:border-amber-200 dark:hover:border-amber-800/50 focus:ring-amber-400",
   },
+  unit: {
+    row: "bg-slate-50 dark:bg-slate-800/40",
+    selectBorder:
+      "hover:border-slate-200 dark:hover:border-slate-700 focus:ring-slate-400",
+  },
 } as const;
 
 type Props = {
   material: EditorMaterialLink;
   // Where this material is attached right now — the drag source.
-  fromType: "lesson" | "assessment";
+  fromType: "lesson" | "assessment" | "unit";
   fromId: string;
   variant: keyof typeof VARIANTS;
   onDetach: (attachmentId: string) => void;
@@ -95,7 +101,7 @@ export default function AttachedMaterialRow({
         {...attributes}
         {...listeners}
         className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-400 shrink-0 transition-colors"
-        title="Drag to another lesson or assessment"
+        title="Drag to a lesson, an assessment, or another unit"
       >
         <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
           <rect x="2" y="1" width="3.5" height="1.5" rx="0.5" />

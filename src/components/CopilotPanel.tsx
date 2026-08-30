@@ -28,6 +28,30 @@ function draftFromPreChildren(children: ReactNode): string | null {
   return typeof raw === "string" ? raw : Array.isArray(raw) ? raw.join("") : null;
 }
 
+/**
+ * The readable half of a failed response.
+ *
+ * The route answers with plain text for the size limits and JSON `{error}` for
+ * auth failures, so try both before falling back to the status code. Never
+ * throws — an unreadable body must not replace the real failure.
+ */
+async function errorDetail(res: Response): Promise<string> {
+  const fallback = `Something went wrong (${res.status}). Please try again.`;
+  try {
+    const raw = (await res.text()).trim();
+    if (!raw) return fallback;
+    if (raw.startsWith("{")) {
+      const parsed = JSON.parse(raw) as { error?: unknown };
+      return typeof parsed.error === "string" && parsed.error ? parsed.error : fallback;
+    }
+    // Guard against an HTML error page (a platform timeout, say) landing in
+    // the transcript as markup.
+    return raw.startsWith("<") || raw.length > 300 ? fallback : raw;
+  } catch {
+    return fallback;
+  }
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -212,7 +236,10 @@ export default function CopilotPanel() {
       });
 
       if (!res.ok || !res.body) {
-        throw new Error(`API error ${res.status}`);
+        // The route's 413s and 403s carry text worth reading ("start a new
+        // conversation"). Swallowing them for a generic apology is what made
+        // this failure impossible to act on.
+        throw new Error(await errorDetail(res));
       }
 
       const newConvId = res.headers.get("X-Conversation-Id");
@@ -246,14 +273,25 @@ export default function CopilotPanel() {
     } catch (err) {
       // A deliberate abort (New conversation) is not an error.
       if (!(err instanceof DOMException && err.name === "AbortError")) {
+        const detail =
+          err instanceof Error && err.message
+            ? err.message
+            : "Something went wrong. Please try again.";
         setMessages((prev) => {
           if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
             return prev;
           }
           const updated = [...prev];
+          const last = updated[updated.length - 1];
+          // Keep whatever streamed before the failure. A half-written unit map
+          // is worth more than a generic apology, and losing it is what made a
+          // mid-stream timeout indistinguishable from an outright rejection.
+          // (`curriculum/page.tsx` already does this.)
           updated[updated.length - 1] = {
-            role: "assistant",
-            content: "Something went wrong. Please try again.",
+            ...last,
+            content: last.content
+              ? `${last.content}\n\n---\n\n_${detail} The partial answer above is what came through._`
+              : `_${detail}_`,
           };
           return updated;
         });

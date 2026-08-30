@@ -119,7 +119,43 @@ export async function GET(req: Request) {
         .orderBy(asc(materialAttachments.sortOrder))
     : [];
 
+  // Unit-level attachments. attach-material accepts all three attachable
+  // types and the editor's own drop handler resolves a unit drop to
+  // { type: "unit" }, but this route only ever queried lesson and assessment —
+  // so a material attached to a unit was written and then never rendered. It
+  // looked to the teacher like the drop had failed, and the duplicate rows in
+  // material_attachments are her dropping the same file a second time.
+  // Copilot's accept-draft lands here too whenever no lesson is in context.
+  const unitMats: MatLink[] = unitIds.length
+    ? await db
+        .select({
+          attachmentId: materialAttachments.id,
+          materialId: materials.id,
+          title: materials.title,
+          materialType: materials.materialType,
+          role: materialAttachments.role,
+          driveWebUrl: materials.driveWebUrl,
+          attachableId: materialAttachments.attachableId,
+        })
+        .from(materialAttachments)
+        .innerJoin(materials, eq(materials.id, materialAttachments.materialId))
+        .where(
+          and(
+            eq(materialAttachments.attachableType, "unit"),
+            inArray(materialAttachments.attachableId, unitIds)
+          )
+        )
+        .orderBy(asc(materialAttachments.sortOrder))
+    : [];
+
   // Group by attachable ID
+  const unitMatMap = new Map<string, MatLink[]>();
+  for (const m of unitMats) {
+    const arr = unitMatMap.get(m.attachableId) ?? [];
+    arr.push(m);
+    unitMatMap.set(m.attachableId, arr);
+  }
+
   const lessonMatMap = new Map<string, MatLink[]>();
   for (const m of lessonMats) {
     const arr = lessonMatMap.get(m.attachableId) ?? [];
@@ -141,6 +177,14 @@ export async function GET(req: Request) {
     sortOrder: unit.sortOrder,
     durationWeeks: unit.durationWeeks,
     summary: unit.summary,
+    materials: (unitMatMap.get(unit.id) ?? []).map((m) => ({
+      attachmentId: m.attachmentId,
+      materialId: m.materialId,
+      title: m.title,
+      materialType: m.materialType,
+      role: m.role,
+      driveWebUrl: m.driveWebUrl,
+    })),
     lessons: allLessons
       .filter((l) => l.unitId === unit.id)
       .map((l) => {
