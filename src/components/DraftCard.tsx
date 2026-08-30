@@ -8,6 +8,16 @@
 
 import { useState } from "react";
 import type { ParsedDraft } from "@/lib/draft-protocol";
+import { parseSlideOutline, parseTsv } from "@/lib/draft-formats";
+
+// What the buttons promise. The label has to name the real artifact — "Accept
+// & Create in Drive" on something that becomes a spreadsheet tells her nothing
+// about what she is about to get.
+const FORMAT_UI = {
+  doc: { noun: "Doc", action: "Accept & Create in Drive" },
+  sheet: { noun: "Sheet", action: "Accept & Create Sheet" },
+  slides: { noun: "Slides", action: "Accept & Create Slides" },
+} as const;
 
 type CreateResult = {
   materialId: string;
@@ -51,6 +61,7 @@ export default function DraftCard({
         body: JSON.stringify({
           title: draft.title,
           content: draft.content,
+          format: draft.format,
           materialType: draft.materialType,
           grade: draft.grade ?? undefined,
           quarter: draft.quarter ?? undefined,
@@ -71,6 +82,14 @@ export default function DraftCard({
     }
   }
 
+  const ui = FORMAT_UI[draft.format];
+
+  // Show her the shape she is accepting. A curriculum map as tab-separated
+  // text looks broken even when it is perfectly correct; as a table it looks
+  // like the thing it will become.
+  const grid = draft.format === "sheet" ? parseTsv(draft.content) : [];
+  const outline = draft.format === "slides" ? parseSlideOutline(draft.content) : [];
+
   const placement = draft.lessonTitle
     ? `Lesson: ${draft.lessonTitle}`
     : draft.unitTitle
@@ -87,6 +106,9 @@ export default function DraftCard({
           </div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400 flex gap-2 flex-wrap">
             <span className="uppercase tracking-wide">{draft.materialType}</span>
+            <span className="uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+              {ui.noun}
+            </span>
             {draft.grade && <span>Grade {draft.grade}</span>}
             {draft.quarter && <span>{draft.quarter}</span>}
             {placement && <span className="truncate">{placement}</span>}
@@ -98,9 +120,64 @@ export default function DraftCard({
       </div>
 
       {/* Content */}
-      <pre className="px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto text-zinc-800 dark:text-zinc-200 font-sans">
-        {draft.content}
-      </pre>
+      {draft.format === "sheet" && grid.length > 0 ? (
+        <div className="max-h-72 overflow-auto">
+          <table className="text-[11px] border-collapse w-full">
+            <thead className="sticky top-0 bg-emerald-100/80 dark:bg-emerald-900/50">
+              <tr>
+                {grid[0].map((cell, i) => (
+                  <th
+                    key={i}
+                    className="border border-emerald-200 dark:border-emerald-900 px-2 py-1 text-left font-semibold align-top text-zinc-800 dark:text-zinc-200"
+                  >
+                    {cell}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grid.slice(1).map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td
+                      key={c}
+                      className="border border-emerald-200 dark:border-emerald-900 px-2 py-1 align-top text-zinc-700 dark:text-zinc-300"
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : draft.format === "slides" && outline.length > 0 ? (
+        <ol className="px-3 py-2 max-h-72 overflow-y-auto space-y-2 text-xs">
+          {outline.map((slide, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono pt-0.5 shrink-0">
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  {slide.title}
+                </div>
+                {slide.bullets.length > 0 && (
+                  <ul className="list-disc list-inside text-zinc-600 dark:text-zinc-400">
+                    {slide.bullets.map((b, j) => (
+                      <li key={j}>{b}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <pre className="px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto text-zinc-800 dark:text-zinc-200 font-sans">
+          {draft.content}
+        </pre>
+      )}
 
       {/* Actions */}
       <div className="px-3 py-2 border-t border-emerald-200 dark:border-emerald-900 flex items-center gap-2 flex-wrap">
@@ -134,7 +211,7 @@ export default function DraftCard({
               disabled={streaming || creating}
               className="text-xs px-2.5 py-1 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium disabled:opacity-40 transition-colors"
             >
-              {creating ? "Creating…" : "Accept & Create in Drive"}
+              {creating ? "Creating…" : ui.action}
             </button>
             <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
               Nothing is saved to Drive until you accept.

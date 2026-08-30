@@ -84,6 +84,138 @@ export async function createDoc(
   return res.data;
 }
 
+/**
+ * Create a native Google Sheet from CSV.
+ *
+ * Drive does the parsing: upload `text/csv` media against a target mimeType of
+ * `…google-apps.spreadsheet` and the import converts it into real rows and
+ * columns. No Sheets API call and no extra scope — this is the same
+ * requestBody/media conversion trick `createDoc` uses for text → Doc.
+ */
+export async function createSheet(
+  accessToken: string,
+  name: string,
+  csv: string,
+  parentId?: string
+) {
+  const drive = getDriveClient(accessToken);
+  const res = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: "application/vnd.google-apps.spreadsheet",
+      ...(parentId ? { parents: [parentId] } : {}),
+    },
+    media: {
+      mimeType: "text/csv",
+      body: csv,
+    },
+    fields: "id, name, webViewLink",
+  });
+  return res.data;
+}
+
+/**
+ * Create a native Google Slides deck from a parsed outline.
+ *
+ * Slides has no import-from-text path the way Docs and Sheets do, so this goes
+ * through the Slides API instead: create the presentation, then one
+ * batchUpdate that builds every slide atomically. `presentations.create` and
+ * `presentations.batchUpdate` both accept `drive.file`, which the app already
+ * holds — no new consent screen for the teacher.
+ *
+ * Slides API creates in Drive root, so the file is moved into the app's folder
+ * afterwards. A failed move is not fatal: the deck exists and is linked, it
+ * just sits in the root instead of the grade/quarter folder.
+ */
+export async function createSlides(
+  accessToken: string,
+  name: string,
+  slides: { title: string; bullets: string[] }[],
+  parentId?: string
+) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  const slidesApi = google.slides({ version: "v1", auth });
+
+  const created = await slidesApi.presentations.create({
+    requestBody: { title: name },
+  });
+  const presentationId = created.data.presentationId;
+  if (!presentationId) throw new Error("Slides API returned no presentationId");
+
+  // A new presentation arrives with one blank slide. Ours are appended after
+  // it and it is deleted at the end of the same batch, so the teacher never
+  // sees a stray empty first slide.
+  const blankSlideId = created.data.slides?.[0]?.objectId;
+
+  const requests: object[] = [];
+  slides.forEach((slide, i) => {
+    const slideId = `s${i}`;
+    const titleId = `s${i}_title`;
+    const bodyId = `s${i}_body`;
+    requests.push({
+      createSlide: {
+        objectId: slideId,
+        slideLayoutReference: { predefinedLayout: "TITLE_AND_BODY" },
+        placeholderIdMappings: [
+          { layoutPlaceholder: { type: "TITLE" }, objectId: titleId },
+          { layoutPlaceholder: { type: "BODY", index: 0 }, objectId: bodyId },
+        ],
+      },
+    });
+    if (slide.title) {
+      requests.push({ insertText: { objectId: titleId, text: slide.title } });
+    }
+    if (slide.bullets.length > 0) {
+      requests.push({
+        insertText: { objectId: bodyId, text: slide.bullets.join("\n") },
+      });
+      requests.push({
+        createParagraphBullets: {
+          objectId: bodyId,
+          textRange: { type: "ALL" },
+          bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
+        },
+      });
+    }
+  });
+
+  if (blankSlideId) {
+    requests.push({ deleteObject: { objectId: blankSlideId } });
+  }
+
+  if (requests.length > 0) {
+    await slidesApi.presentations.batchUpdate({
+      presentationId,
+      requestBody: { requests },
+    });
+  }
+
+  const drive = getDriveClient(accessToken);
+  if (parentId) {
+    try {
+      const current = await drive.files.get({
+        fileId: presentationId,
+        fields: "parents",
+      });
+      await drive.files.update({
+        fileId: presentationId,
+        addParents: parentId,
+        removeParents: (current.data.parents ?? []).join(","),
+        fields: "id",
+      });
+    } catch (err) {
+      console.error("[drive] could not move presentation into folder:", err);
+    }
+  }
+
+  const final = await drive.files.get({
+    fileId: presentationId,
+    fields: "id, name, webViewLink",
+  });
+  return final.data;
+}
+
 export async function uploadFile(
   accessToken: string,
   name: string,

@@ -22,10 +22,13 @@
 // in-place edits of an existing file.
 
 import { MATERIAL_TYPES, type MaterialType } from "@/lib/upload-utils";
+import { normalizeDraftFormat, type DraftFormat } from "@/lib/draft-formats";
 
 export type ParsedDraft = {
   title: string;
   materialType: MaterialType;
+  /** Which kind of Drive file Accept & Create makes. Defaults to "doc". */
+  format: DraftFormat;
   grade: number | null;
   quarter: string | null;
   unitTitle: string | null;
@@ -83,6 +86,7 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
   return {
     title: title.slice(0, 200),
     materialType: normalizeMaterialType(header.TYPE),
+    format: normalizeDraftFormat(header.FORMAT),
     grade: [6, 7, 8].includes(gradeNum) ? gradeNum : null,
     quarter: normalizeQuarter(header.QUARTER),
     unitTitle: header.UNIT || null,
@@ -98,19 +102,31 @@ export const DRAFT_SYSTEM_INSTRUCTIONS = `
 When the teacher asks you to produce a concrete artifact (a quiz, rubric, checklist, activity sheet, handout, letter, or similar deliverable), present the finished deliverable inside a fenced code block with language "draft" so the app can offer her copy/paste and one-click creation in her Google Drive. Exact format:
 
 \`\`\`draft
-TITLE: <short title — used as the Google Doc filename>
-TYPE: <one of: reading | activity | rubric | lesson | assessment | resource | other>
+TITLE: <short title — used as the Drive filename>
+TYPE: <one of: reading | activity | rubric | lesson | assessment | resource | curriculum | other>
+FORMAT: <doc | sheet | slides — see below. Omit for doc.>
 GRADE: <6 | 7 | 8 — the grade this is for, from the curriculum data>
 QUARTER: <Summer | Q1 | Q2 | Q3 | Q4 — where this belongs in the year>
 UNIT: <exact unit title from the curriculum data, if this belongs to a unit>
 LESSON: <exact lesson title from the curriculum data — ONLY if the teacher asked for it to be placed into a specific lesson>
 ---
-<the deliverable itself, as plain ready-to-use text>
+<the deliverable itself, in the body format for FORMAT>
 \`\`\`
+
+Choosing FORMAT — pick the one that matches the artifact, not the one that is easiest to write:
+- **doc** (default) — prose and printable handouts: readings, letters, rubrics, quizzes, activity sheets, lesson plans.
+- **sheet** — anything naturally a grid: curriculum maps, pacing guides, standards-coverage trackers, gradebook templates, data tables. If you catch yourself writing a table in a doc, it should have been a sheet.
+- **slides** — anything meant to be projected to a class: lesson slides, warm-ups, vocabulary decks, discussion prompts.
+
+Body format by FORMAT:
+- **doc** — plain printable text. No markdown tables.
+- **sheet** — tab-separated rows, one row per line, first line is the header row. One tab between cells and no tabs inside a cell. Do not add markdown pipes, separator lines, or blank spacer rows; the app builds the real spreadsheet from these rows.
+- **slides** — one \`# Slide title\` line per slide, followed by \`- bullet\` lines for that slide's body. Keep bullets short enough to project (roughly 12 words); put anything longer in the teacher's notes outside the block. No text before the first \`#\`.
 
 Rules:
 - Keep all discussion, options, and questions OUTSIDE the block. The block holds only the final deliverable.
-- The deliverable must be plain printable text: no markdown tables, no interactive elements. Concise by default; expand only when asked.
+- Concise by default; expand only when asked.
 - Ground everything in the teacher's actual curriculum and materials. Never invent page numbers, quotes, or chapter details you are not certain of — say what you'd need instead.
 - When the teacher asks for changes, emit a complete fresh draft block (it becomes a new version; existing files are never edited in place).
-- Nothing is written to Drive unless the teacher explicitly clicks Accept & Create — a draft block is a proposal, not an action.`;
+- Nothing is written to Drive unless the teacher explicitly clicks Accept & Create — a draft block is a proposal, not an action.
+- You can create Google Docs, Sheets, and Slides directly through this block. Never tell the teacher to paste something into a spreadsheet by hand, and never say you cannot produce a file — choose the right FORMAT instead.`;
