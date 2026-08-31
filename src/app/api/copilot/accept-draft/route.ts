@@ -6,7 +6,7 @@
 // the copilot only ever PROPOSES drafts; nothing is written to the teacher's
 // Drive until she clicks Accept & Create, which calls this route. It then:
 //   1. creates a Google Doc from the draft text, placed in the app's own
-//      grade/quarter/category folder (where lesson materials link from â€” NOT
+//      grade/quarter/category folder (where lesson materials link from — NOT
 //      the teacher's hand-sorted folders),
 //   2. inserts a materials row (source: "ai") so the doc appears in the
 //      course's material pool,
@@ -84,6 +84,38 @@ const MAX_CONTENT_CHARS = 100_000;
 
 const ROUTE = "/api/copilot/accept-draft";
 
+/**
+ * The structured, non-identifying part of a Google API error.
+ *
+ * error_events.detail is documented as counts, sizes and limits only — never
+ * message text, filenames or file contents. Google's error sentences routinely
+ * embed document titles, folder paths, file ids and email addresses, so the
+ * raw message must not go in there. The HTTP status and Google's own reason
+ * code carry the diagnostic value without carrying her data: the Slides
+ * object-ID bug reads as 400/badRequest, a revoked token as 401, a folder she
+ * cannot write to as 403/forbidden.
+ */
+function googleErrorFacts(err: unknown): { googleStatus: number | null; googleReason: string | null } {
+  const e = err as {
+    code?: unknown;
+    status?: unknown;
+    errors?: { reason?: unknown }[];
+    response?: { status?: unknown; data?: { error?: { errors?: { reason?: unknown }[] } } };
+  };
+  const rawStatus = e?.response?.status ?? e?.status ?? e?.code;
+  const googleStatus = typeof rawStatus === "number" ? rawStatus : Number(rawStatus) || null;
+  const reason =
+    e?.errors?.[0]?.reason ?? e?.response?.data?.error?.errors?.[0]?.reason ?? null;
+  return {
+    googleStatus,
+    // Reason codes are a closed vocabulary from Google (badRequest,
+    // forbidden, notFound…). Bounded and sanitised so an unexpected shape
+    // cannot smuggle prose in.
+    googleReason:
+      typeof reason === "string" ? reason.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 60) : null,
+  };
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   const ownerEmail = session?.user?.email;
@@ -119,7 +151,7 @@ export async function POST(req: Request) {
   const format = normalizeDraftFormat(body.format);
 
   // Reject a body that cannot become the file it claims to be, before any
-  // Drive write â€” an empty deck or a one-column "spreadsheet" is a worse
+  // Drive write — an empty deck or a one-column "spreadsheet" is a worse
   // outcome for her than being told the draft was malformed.
   if (format === "sheet" && !content.includes("\t")) {
     return Response.json(
@@ -137,9 +169,9 @@ export async function POST(req: Request) {
   let grade = [6, 7, 8].includes(body.grade as number) ? (body.grade as number) : null;
   let quarter = normalizeQuarter(body.quarter);
 
-  // â”€â”€ Resolve optional placement (lesson first, else unit) â”€â”€â”€
+  // ── Resolve optional placement (lesson first, else unit) ───
   // Titles come from the model, which saw the real titles in its curriculum
-  // context â€” but resolution is best-effort: no match (or an out-of-owner
+  // context — but resolution is best-effort: no match (or an out-of-owner
   // match) simply means "no attachment", never an error. The doc still lands
   // in the pool, where drag-to-lesson already works well for this teacher.
   let attachTo: { type: "lesson" | "unit"; id: string; title: string; courseId: string } | null = null;
@@ -199,9 +231,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // â”€â”€ Resolve destination Drive folder â”€â”€â”€
+  // ── Resolve destination Drive folder ───
   // Preferred: the grade/quarter category folder (that's what the material
-  // pool query is keyed on â€” see editor/pool/route.ts). Fallback: the app
+  // pool query is keyed on — see editor/pool/route.ts). Fallback: the app
   // root folder; last resort: no parent (Drive root). The doc is created
   // either way; only pool visibility degrades on the fallbacks.
   const category = TYPE_TO_CATEGORY[materialType];
@@ -231,7 +263,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // â”€â”€ Create the Drive file (the one and only Drive write) â”€â”€â”€
+  // ── Create the Drive file (the one and only Drive write) ───
   let driveFile;
   try {
     driveFile =
@@ -243,14 +275,14 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error(`[accept-draft] Drive ${format} creation failed:`, err);
     // This route was returning bare 502s, so the Slides object-ID bug produced
-    // nothing in error_events and had to be dug out of Vercel logs by hand â€”
+    // nothing in error_events and had to be dug out of Vercel logs by hand —
     // exactly the workflow that table exists to replace. `googleReason` carries
     // Google's own sentence, which is what actually names the fault.
     return refuse({
       route: ROUTE,
       status: 502,
       reason: "drive_create_failed",
-      message: `Couldn't create the ${FORMAT_LABEL[format]}. The draft is still here â€” try again, or copy it out.`,
+      message: `Couldn't create the ${FORMAT_LABEL[format]}. The draft is still here — try again, or copy it out.`,
       ownerEmail,
       conversationId: body.conversationId ?? null,
       detail: {
@@ -258,7 +290,10 @@ export async function POST(req: Request) {
         titleChars: title.length,
         contentChars: content.length,
         slideCount: format === "slides" ? slideOutline.length : 0,
-        googleReason: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+        // Structured facts only — never Google's sentence, which embeds her
+        // document titles and file ids. The full message still reaches the
+        // Vercel console via the console.error above.
+        ...googleErrorFacts(err),
       },
       asJson: true,
     });
@@ -276,7 +311,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // â”€â”€ Insert the material row (source: "ai" â€” provenance matters) â”€â”€â”€
+  // ── Insert the material row (source: "ai" — provenance matters) ───
   const [material] = await db
     .insert(materials)
     .values({
@@ -294,7 +329,7 @@ export async function POST(req: Request) {
     })
     .returning({ id: materials.id });
 
-  // â”€â”€ Optional attachment â”€â”€â”€
+  // ── Optional attachment ───
   let attached: { type: string; id: string; title: string } | null = null;
   if (attachTo) {
     try {
@@ -323,13 +358,13 @@ export async function POST(req: Request) {
         console.error("[accept-draft] logEdit failed:", err);
       }
     } catch (err) {
-      // Attachment failure must not undo the created doc/material â€” surface
+      // Attachment failure must not undo the created doc/material — surface
       // partial success instead.
       console.error("[accept-draft] attachment failed:", err);
     }
   }
 
-  // â”€â”€ Analytics: mark the conversation as having produced a used artifact â”€â”€â”€
+  // ── Analytics: mark the conversation as having produced a used artifact ───
   if (body.conversationId) {
     try {
       await db

@@ -43,6 +43,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const MODEL = "claude-sonnet-4-6"; // MODELS.structured
 const COVERAGE = ["introduces", "teaches", "reinforces", "assesses"] as const;
+// Guarded to parity with COVERAGE. The column has no CHECK constraint, so a
+// default fallback alone would let arbitrary model-supplied text through into
+// a field the editor renders.
+const EMPHASIS = ["primary", "secondary", "supporting"] as const;
 
 type Proposal = {
   unitStandards: { id: string; emphasis: string; why: string }[];
@@ -183,8 +187,11 @@ Return ONLY JSON:
     // Apply to every copy of this unit, so the two school years stay identical.
     for (const row of rows) {
       for (const s of proposedUnit) {
+        const emphasis = EMPHASIS.includes(s.emphasis as (typeof EMPHASIS)[number])
+          ? s.emphasis
+          : "primary";
         await sql`insert into unit_standards (unit_id, standard_id, emphasis)
-                  values (${row.id}, ${s.id}, ${s.emphasis || "primary"})
+                  values (${row.id}, ${s.id}, ${emphasis})
                   on conflict do nothing`;
         addedUnit++;
       }
