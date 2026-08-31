@@ -29,7 +29,10 @@ export type ErrorReason =
   | "attachments_too_large"
   | "unauthorized"
   | "forbidden"
-  | "stream_failed";
+  | "stream_failed"
+  // accept-draft: Google rejected the write, or returned nothing usable.
+  | "drive_create_failed"
+  | "drive_no_file_id";
 
 export interface ErrorEventInput {
   route: string;

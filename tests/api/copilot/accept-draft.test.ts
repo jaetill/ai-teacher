@@ -30,6 +30,7 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/db/schema", () => ({
   copilotConversations: {},
+  errorEvents: {},
   courses: {},
   driveFolders: {},
   lessons: {},
@@ -309,7 +310,10 @@ describe("POST /api/copilot/accept-draft", () => {
     mockCreateDoc.mockRejectedValue(new Error("drive down"));
     const res = await POST(req(VALID_BODY));
     expect(res.status).toBe(502);
-    expect(mockDbInsert).not.toHaveBeenCalled();
+    // Exactly one insert now — refuse() recording the failure in error_events.
+    // What must never happen is a materials row for a file that was never
+    // created, which is what this test is really about.
+    expect(mockDbInsert).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -6,7 +6,7 @@
 // the copilot only ever PROPOSES drafts; nothing is written to the teacher's
 // Drive until she clicks Accept & Create, which calls this route. It then:
 //   1. creates a Google Doc from the draft text, placed in the app's own
-//      grade/quarter/category folder (where lesson materials link from — NOT
+//      grade/quarter/category folder (where lesson materials link from â€” NOT
 //      the teacher's hand-sorted folders),
 //   2. inserts a materials row (source: "ai") so the doc appears in the
 //      course's material pool,
@@ -39,6 +39,7 @@ import {
   type DraftFormat,
 } from "@/lib/draft-formats";
 import { readJson, UUID_RE } from "@/lib/api-utils";
+import { refuse } from "@/lib/error-log";
 import { logEdit } from "../../curriculum/editor/log-edit";
 
 // Which category folder an accepted draft lands in, by material type.
@@ -81,6 +82,8 @@ type AcceptDraftBody = {
 const MAX_TITLE_CHARS = 200;
 const MAX_CONTENT_CHARS = 100_000;
 
+const ROUTE = "/api/copilot/accept-draft";
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   const ownerEmail = session?.user?.email;
@@ -116,7 +119,7 @@ export async function POST(req: Request) {
   const format = normalizeDraftFormat(body.format);
 
   // Reject a body that cannot become the file it claims to be, before any
-  // Drive write — an empty deck or a one-column "spreadsheet" is a worse
+  // Drive write â€” an empty deck or a one-column "spreadsheet" is a worse
   // outcome for her than being told the draft was malformed.
   if (format === "sheet" && !content.includes("\t")) {
     return Response.json(
@@ -134,9 +137,9 @@ export async function POST(req: Request) {
   let grade = [6, 7, 8].includes(body.grade as number) ? (body.grade as number) : null;
   let quarter = normalizeQuarter(body.quarter);
 
-  // ── Resolve optional placement (lesson first, else unit) ───
+  // â”€â”€ Resolve optional placement (lesson first, else unit) â”€â”€â”€
   // Titles come from the model, which saw the real titles in its curriculum
-  // context — but resolution is best-effort: no match (or an out-of-owner
+  // context â€” but resolution is best-effort: no match (or an out-of-owner
   // match) simply means "no attachment", never an error. The doc still lands
   // in the pool, where drag-to-lesson already works well for this teacher.
   let attachTo: { type: "lesson" | "unit"; id: string; title: string; courseId: string } | null = null;
@@ -196,9 +199,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Resolve destination Drive folder ───
+  // â”€â”€ Resolve destination Drive folder â”€â”€â”€
   // Preferred: the grade/quarter category folder (that's what the material
-  // pool query is keyed on — see editor/pool/route.ts). Fallback: the app
+  // pool query is keyed on â€” see editor/pool/route.ts). Fallback: the app
   // root folder; last resort: no parent (Drive root). The doc is created
   // either way; only pool visibility degrades on the fallbacks.
   const category = TYPE_TO_CATEGORY[materialType];
@@ -228,7 +231,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Create the Drive file (the one and only Drive write) ───
+  // â”€â”€ Create the Drive file (the one and only Drive write) â”€â”€â”€
   let driveFile;
   try {
     driveFile =
@@ -239,16 +242,41 @@ export async function POST(req: Request) {
           : await createDoc(accessToken, title, content, folderId ?? undefined);
   } catch (err) {
     console.error(`[accept-draft] Drive ${format} creation failed:`, err);
-    return Response.json(
-      { error: `Failed to create ${FORMAT_LABEL[format]}` },
-      { status: 502 }
-    );
+    // This route was returning bare 502s, so the Slides object-ID bug produced
+    // nothing in error_events and had to be dug out of Vercel logs by hand â€”
+    // exactly the workflow that table exists to replace. `googleReason` carries
+    // Google's own sentence, which is what actually names the fault.
+    return refuse({
+      route: ROUTE,
+      status: 502,
+      reason: "drive_create_failed",
+      message: `Couldn't create the ${FORMAT_LABEL[format]}. The draft is still here â€” try again, or copy it out.`,
+      ownerEmail,
+      conversationId: body.conversationId ?? null,
+      detail: {
+        format,
+        titleChars: title.length,
+        contentChars: content.length,
+        slideCount: format === "slides" ? slideOutline.length : 0,
+        googleReason: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+      },
+      asJson: true,
+    });
   }
   if (!driveFile.id) {
-    return Response.json({ error: "Drive returned no file id" }, { status: 502 });
+    return refuse({
+      route: ROUTE,
+      status: 502,
+      reason: "drive_no_file_id",
+      message: "Drive didn't return a file. Try again in a moment.",
+      ownerEmail,
+      conversationId: body.conversationId ?? null,
+      detail: { format },
+      asJson: true,
+    });
   }
 
-  // ── Insert the material row (source: "ai" — provenance matters) ───
+  // â”€â”€ Insert the material row (source: "ai" â€” provenance matters) â”€â”€â”€
   const [material] = await db
     .insert(materials)
     .values({
@@ -266,7 +294,7 @@ export async function POST(req: Request) {
     })
     .returning({ id: materials.id });
 
-  // ── Optional attachment ───
+  // â”€â”€ Optional attachment â”€â”€â”€
   let attached: { type: string; id: string; title: string } | null = null;
   if (attachTo) {
     try {
@@ -295,13 +323,13 @@ export async function POST(req: Request) {
         console.error("[accept-draft] logEdit failed:", err);
       }
     } catch (err) {
-      // Attachment failure must not undo the created doc/material — surface
+      // Attachment failure must not undo the created doc/material â€” surface
       // partial success instead.
       console.error("[accept-draft] attachment failed:", err);
     }
   }
 
-  // ── Analytics: mark the conversation as having produced a used artifact ───
+  // â”€â”€ Analytics: mark the conversation as having produced a used artifact â”€â”€â”€
   if (body.conversationId) {
     try {
       await db
