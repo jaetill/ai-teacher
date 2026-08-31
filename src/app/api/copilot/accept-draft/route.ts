@@ -39,6 +39,7 @@ import {
   type DraftFormat,
 } from "@/lib/draft-formats";
 import { readJson, UUID_RE } from "@/lib/api-utils";
+import { refuse } from "@/lib/error-log";
 import { logEdit } from "../../curriculum/editor/log-edit";
 
 // Which category folder an accepted draft lands in, by material type.
@@ -80,6 +81,40 @@ type AcceptDraftBody = {
 
 const MAX_TITLE_CHARS = 200;
 const MAX_CONTENT_CHARS = 100_000;
+
+const ROUTE = "/api/copilot/accept-draft";
+
+/**
+ * The structured, non-identifying part of a Google API error.
+ *
+ * error_events.detail is documented as counts, sizes and limits only — never
+ * message text, filenames or file contents. Google's error sentences routinely
+ * embed document titles, folder paths, file ids and email addresses, so the
+ * raw message must not go in there. The HTTP status and Google's own reason
+ * code carry the diagnostic value without carrying her data: the Slides
+ * object-ID bug reads as 400/badRequest, a revoked token as 401, a folder she
+ * cannot write to as 403/forbidden.
+ */
+function googleErrorFacts(err: unknown): { googleStatus: number | null; googleReason: string | null } {
+  const e = err as {
+    code?: unknown;
+    status?: unknown;
+    errors?: { reason?: unknown }[];
+    response?: { status?: unknown; data?: { error?: { errors?: { reason?: unknown }[] } } };
+  };
+  const rawStatus = e?.response?.status ?? e?.status ?? e?.code;
+  const googleStatus = typeof rawStatus === "number" ? rawStatus : Number(rawStatus) || null;
+  const reason =
+    e?.errors?.[0]?.reason ?? e?.response?.data?.error?.errors?.[0]?.reason ?? null;
+  return {
+    googleStatus,
+    // Reason codes are a closed vocabulary from Google (badRequest,
+    // forbidden, notFound…). Bounded and sanitised so an unexpected shape
+    // cannot smuggle prose in.
+    googleReason:
+      typeof reason === "string" ? reason.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 60) : null,
+  };
+}
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -239,13 +274,41 @@ export async function POST(req: Request) {
           : await createDoc(accessToken, title, content, folderId ?? undefined);
   } catch (err) {
     console.error(`[accept-draft] Drive ${format} creation failed:`, err);
-    return Response.json(
-      { error: `Failed to create ${FORMAT_LABEL[format]}` },
-      { status: 502 }
-    );
+    // This route was returning bare 502s, so the Slides object-ID bug produced
+    // nothing in error_events and had to be dug out of Vercel logs by hand —
+    // exactly the workflow that table exists to replace. `googleReason` carries
+    // Google's own sentence, which is what actually names the fault.
+    return refuse({
+      route: ROUTE,
+      status: 502,
+      reason: "drive_create_failed",
+      message: `Couldn't create the ${FORMAT_LABEL[format]}. The draft is still here — try again, or copy it out.`,
+      ownerEmail,
+      conversationId: body.conversationId ?? null,
+      detail: {
+        format,
+        titleChars: title.length,
+        contentChars: content.length,
+        slideCount: format === "slides" ? slideOutline.length : 0,
+        // Structured facts only — never Google's sentence, which embeds her
+        // document titles and file ids. The full message still reaches the
+        // Vercel console via the console.error above.
+        ...googleErrorFacts(err),
+      },
+      asJson: true,
+    });
   }
   if (!driveFile.id) {
-    return Response.json({ error: "Drive returned no file id" }, { status: 502 });
+    return refuse({
+      route: ROUTE,
+      status: 502,
+      reason: "drive_no_file_id",
+      message: "Drive didn't return a file. Try again in a moment.",
+      ownerEmail,
+      conversationId: body.conversationId ?? null,
+      detail: { format },
+      asJson: true,
+    });
   }
 
   // ── Insert the material row (source: "ai" — provenance matters) ───

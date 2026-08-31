@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import type { Readable } from "stream";
+import { buildSlidesRequests } from "@/lib/draft-formats";
 
 export function getDriveClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -148,47 +149,28 @@ export async function createSlides(
   // sees a stray empty first slide.
   const blankSlideId = created.data.slides?.[0]?.objectId;
 
-  const requests: object[] = [];
-  slides.forEach((slide, i) => {
-    const slideId = `s${i}`;
-    const titleId = `s${i}_title`;
-    const bodyId = `s${i}_body`;
-    requests.push({
-      createSlide: {
-        objectId: slideId,
-        slideLayoutReference: { predefinedLayout: "TITLE_AND_BODY" },
-        placeholderIdMappings: [
-          { layoutPlaceholder: { type: "TITLE" }, objectId: titleId },
-          { layoutPlaceholder: { type: "BODY", index: 0 }, objectId: bodyId },
-        ],
-      },
-    });
-    if (slide.title) {
-      requests.push({ insertText: { objectId: titleId, text: slide.title } });
-    }
-    if (slide.bullets.length > 0) {
-      requests.push({
-        insertText: { objectId: bodyId, text: slide.bullets.join("\n") },
-      });
-      requests.push({
-        createParagraphBullets: {
-          objectId: bodyId,
-          textRange: { type: "ALL" },
-          bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
-        },
-      });
-    }
-  });
-
-  if (blankSlideId) {
-    requests.push({ deleteObject: { objectId: blankSlideId } });
-  }
+  // Built by a pure function so the object-ID rules are testable without a
+  // Google client — see buildSlidesRequests.
+  const requests = buildSlidesRequests(slides, blankSlideId);
 
   if (requests.length > 0) {
-    await slidesApi.presentations.batchUpdate({
-      presentationId,
-      requestBody: { requests },
-    });
+    try {
+      await slidesApi.presentations.batchUpdate({
+        presentationId,
+        requestBody: { requests },
+      });
+    } catch (err) {
+      // The presentation already exists at this point. Leaving it behind on a
+      // failed batch litters her Drive with empty decks she has to find and
+      // delete — two are sitting there from the object-ID bug. Bin it, then
+      // rethrow so accept-draft still reports the real failure.
+      try {
+        await getDriveClient(accessToken).files.delete({ fileId: presentationId });
+      } catch (cleanupErr) {
+        console.error("[drive] could not remove the failed presentation:", cleanupErr);
+      }
+      throw err;
+    }
   }
 
   const drive = getDriveClient(accessToken);

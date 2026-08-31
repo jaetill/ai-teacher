@@ -100,3 +100,67 @@ export function parseSlideOutline(content: string): SlideOutline[] {
 
   return slides.filter((s) => s.title.length > 0 || s.bullets.length > 0);
 }
+
+/**
+ * Google requires every object ID in a Slides batchUpdate to be 5-50 characters
+ * of [a-zA-Z0-9_-]. The first version used `s${i}` — two characters — so every
+ * single Slides draft failed on requests[0] with "The object ID (s0) length
+ * should not be less than 5" and the whole batch was rejected. It was never a
+ * partial failure; slides never worked at all.
+ *
+ * `slide_0` is 7, and the derived title/body ids are longer still, so the floor
+ * holds for any slide count this feature can produce.
+ */
+export const SLIDE_ID_MIN = 5;
+export const slideObjectIds = (i: number) => ({
+  slideId: `slide_${i}`,
+  titleId: `slide_${i}_title`,
+  bodyId: `slide_${i}_body`,
+});
+
+/**
+ * The Slides batchUpdate payload for an outline. Pure, so the ID rules and the
+ * request shape can be asserted without a Google client — which is the only
+ * reason the length bug is now catchable in CI rather than in her Drive.
+ */
+export function buildSlidesRequests(
+  slides: SlideOutline[],
+  blankSlideId?: string | null
+): object[] {
+  const requests: object[] = [];
+
+  slides.forEach((slide, i) => {
+    const { slideId, titleId, bodyId } = slideObjectIds(i);
+    requests.push({
+      createSlide: {
+        objectId: slideId,
+        slideLayoutReference: { predefinedLayout: "TITLE_AND_BODY" },
+        placeholderIdMappings: [
+          { layoutPlaceholder: { type: "TITLE" }, objectId: titleId },
+          { layoutPlaceholder: { type: "BODY", index: 0 }, objectId: bodyId },
+        ],
+      },
+    });
+    if (slide.title) {
+      requests.push({ insertText: { objectId: titleId, text: slide.title } });
+    }
+    if (slide.bullets.length > 0) {
+      requests.push({
+        insertText: { objectId: bodyId, text: slide.bullets.join("\n") },
+      });
+      requests.push({
+        createParagraphBullets: {
+          objectId: bodyId,
+          textRange: { type: "ALL" },
+          bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
+        },
+      });
+    }
+  });
+
+  // The blank slide a new presentation arrives with, removed in the same batch
+  // so she never sees a stray empty first slide.
+  if (blankSlideId) requests.push({ deleteObject: { objectId: blankSlideId } });
+
+  return requests;
+}

@@ -16,12 +16,12 @@ function connect() {
   return drizzle(neon(process.env.DATABASE_URL!));
 }
 
-// â”€â”€ VA SOL 2024 Grade 6 English Standards â”€â”€â”€
+// ── VA SOL 2024 Grade 6 English Standards ───
 // Source: VDOE documents
 // Naming: {grade}.{strand}.{subcategory}.{indicator}
 
 export const grade6Standards = [
-  // â”€â”€ Developing Skilled Readers and Building Reading Stamina (DSR) â”€â”€â”€
+  // ── Developing Skilled Readers and Building Reading Stamina (DSR) ───
   {
     id: "6.DSR.A",
     grade: 6,
@@ -73,7 +73,7 @@ export const grade6Standards = [
       "Use reading strategies as needed to aid and monitor comprehension when encountering challenging sections of text. These sense-making strategies attend to text structure, common organizational structures, summarizing, asking questions of the text, and others.",
   },
 
-  // â”€â”€ Reading and Vocabulary (RV) â”€â”€â”€
+  // ── Reading and Vocabulary (RV) ───
   {
     id: "6.RV.1.A",
     grade: 6,
@@ -155,7 +155,7 @@ export const grade6Standards = [
       "Use newly learned words and phrases in multiple contexts, including in students' discussions and speaking and writing activities.",
   },
 
-  // â”€â”€ Reading Literary Text (RL) â”€â”€â”€
+  // ── Reading Literary Text (RL) ───
   {
     id: "6.RL.1.A",
     grade: 6,
@@ -257,7 +257,7 @@ export const grade6Standards = [
       "Compare and contrast details in two or more paired literary fiction and nonfiction texts on the same topic or with similar themes, including how chapters, scenes, or stanzas work together to provide the overall structure of each text.",
   },
 
-  // â”€â”€ Reading Informational Text (RI) â”€â”€â”€
+  // ── Reading Informational Text (RI) ───
   {
     id: "6.RI.1.A",
     grade: 6,
@@ -339,7 +339,7 @@ export const grade6Standards = [
       "Compare and contrast one author's presentation of ideas or events with another's, identifying where the texts agree or disagree.",
   },
 
-  // â”€â”€ Writing (W) â”€â”€â”€
+  // ── Writing (W) ───
   {
     id: "6.W.1.A",
     grade: 6,
@@ -411,7 +411,7 @@ export const grade6Standards = [
       "Self-and peer-edit for capitalization, spelling, punctuation, sentence structure, paragraphing, and Standard English.",
   },
 
-  // â”€â”€ Language Usage (LU) â”€â”€â”€
+  // ── Language Usage (LU) ───
   {
     id: "6.LU.1.A",
     grade: 6,
@@ -503,7 +503,7 @@ export const grade6Standards = [
       "Consult reference materials to check and correct spelling.",
   },
 
-  // â”€â”€ Communication and Multimodal Literacies (C) â”€â”€â”€
+  // ── Communication and Multimodal Literacies (C) ───
   {
     id: "6.C.1.A",
     grade: 6,
@@ -575,7 +575,7 @@ export const grade6Standards = [
       "Explain the characteristics and analyze the effectiveness of a variety of media messages by considering the results and/or impact on the intended audience.",
   },
 
-  // â”€â”€ Research (R) â”€â”€â”€
+  // ── Research (R) ───
   {
     id: "6.R.1.A",
     grade: 6,
@@ -648,10 +648,10 @@ export const grade6Standards = [
   },
 ];
 
-// â”€â”€ VA SOL 2024 Grade 7 English Standards â”€â”€â”€
+// ── VA SOL 2024 Grade 7 English Standards ───
 
 export const grade7Standards = [
-  // â”€â”€ Developing Skilled Readers and Building Reading Stamina (DSR) â”€â”€â”€
+  // ── Developing Skilled Readers and Building Reading Stamina (DSR) ───
   {
     id: "7.DSR.A",
     grade: 7,
@@ -703,7 +703,7 @@ export const grade7Standards = [
       "Use reading strategies as needed to aid and monitor comprehension when encountering challenging sections of text. These sense-making strategies attend to text structure, common organizational structures, summarizing, asking questions of the text, and others.",
   },
 
-  // â”€â”€ Reading and Vocabulary (RV) â”€â”€â”€
+  // ── Reading and Vocabulary (RV) ───
   {
     id: "7.RV.1.A",
     grade: 7,
@@ -785,7 +785,7 @@ export const grade7Standards = [
       "Use newly learned words and phrases in multiple contexts, including in students' discussions and speaking and writing activities.",
   },
 
-  // â”€â”€ Reading Literary Text (RL) â”€â”€â”€
+  // ── Reading Literary Text (RL) ───
   {
     id: "7.RL.1.A",
     grade: 7,
@@ -867,7 +867,7 @@ export const grade7Standards = [
       "Compare and contrast texts in different forms or genres (e.g., stories and poems; historical novels and fantasy stories) in terms of their approaches to similar themes and topics.",
   },
 
-  // â”€â”€ Reading Informational Text (RI) â”€â”€â”€
+  // ── Reading Informational Text (RI) ───
   {
     id: "7.RI.1.A",
     grade: 7,
@@ -949,7 +949,7 @@ export const grade7Standards = [
       "Compare and contrast how two or more authors writing about the same topic shape their presentations or viewpoints of key information by emphasizing different facts, opinions, and reasoning.",
   },
 
-  // â”€â”€ Writing (W) â”€â”€â”€
+  // ── Writing (W) ───
   {
     id: "7.W.1.A",
     grade: 7,
@@ -1021,7 +1021,7 @@ export const grade7Standards = [
       "Self-and peer-edit writing for capitalization, spelling, punctuation, sentence structure, paragraphing, and Standard English.",
   },
 
-  // â”€â”€ Language Usage (LU) â”€â”€â”€
+  // ── Language Usage (LU) ───
   {
     id: "7.LU.1.A",
     grade: 7,
@@ -1113,7 +1113,7 @@ export const grade7Standards = [
       "Consult reference materials to check and correct spelling.",
   },
 
-  // â”€â”€ Communication and Multimodal Literacies (C) â”€â”€â”€
+  // ── Communication and Multimodal Literacies (C) ───
   {
     id: "7.C.1.A",
     grade: 7,
@@ -1195,7 +1195,7 @@ export const grade7Standards = [
       "Compare and contrast the effectiveness of techniques in auditory, visual, and written media messages (e.g., authorship, format, content, purpose) on the intended audience.",
   },
 
-  // â”€â”€ Research (R) â”€â”€â”€
+  // ── Research (R) ───
   {
     id: "7.R.1.A",
     grade: 7,
