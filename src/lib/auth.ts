@@ -43,6 +43,36 @@ async function refreshGoogleToken(token: JWT): Promise<JWT> {
   }
 }
 
+/**
+ * Decide whether an email may sign in. Exported so the fail-closed rule is
+ * unit-testable without standing up NextAuth.
+ *
+ * @param env  `VERCEL_ENV` when present ("production" | "preview" |
+ *             "development"), else `NODE_ENV`. Only the literal "production"
+ *             fails closed.
+ */
+export function isSignInAllowed(
+  email: string | null | undefined,
+  allowedEmails: string | undefined,
+  env: string | undefined,
+): boolean {
+  const list = (allowedEmails ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (list.length === 0) {
+    if (env === "production") {
+      console.error(
+        "[auth] ALLOWED_EMAILS is not set in production — refusing all sign-ins. " +
+          "Set it in Vercel → Settings → Environment Variables (Production).",
+      );
+      return false;
+    }
+    return true;
+  }
+  return !!email && list.includes(email.toLowerCase());
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -58,18 +88,14 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    // Restrict sign-in to an allowlist when ALLOWED_EMAILS is set (comma-
-    // separated, case-insensitive). When unset, any Google account can sign in
-    // — acceptable for local dev, but set it in Vercel: this app is public and
-    // every signed-in user can stream paid Anthropic completions.
+    // Restrict sign-in to an allowlist (ALLOWED_EMAILS, comma-separated,
+    // case-insensitive). This app is public and every signed-in user can
+    // stream paid Anthropic completions, so an unset allowlist FAILS CLOSED in
+    // production — nobody can sign in until it is configured. Outside
+    // production (local dev, preview) an unset list still means "anyone", so a
+    // fresh clone works without ceremony.
     async signIn({ user }) {
-      const allow = process.env.ALLOWED_EMAILS;
-      if (!allow) return true;
-      const list = allow
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-      return !!user.email && list.includes(user.email.toLowerCase());
+      return isSignInAllowed(user.email, process.env.ALLOWED_EMAILS, process.env.VERCEL_ENV ?? process.env.NODE_ENV);
     },
     async jwt({ token, account }) {
       if (account) {
