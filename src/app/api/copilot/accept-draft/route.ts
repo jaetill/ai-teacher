@@ -29,7 +29,8 @@ import {
   units,
 } from "@/db/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { createDoc, createSheet, createSlides } from "@/lib/drive";
+import { createDoc, createFromSpec, createSheet, createSlides } from "@/lib/drive";
+import { parseSpec, type DraftSpec } from "@/lib/draft-spec";
 import { buildFolderKey, type MaterialType } from "@/lib/upload-utils";
 import { normalizeMaterialType, normalizeQuarter } from "@/lib/draft-protocol";
 import {
@@ -77,6 +78,8 @@ type AcceptDraftBody = {
   unitTitle?: string;
   lessonTitle?: string;
   conversationId?: string;
+  /** Present when the draft came from a propose_* tool call. */
+  spec?: unknown;
 };
 
 const MAX_TITLE_CHARS = 200;
@@ -148,19 +151,32 @@ export async function POST(req: Request) {
   }
 
   const materialType = normalizeMaterialType(body.materialType);
-  const format = normalizeDraftFormat(body.format);
+
+  // A spec is the styled path. It is re-parsed here rather than trusted from
+  // the client: it arrives through the browser, so the same rule applies as
+  // anywhere else — validate at the boundary, never at the source.
+  const spec: DraftSpec | null = body.spec
+    ? parseSpec((body.spec as { kind?: unknown }).kind, body.spec)
+    : null;
+
+  // The spec's own kind wins, so the file's mime type can never disagree with
+  // what was actually built.
+  const format = spec ? spec.kind : normalizeDraftFormat(body.format);
 
   // Reject a body that cannot become the file it claims to be, before any
   // Drive write — an empty deck or a one-column "spreadsheet" is a worse
   // outcome for her than being told the draft was malformed.
-  if (format === "sheet" && !content.includes("\t")) {
+  // These guard the TEXT formats only. A spec has already been validated by
+  // parseSpec, which returns null rather than an empty deck or a headerless
+  // sheet, so re-checking it against tab characters would be nonsense.
+  if (!spec && format === "sheet" && !content.includes("\t")) {
     return Response.json(
       { error: "This draft is not tab-separated, so it cannot become a spreadsheet." },
       { status: 400 }
     );
   }
-  const slideOutline = format === "slides" ? parseSlideOutline(content) : [];
-  if (format === "slides" && slideOutline.length === 0) {
+  const slideOutline = !spec && format === "slides" ? parseSlideOutline(content) : [];
+  if (!spec && format === "slides" && slideOutline.length === 0) {
     return Response.json(
       { error: "This draft has no '# Slide title' headings, so it cannot become a deck." },
       { status: 400 }
@@ -266,8 +282,12 @@ export async function POST(req: Request) {
   // ── Create the Drive file (the one and only Drive write) ───
   let driveFile;
   try {
-    driveFile =
-      format === "sheet"
+    driveFile = spec
+      ? // Spec-backed drafts carry their own styling — background, fonts,
+        // colours, frozen headers — so they go through the spec executors.
+        // The text path below stays for drafts already in flight.
+        await createFromSpec(accessToken, spec, folderId ?? undefined)
+      : format === "sheet"
         ? await createSheet(accessToken, title, tsvToCsv(content), folderId ?? undefined)
         : format === "slides"
           ? await createSlides(accessToken, title, slideOutline, folderId ?? undefined)

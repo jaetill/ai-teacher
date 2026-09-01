@@ -9,7 +9,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropic } from "@/lib/anthropic";
-import { DRAFT_SYSTEM_INSTRUCTIONS } from "@/lib/draft-protocol";
+import { renderSpecAsDraftBlock } from "@/lib/draft-protocol";
+import { parseSpec } from "@/lib/draft-spec";
+import { COPILOT_TOOLS, TOOL_SYSTEM_INSTRUCTIONS, TOOL_TO_KIND } from "@/lib/copilot-tools";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson, UUID_RE } from "@/lib/api-utils";
 import { refuse, logErrorEvent } from "@/lib/error-log";
@@ -59,7 +61,7 @@ Be concise and practical. Produce ready-to-use outputs when asked. When generati
 You have the teacher's curriculum data below. Use it to answer questions accurately — don't ask the teacher to provide data you already have.
 
 When an "Additional context" section is present, it describes the page the teacher is looking at RIGHT NOW. Anchor your answer there: "this", "here", and informal phrasings map onto the items it names — especially when it names a specific standard, answer about THAT standard by its exact ID and language before generalizing. When discussing where something is taught or assessed, cite her actual materials by title from the curriculum data (e.g. name the specific quiz or handout) rather than speaking generically.
-${DRAFT_SYSTEM_INSTRUCTIONS}`;
+${TOOL_SYSTEM_INSTRUCTIONS}`;
 
 async function buildCurriculumContext(ownerEmail: string): Promise<string> {
   const allCourses = await db
@@ -603,6 +605,7 @@ export async function POST(request: Request) {
     thinking: { type: "adaptive" },
     system,
     messages: outbound,
+    tools: COPILOT_TOOLS,
   });
 
   let assistantText = "";
@@ -633,6 +636,48 @@ export async function POST(request: Request) {
               }
             }
           }
+        }
+
+        // ── Tool calls become draft blocks, not Drive writes ───
+        //
+        // A propose_* call is a specification, and capturing it here rather
+        // than acting on it is what keeps the route's original promise: the
+        // copilot only ever proposes, and nothing reaches her Drive until she
+        // clicks Accept & Create.
+        //
+        // The spec is serialised into the same ```draft fence the panel
+        // already renders, so DraftCard, the accept flow and the transcript
+        // all keep working — the tool widens what a draft can *say*, it does
+        // not replace the mechanism she interacts with.
+        //
+        // Isolated from the text stream on purpose. By this point her answer
+        // has already streamed and been read; a failure reading tool blocks
+        // must not turn a good turn into a broken one. Losing a draft card is
+        // recoverable — she asks again. Erroring the response after the prose
+        // arrived is the thing that made the 413 look like the model's fault.
+        try {
+          const finalMessage = await stream.finalMessage();
+          for (const block of finalMessage.content) {
+            if (block.type !== "tool_use") continue;
+            const kind = TOOL_TO_KIND[block.name];
+            if (!kind) continue;
+            const spec = parseSpec(kind, block.input);
+            if (!spec) {
+              console.error(`[copilot] ${block.name} produced an unusable spec`);
+              continue;
+            }
+            const rendered = renderSpecAsDraftBlock(spec, block.input as Record<string, unknown>);
+            assistantText += rendered;
+            if (!clientGone) {
+              try {
+                controller.enqueue(encoder.encode(rendered));
+              } catch {
+                clientGone = true;
+              }
+            }
+          }
+        } catch (toolErr) {
+          console.error("[copilot] could not read tool calls from the turn:", toolErr);
         }
       } catch (err) {
         streamError = err;

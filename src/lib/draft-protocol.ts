@@ -23,6 +23,7 @@
 
 import { MATERIAL_TYPES, type MaterialType } from "@/lib/upload-utils";
 import { normalizeDraftFormat, type DraftFormat } from "@/lib/draft-formats";
+import { parseSpec, type DraftSpec } from "@/lib/draft-spec";
 
 export type ParsedDraft = {
   title: string;
@@ -34,6 +35,8 @@ export type ParsedDraft = {
   unitTitle: string | null;
   lessonTitle: string | null;
   content: string;
+  /** Set when the draft came from a tool call and carries full styling. */
+  spec: DraftSpec | null;
 };
 
 const VALID_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"] as const;
@@ -83,6 +86,22 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
 
   const gradeNum = header.GRADE ? parseInt(header.GRADE, 10) : NaN;
 
+  // A spec-backed draft carries its whole structure — including the theme —
+  // as JSON after the separator. The plain-text body is still rendered for
+  // her to read; the spec is what Accept & Create actually executes.
+  let spec: DraftSpec | null = null;
+  if (header.SPEC === "1") {
+    const fence = content.match(/```json\s*([\s\S]*?)```/);
+    if (fence) {
+      try {
+        const parsed = JSON.parse(fence[1]) as { kind?: unknown };
+        spec = parseSpec(parsed.kind, parsed);
+      } catch {
+        spec = null; // Still streaming, or malformed — fall back to text.
+      }
+    }
+  }
+
   return {
     title: title.slice(0, 200),
     materialType: normalizeMaterialType(header.TYPE),
@@ -92,7 +111,66 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
     unitTitle: header.UNIT || null,
     lessonTitle: header.LESSON || null,
     content,
+    spec,
   };
+}
+
+/**
+ * A spec -> the ```draft block the panel already knows how to render.
+ *
+ * Two audiences in one block. The human-readable preview is what she reads
+ * before deciding, so it must show the real content; the JSON is what the
+ * accept route executes, so it must be complete. Keeping both in the existing
+ * fence means DraftCard, the accept flow and the stored transcript all keep
+ * working unchanged.
+ */
+export function renderSpecAsDraftBlock(
+  spec: DraftSpec,
+  placement: Record<string, unknown> = {}
+): string {
+  const header = [
+    `TITLE: ${spec.title}`,
+    `TYPE: ${normalizeMaterialType(placement.materialType)}`,
+    `FORMAT: ${spec.kind}`,
+    `SPEC: 1`,
+  ];
+  if (typeof placement.grade === "number") header.push(`GRADE: ${placement.grade}`);
+  const q = normalizeQuarter(placement.quarter);
+  if (q) header.push(`QUARTER: ${q}`);
+  if (typeof placement.unitTitle === "string" && placement.unitTitle.trim()) {
+    header.push(`UNIT: ${placement.unitTitle.trim()}`);
+  }
+  if (typeof placement.lessonTitle === "string" && placement.lessonTitle.trim()) {
+    header.push(`LESSON: ${placement.lessonTitle.trim()}`);
+  }
+
+  return `\n\n\`\`\`draft\n${header.join("\n")}\n---\n${specPreview(spec)}\n\n\`\`\`json\n${JSON.stringify(spec)}\n\`\`\`\n\`\`\`\n`;
+}
+
+/** What she reads in the card — the content, not the JSON. */
+function specPreview(spec: DraftSpec): string {
+  if (spec.kind === "slides") {
+    return spec.slides
+      .map(
+        (s) =>
+          `# ${s.title}` +
+          (s.bullets.length ? `\n${s.bullets.map((b) => `- ${b}`).join("\n")}` : "") +
+          (s.notes ? `\n  (notes: ${s.notes})` : "")
+      )
+      .join("\n\n");
+  }
+  if (spec.kind === "sheet") {
+    return [spec.headers, ...spec.rows].map((r) => r.join("\t")).join("\n");
+  }
+  return spec.blocks
+    .map((b) => {
+      if (b.type === "heading1") return `# ${b.text}`;
+      if (b.type === "heading2") return `## ${b.text}`;
+      if (b.type === "heading3") return `### ${b.text}`;
+      if (b.type === "bullet") return `- ${b.text}`;
+      return b.text;
+    })
+    .join("\n");
 }
 
 // Appended to the copilot system prompt. Kept here so route and tests share

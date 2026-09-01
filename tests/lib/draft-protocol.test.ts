@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseDraftBlock,
+  renderSpecAsDraftBlock,
   normalizeMaterialType,
   normalizeQuarter,
   DRAFT_SYSTEM_INSTRUCTIONS,
@@ -138,5 +139,61 @@ describe("DRAFT_SYSTEM_INSTRUCTIONS", () => {
   it("tells the model not to claim it cannot produce a file", () => {
     expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("never say you cannot produce a file");
     expect(DRAFT_SYSTEM_INSTRUCTIONS).not.toContain("no markdown tables, no interactive elements");
+  });
+});
+
+// ── Tool-call drafts ───
+// A propose_* tool call is serialised into the same ```draft fence the panel
+// already renders, so DraftCard, the accept flow and the stored transcript all
+// keep working. This round trip is the contract between route and client: if it
+// breaks, the card either vanishes or loses its styling silently.
+describe("renderSpecAsDraftBlock -> parseDraftBlock", () => {
+  const spec = {
+    kind: "slides" as const,
+    title: "Day 4 — Bystander Effect",
+    theme: { backgroundColor: "#F3E9D2", titleFont: "Libre Baskerville" },
+    slides: [{ title: "What Is the Bystander Effect?", bullets: ["Diffusion of responsibility"] }],
+  };
+
+  const inner = (block: string) => block.match(/```draft\n([\s\S]*?)\n```\s*$/)?.[1] ?? "";
+
+  it("round-trips the spec, styling intact", () => {
+    const rendered = renderSpecAsDraftBlock(spec, {
+      materialType: "lesson",
+      grade: 8,
+      quarter: "Q1",
+      unitTitle: "Night & The Hiding Place",
+    });
+    const parsed = parseDraftBlock(inner(rendered));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.title).toBe("Day 4 — Bystander Effect");
+    expect(parsed!.format).toBe("slides");
+    expect(parsed!.grade).toBe(8);
+    expect(parsed!.unitTitle).toBe("Night & The Hiding Place");
+    // The part that matters: the theme survives to the accept route.
+    expect(parsed!.spec?.theme?.backgroundColor).toBe("#F3E9D2");
+    expect(parsed!.spec?.kind).toBe("slides");
+  });
+
+  it("shows her the real content, not the JSON, in the preview", () => {
+    const parsed = parseDraftBlock(inner(renderSpecAsDraftBlock(spec)));
+    expect(parsed!.content).toContain("# What Is the Bystander Effect?");
+    expect(parsed!.content).toContain("- Diffusion of responsibility");
+  });
+
+  it("leaves spec null for an old-style text draft", () => {
+    const parsed = parseDraftBlock("TITLE: Plain\nTYPE: lesson\n---\nJust text.");
+    expect(parsed!.spec).toBeNull();
+    expect(parsed!.content).toBe("Just text.");
+  });
+
+  it("degrades to text rather than throwing on malformed spec JSON", () => {
+    // Half-streamed JSON is the common case here, not corruption.
+    const parsed = parseDraftBlock(
+      'TITLE: X\nSPEC: 1\n---\npreview\n\n```json\n{"kind":"slides",\n```',
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed!.spec).toBeNull();
   });
 });

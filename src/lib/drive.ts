@@ -1,6 +1,15 @@
 import { google } from "googleapis";
 import type { Readable } from "stream";
 import { buildSlidesRequests } from "@/lib/draft-formats";
+import type { DocSpec, DraftSpec, SheetSpec, SlidesSpec } from "@/lib/draft-spec";
+import {
+  buildDocBackgroundRequest,
+  buildDocRequests,
+  buildSheetFormatRequests,
+  buildSlideNotesRequests,
+  buildSlidesRequests as buildStyledSlidesRequests,
+  sheetValues,
+} from "@/lib/google-requests";
 
 export function getDriveClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -369,4 +378,181 @@ export async function listFiles(accessToken: string, query?: string) {
     pageSize: 20,
   });
   return res.data.files ?? [];
+}
+
+// ── Spec-driven creation ───
+//
+// The styled path. createDoc/createSheet/createSlides above take plain text and
+// produce plain files; these take a spec and produce the file she actually
+// asked for — background, fonts, colours, frozen header, heading styles.
+//
+// Each follows the same shape: create the empty file, then batchUpdate it. The
+// create call cannot carry formatting, which is why every one of these is two
+// round trips rather than one.
+
+async function moveIntoFolder(accessToken: string, fileId: string, parentId?: string) {
+  if (!parentId) return;
+  const drive = getDriveClient(accessToken);
+  try {
+    const current = await drive.files.get({ fileId, fields: "parents" });
+    await drive.files.update({
+      fileId,
+      addParents: parentId,
+      removeParents: (current.data.parents ?? []).join(","),
+      fields: "id",
+    });
+  } catch (err) {
+    console.error("[drive] could not move file into folder:", err);
+  }
+}
+
+async function fileMeta(accessToken: string, fileId: string) {
+  const drive = getDriveClient(accessToken);
+  const res = await drive.files.get({
+    fileId,
+    fields: "id, name, mimeType, webViewLink",
+  });
+  return res.data;
+}
+
+export async function createSlidesFromSpec(
+  accessToken: string,
+  spec: SlidesSpec,
+  parentId?: string
+) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  const slidesApi = google.slides({ version: "v1", auth });
+
+  const created = await slidesApi.presentations.create({
+    requestBody: { title: spec.title },
+  });
+  const presentationId = created.data.presentationId;
+  if (!presentationId) throw new Error("Slides API returned no presentationId");
+
+  const blankSlideId = created.data.slides?.[0]?.objectId;
+
+  try {
+    const requests = buildStyledSlidesRequests(spec, blankSlideId);
+    if (requests.length > 0) {
+      await slidesApi.presentations.batchUpdate({
+        presentationId,
+        requestBody: { requests },
+      });
+    }
+
+    // Speaker notes need the notes-page shape ids, which only exist once the
+    // slides do — so they are a second pass, not part of the batch above.
+    const withNotes = spec.slides.some((s) => s.notes);
+    if (withNotes) {
+      const full = await slidesApi.presentations.get({ presentationId });
+      const notesRequests = buildSlideNotesRequests(spec, (i) =>
+        full.data.slides?.[i]?.slideProperties?.notesPage?.notesProperties
+          ?.speakerNotesObjectId ?? null
+      );
+      if (notesRequests.length > 0) {
+        await slidesApi.presentations.batchUpdate({
+          presentationId,
+          requestBody: { requests: notesRequests },
+        });
+      }
+    }
+  } catch (err) {
+    // The presentation exists by now; leaving it behind litters her Drive with
+    // an empty deck she has to hunt down.
+    try {
+      await getDriveClient(accessToken).files.delete({ fileId: presentationId });
+    } catch (cleanupErr) {
+      console.error("[drive] could not remove the failed presentation:", cleanupErr);
+    }
+    throw err;
+  }
+
+  await moveIntoFolder(accessToken, presentationId, parentId);
+  return fileMeta(accessToken, presentationId);
+}
+
+export async function createSheetFromSpec(
+  accessToken: string,
+  spec: SheetSpec,
+  parentId?: string
+) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  const sheetsApi = google.sheets({ version: "v4", auth });
+
+  const created = await sheetsApi.spreadsheets.create({
+    requestBody: { properties: { title: spec.title } },
+  });
+  const spreadsheetId = created.data.spreadsheetId;
+  if (!spreadsheetId) throw new Error("Sheets API returned no spreadsheetId");
+  const sheetId = created.data.sheets?.[0]?.properties?.sheetId ?? 0;
+
+  try {
+    const values = sheetValues(spec);
+    await sheetsApi.spreadsheets.values.update({
+      spreadsheetId,
+      range: "A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values },
+    });
+
+    const requests = buildSheetFormatRequests(spec, sheetId);
+    if (requests.length > 0) {
+      await sheetsApi.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests },
+      });
+    }
+  } catch (err) {
+    try {
+      await getDriveClient(accessToken).files.delete({ fileId: spreadsheetId });
+    } catch (cleanupErr) {
+      console.error("[drive] could not remove the failed spreadsheet:", cleanupErr);
+    }
+    throw err;
+  }
+
+  await moveIntoFolder(accessToken, spreadsheetId, parentId);
+  return fileMeta(accessToken, spreadsheetId);
+}
+
+export async function createDocFromSpec(accessToken: string, spec: DocSpec, parentId?: string) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  const docsApi = google.docs({ version: "v1", auth });
+
+  const created = await docsApi.documents.create({ requestBody: { title: spec.title } });
+  const documentId = created.data.documentId;
+  if (!documentId) throw new Error("Docs API returned no documentId");
+
+  try {
+    const requests = buildDocRequests(spec);
+    const background = buildDocBackgroundRequest(spec.theme);
+    const all = background ? [...requests, background] : requests;
+    if (all.length > 0) {
+      await docsApi.documents.batchUpdate({ documentId, requestBody: { requests: all } });
+    }
+  } catch (err) {
+    try {
+      await getDriveClient(accessToken).files.delete({ fileId: documentId });
+    } catch (cleanupErr) {
+      console.error("[drive] could not remove the failed document:", cleanupErr);
+    }
+    throw err;
+  }
+
+  await moveIntoFolder(accessToken, documentId, parentId);
+  return fileMeta(accessToken, documentId);
+}
+
+/** Dispatch by kind, so the accept route does not branch on it. */
+export async function createFromSpec(
+  accessToken: string,
+  spec: DraftSpec,
+  parentId?: string
+) {
+  if (spec.kind === "slides") return createSlidesFromSpec(accessToken, spec, parentId);
+  if (spec.kind === "sheet") return createSheetFromSpec(accessToken, spec, parentId);
+  return createDocFromSpec(accessToken, spec, parentId);
 }
