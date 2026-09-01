@@ -41,6 +41,16 @@ export type ParsedDraft = {
 
 const VALID_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"] as const;
 
+/**
+ * Separates the readable preview from the machine-readable spec.
+ *
+ * A sentinel rather than a nested ```json fence: CommonMark closes a fence at
+ * the first matching backtick line, so nesting one inside the draft block
+ * closed the draft block instead, and the spec was silently lost on every
+ * accept. Plain text cannot interact with the renderer.
+ */
+export const SPEC_SENTINEL = "<<<SPEC>>>";
+
 export function normalizeMaterialType(value: unknown): MaterialType {
   return typeof value === "string" &&
     (MATERIAL_TYPES as readonly string[]).includes(value.toLowerCase())
@@ -87,20 +97,30 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
   const gradeNum = header.GRADE ? parseInt(header.GRADE, 10) : NaN;
 
   // A spec-backed draft carries its whole structure — including the theme —
-  // as JSON after the separator. The plain-text body is still rendered for
-  // her to read; the spec is what Accept & Create actually executes.
+  // as one line of JSON after a sentinel. The readable preview above it is
+  // what she sees; the spec is what Accept & Create executes.
+  //
+  // Deliberately NOT a nested ```json fence. CommonMark closes a fence at the
+  // first line of matching backticks, so an inner fence closes the OUTER draft
+  // block — remark then hands the card a truncated body, the JSON never parses,
+  // and every theme is silently discarded on accept. A sentinel cannot collide
+  // with the renderer at all.
   let spec: DraftSpec | null = null;
-  if (header.SPEC === "1") {
-    const fence = content.match(/```json\s*([\s\S]*?)```/);
-    if (fence) {
+  let body = content;
+  const sentinel = content.indexOf(SPEC_SENTINEL);
+  if (sentinel !== -1) {
+    body = content.slice(0, sentinel).trimEnd();
+    if (header.SPEC === "1") {
       try {
-        const parsed = JSON.parse(fence[1]) as { kind?: unknown };
+        const json = content.slice(sentinel + SPEC_SENTINEL.length).trim();
+        const parsed = JSON.parse(json) as { kind?: unknown };
         spec = parseSpec(parsed.kind, parsed);
       } catch {
         spec = null; // Still streaming, or malformed — fall back to text.
       }
     }
   }
+  if (body.length === 0) return null;
 
   return {
     title: title.slice(0, 200),
@@ -110,7 +130,7 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
     quarter: normalizeQuarter(header.QUARTER),
     unitTitle: header.UNIT || null,
     lessonTitle: header.LESSON || null,
-    content,
+    content: body,
     spec,
   };
 }
@@ -128,8 +148,12 @@ export function renderSpecAsDraftBlock(
   spec: DraftSpec,
   placement: Record<string, unknown> = {}
 ): string {
+  // A newline inside any header value would shift parseDraftBlock's `---`
+  // search and garble the card, so every value is flattened to one line.
+  const line = (v: string) => v.replace(/[\r\n]+/g, " ").trim();
+
   const header = [
-    `TITLE: ${spec.title}`,
+    `TITLE: ${line(spec.title)}`,
     `TYPE: ${normalizeMaterialType(placement.materialType)}`,
     `FORMAT: ${spec.kind}`,
     `SPEC: 1`,
@@ -137,14 +161,16 @@ export function renderSpecAsDraftBlock(
   if (typeof placement.grade === "number") header.push(`GRADE: ${placement.grade}`);
   const q = normalizeQuarter(placement.quarter);
   if (q) header.push(`QUARTER: ${q}`);
-  if (typeof placement.unitTitle === "string" && placement.unitTitle.trim()) {
-    header.push(`UNIT: ${placement.unitTitle.trim()}`);
+  if (typeof placement.unitTitle === "string" && line(placement.unitTitle)) {
+    header.push(`UNIT: ${line(placement.unitTitle)}`);
   }
-  if (typeof placement.lessonTitle === "string" && placement.lessonTitle.trim()) {
-    header.push(`LESSON: ${placement.lessonTitle.trim()}`);
+  if (typeof placement.lessonTitle === "string" && line(placement.lessonTitle)) {
+    header.push(`LESSON: ${line(placement.lessonTitle)}`);
   }
 
-  return `\n\n\`\`\`draft\n${header.join("\n")}\n---\n${specPreview(spec)}\n\n\`\`\`json\n${JSON.stringify(spec)}\n\`\`\`\n\`\`\`\n`;
+  // Four backticks so a stray ``` in her content — a code sample in a lesson,
+  // say — cannot close the block early.
+  return `\n\n\`\`\`\`draft\n${header.join("\n")}\n---\n${specPreview(spec)}\n${SPEC_SENTINEL}\n${JSON.stringify(spec)}\n\`\`\`\`\n`;
 }
 
 /** What she reads in the card — the content, not the JSON. */

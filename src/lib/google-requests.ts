@@ -126,16 +126,12 @@ export function buildSlidesRequests(
       );
     }
 
-    // Speaker notes: hers to read, never projected. The text mini-format had
-    // no way to carry these at all.
-    if (slide.notes) {
-      requests.push({
-        insertText: {
-          objectId: `${slideId}_notes_placeholder`,
-          text: slide.notes,
-        },
-      });
-    }
+    // Speaker notes are deliberately NOT here. The notes shape is created by
+    // Google with an id we cannot predict, so a request naming one in this
+    // batch targets a shape that does not exist — and Slides batchUpdate is
+    // transactional, so that single bad request fails the entire deck. See
+    // buildSlideNotesRequests, which runs after the slides exist and resolves
+    // the real speakerNotesObjectId.
   });
 
   if (blankSlideId) requests.push({ deleteObject: { objectId: blankSlideId } });

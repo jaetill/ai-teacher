@@ -4,6 +4,7 @@ import {
   buildDocBackgroundRequest,
   buildDocRequests,
   buildSheetFormatRequests,
+  buildSlideNotesRequests,
   buildSlidesRequests,
   sheetValues,
   slideObjectIds,
@@ -121,6 +122,57 @@ describe("buildSlidesRequests — styling", () => {
     expect(slideObjectIds(0).slideId).not.toBe("s0");
   });
 
+  it("never references an object it did not create", () => {
+    // The test that was missing. The first version emitted an insertText at a
+    // fabricated `slide_0_notes_placeholder` — 25 characters, valid charset, so
+    // the id-format test above passed it happily. But Slides batchUpdate is
+    // transactional: one request naming a shape that does not exist 400s the
+    // whole deck. Checking the id *shape* was never enough; what matters is
+    // whether the batch creates what it then writes to.
+    const reqs = buildSlidesRequests(slidesSpec, "blank_slide") as Record<string, never>[];
+
+    const created = new Set<string>();
+    for (const r of reqs) {
+      const cs = r.createSlide as {
+        objectId?: string;
+        placeholderIdMappings?: { objectId: string }[];
+      };
+      if (!cs) continue;
+      if (cs.objectId) created.add(cs.objectId);
+      for (const m of cs.placeholderIdMappings ?? []) created.add(m.objectId);
+    }
+    created.add("blank_slide"); // pre-existing, legitimately referenced
+
+    for (const r of reqs) {
+      for (const key of [
+        "insertText",
+        "updateTextStyle",
+        "createParagraphBullets",
+        "updatePageProperties",
+        "deleteObject",
+      ]) {
+        const objectId = (r[key] as { objectId?: string } | undefined)?.objectId;
+        if (!objectId) continue;
+        expect(
+          created.has(objectId),
+          `${key} targets "${objectId}", which this batch never creates`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("leaves speaker notes to the second pass", () => {
+    // Notes shapes are created by Google with unpredictable ids, so they can
+    // only be written after the slides exist.
+    const withNotes = slidesSpec.slides.filter((s) => s.notes);
+    expect(withNotes.length).toBeGreaterThan(0); // the fixture must exercise this
+    const reqs = buildSlidesRequests(slidesSpec, null) as Record<string, never>[];
+    const inserted = reqs
+      .map((r) => (r.insertText as { text?: string } | undefined)?.text)
+      .filter(Boolean);
+    expect(inserted).not.toContain("5 min");
+  });
+
   it("skips body requests for a title-only slide", () => {
     const reqs = buildSlidesRequests({ ...slidesSpec, slides: [slidesSpec.slides[1]] }, null);
     expect(has(reqs, "createParagraphBullets")).toBe(false);
@@ -129,6 +181,33 @@ describe("buildSlidesRequests — styling", () => {
   it("deletes the blank first slide only when there is one", () => {
     expect(has(buildSlidesRequests(slidesSpec, "blank"), "deleteObject")).toBe(true);
     expect(has(buildSlidesRequests(slidesSpec, null), "deleteObject")).toBe(false);
+  });
+});
+
+describe("buildSlideNotesRequests", () => {
+  it("writes notes to the resolved shape id", () => {
+    const reqs = buildSlideNotesRequests(slidesSpec, () => "real_notes_shape") as Record<
+      string,
+      never
+    >[];
+    expect(reqs).toHaveLength(1); // only the slide that has notes
+    expect(reqs[0].insertText).toMatchObject({ objectId: "real_notes_shape", text: "5 min" });
+  });
+
+  it("drops notes rather than sending a bad id when Google's shape is missing", () => {
+    // If the response schema differs from what we expect, silently skipping is
+    // right: a request naming a non-existent shape would fail the whole batch,
+    // costing her the notes AND the deck.
+    expect(buildSlideNotesRequests(slidesSpec, () => null)).toEqual([]);
+    expect(buildSlideNotesRequests(slidesSpec, () => undefined)).toEqual([]);
+  });
+
+  it("emits nothing when no slide has notes", () => {
+    const noNotes = {
+      ...slidesSpec,
+      slides: slidesSpec.slides.map((s) => ({ ...s, notes: undefined })),
+    };
+    expect(buildSlideNotesRequests(noNotes, () => "shape")).toEqual([]);
   });
 });
 

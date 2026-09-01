@@ -493,7 +493,12 @@ export async function createSheetFromSpec(
     await sheetsApi.spreadsheets.values.update({
       spreadsheetId,
       range: "A1",
-      valueInputOption: "USER_ENTERED",
+      // RAW, never USER_ENTERED. USER_ENTERED makes Sheets interpret a cell as
+      // though she typed it, so a value starting with =, +, - or @ becomes a
+      // live formula — and the values here come from a model reading her
+      // curriculum materials. An =IMPORTRANGE() smuggled through a document
+      // would execute under her account the moment she opened the sheet.
+      valueInputOption: "RAW",
       requestBody: { values },
     });
 
