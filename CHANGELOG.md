@@ -1,5 +1,94 @@
 # Changelog
 
+## [1.3.0](https://github.com/jaetill/ai-teacher/compare/v1.2.0...v1.3.0) (2026-09-01)
+
+
+### Features
+
+* **auth:** session-expired banner instead of silent Drive failures ([#653](https://github.com/jaetill/ai-teacher/issues/653)) ([79a9667](https://github.com/jaetill/ai-teacher/commit/79a9667b7dc085efcd226302b1216c5def365894))
+* **calendar:** literal lesson calendar with derived dates and snow-day bumping ([#665](https://github.com/jaetill/ai-teacher/issues/665)) ([72f33dd](https://github.com/jaetill/ai-teacher/commit/72f33dd922a9b07805a8ec8f3433879a90a98e55))
+* **calendar:** objectives + material links on lesson cards; fix feedback modal contrast ([#670](https://github.com/jaetill/ai-teacher/issues/670)) ([806ea69](https://github.com/jaetill/ai-teacher/commit/806ea69cca7164348ce2f6e88a2b7bb78c0fa7fa))
+* **calendar:** per-section meeting days, editable from the sections panel ([#676](https://github.com/jaetill/ai-teacher/issues/676)) ([faea040](https://github.com/jaetill/ai-teacher/commit/faea040eb8f84c00a868375cbe7c657e196cc81e))
+* **calendar:** school-year dates set once, not per course ([#672](https://github.com/jaetill/ai-teacher/issues/672)) ([e3cdbda](https://github.com/jaetill/ai-teacher/commit/e3cdbda1920fbaa59881e93b8d6c20ccba6cdb04))
+* **calendar:** section checkbox sidebar; Atlas-style card headers ([#674](https://github.com/jaetill/ai-teacher/issues/674)) ([c2e31d6](https://github.com/jaetill/ai-teacher/commit/c2e31d63fada4569a816ab0a1d7f21c436665e20))
+* **calendar:** sections as calendar rows + fork-a-year course clone ([#667](https://github.com/jaetill/ai-teacher/issues/667)) ([6db89ea](https://github.com/jaetill/ai-teacher/commit/6db89ea98f2bf9345f24473002c255a1463d10f7))
+* **copilot:** accept a draft as a Doc, a Sheet, or Slides ([c64b5a9](https://github.com/jaetill/ai-teacher/commit/c64b5a95c48ee676066173ba34447411681fd3fa))
+* **copilot:** accept a draft as a Doc, a Sheet, or Slides ([a950900](https://github.com/jaetill/ai-teacher/commit/a950900fb7b0cab4de9c28b019ce8f0d4ce86e13))
+* **copilot:** attach files — pick, drag, or paste a screenshot ([#696](https://github.com/jaetill/ai-teacher/issues/696)) ([ad21cec](https://github.com/jaetill/ai-teacher/commit/ad21cec86df694006eb3a48ca11f585361eb5549))
+* **copilot:** draft blocks with explicit Accept & Create into Drive ([#626](https://github.com/jaetill/ai-teacher/issues/626)) ([a675622](https://github.com/jaetill/ai-teacher/commit/a675622f76ecbe0e31f2a3990ae1144e2798068b))
+* **copilot:** give the copilot tools instead of a text mini-format ([9c12a43](https://github.com/jaetill/ai-teacher/commit/9c12a439d0250792fd192e7ec05d62f7e0c4b8b4))
+* **copilot:** give the copilot tools instead of a text mini-format ([d6cc54f](https://github.com/jaetill/ai-teacher/commit/d6cc54fc112a6d76a198b1315dd923b794ecd7bd))
+* **copilot:** let her pin the composer open with a drag handle ([7b454dd](https://github.com/jaetill/ai-teacher/commit/7b454dd1aa0e241eb19ff4cb2422dd3cd3a17ebc))
+* **copilot:** let her pin the composer open with a drag handle ([e5210d4](https://github.com/jaetill/ai-teacher/commit/e5210d467a05b5a7ac65f8ea0646eef2ee94f1cc))
+* **copilot:** make her work visible when it fails and when it lands ([1c6aaa0](https://github.com/jaetill/ai-teacher/commit/1c6aaa0eec0ab39ddbabc3b8ad31f21b348e20cf))
+* **copilot:** page-aware context + materials in curriculum grounding ([#640](https://github.com/jaetill/ai-teacher/issues/640)) ([64783ed](https://github.com/jaetill/ai-teacher/commit/64783edf4cfd66e86d7e115617aa18538277abb3))
+* **curriculum:** lessons-by-week prototype view + two glossary terms ([#664](https://github.com/jaetill/ai-teacher/issues/664)) ([54fb257](https://github.com/jaetill/ai-teacher/commit/54fb257d157dfca53f05663d142978f7b04c7196))
+* **curriculum:** quarter browse view + edit-in-place from quarter and unit ([#635](https://github.com/jaetill/ai-teacher/issues/635)) ([aff9bf3](https://github.com/jaetill/ai-teacher/commit/aff9bf3a1216d45f43a745034fa1b839b8325ac0))
+* **curriculum:** year-scoped home page with school-year switcher ([#633](https://github.com/jaetill/ai-teacher/issues/633)) ([#634](https://github.com/jaetill/ai-teacher/issues/634)) ([a8ee5b6](https://github.com/jaetill/ai-teacher/commit/a8ee5b60fa13a10450283d134f2721f932d48107))
+* **editor:** drag a material straight from one lesson to another ([#596](https://github.com/jaetill/ai-teacher/issues/596)) ([b94bd4e](https://github.com/jaetill/ai-teacher/commit/b94bd4e2c7300824c21541476f11781c4283b90a))
+* **editor:** quarter picker on the unit header ([#629](https://github.com/jaetill/ai-teacher/issues/629)) ([1379924](https://github.com/jaetill/ai-teacher/commit/1379924780ec5bcdf58e7dfcbac7323d4a8cbebe))
+* **glossary:** editable glossary tab as a vocabulary-alignment instrument ([#638](https://github.com/jaetill/ai-teacher/issues/638)) ([f0fc7cb](https://github.com/jaetill/ai-teacher/commit/f0fc7cb84924d30846ad5571fbcf785482c6a8b8))
+* **import:** add a Summer (summer reading) bucket alongside the quarters ([#592](https://github.com/jaetill/ai-teacher/issues/592)) ([01ae796](https://github.com/jaetill/ai-teacher/commit/01ae796743844af1f4ddb6ada50dd9cd7ef00687))
+* **import:** classify the leftovers automatically after the scan ([fef3d43](https://github.com/jaetill/ai-teacher/commit/fef3d43a43d631165d58102202bbe4134fb77029))
+* **import:** declare what you are importing, then where it goes ([#688](https://github.com/jaetill/ai-teacher/issues/688)) ([218637d](https://github.com/jaetill/ai-teacher/commit/218637dddd936e32b9ea655fdf4e6ffcb077e021))
+* **import:** graduate built quarters off the import screen ([#661](https://github.com/jaetill/ai-teacher/issues/661)) ([58c9f5c](https://github.com/jaetill/ai-teacher/commit/58c9f5c9ea5eebc4265818527cce7f51f96388f1))
+* **import:** import a year plan and use it as a standing build reference ([#680](https://github.com/jaetill/ai-teacher/issues/680)) ([8d75bfe](https://github.com/jaetill/ai-teacher/commit/8d75bfe01c2f7fa13399e1cdbd02365cc6fd3f27))
+* **import:** import creates the curriculum — no staging step ([#691](https://github.com/jaetill/ai-teacher/issues/691)) ([3ade47a](https://github.com/jaetill/ai-teacher/commit/3ade47acb818d00bcded14ebec2595ea79fdf011))
+* **import:** import into a library — grades 6-12, no school year required ([#695](https://github.com/jaetill/ai-teacher/issues/695)) ([9ef04be](https://github.com/jaetill/ai-teacher/commit/9ef04be614157bfcfe821c9c712ca244eaa0f45c))
+* **import:** make Build idempotent - no more duplicate units on re-run ([#597](https://github.com/jaetill/ai-teacher/issues/597)) ([33b1ea4](https://github.com/jaetill/ai-teacher/commit/33b1ea4db917703810e3578162ad6ed3e63e0393))
+* **import:** repair mode for backfill-units ([#686](https://github.com/jaetill/ai-teacher/issues/686)) ([ad3a5b3](https://github.com/jaetill/ai-teacher/commit/ad3a5b3b9dece8ab31b6efe1148778d94db1efb6))
+* **items:** write questions from a passage, grounded by construction ([#679](https://github.com/jaetill/ai-teacher/issues/679)) ([799dd88](https://github.com/jaetill/ai-teacher/commit/799dd884c8e234be3622a1fa6386c6dc0557665b))
+* **materials:** auto-summarize fresh imports ([#654](https://github.com/jaetill/ai-teacher/issues/654)) ([9114aa0](https://github.com/jaetill/ai-teacher/commit/9114aa0f74cb3a26f1918928e51d908867cdc464))
+* **materials:** teacher-triggered AI summaries feeding copilot grounding ([#641](https://github.com/jaetill/ai-teacher/issues/641)) ([80a834f](https://github.com/jaetill/ai-teacher/commit/80a834f00ac3e18309e13810607e0628a45c1403))
+* **nav:** calendar tab + contextual exit from edit mode ([#666](https://github.com/jaetill/ai-teacher/issues/666)) ([41fa437](https://github.com/jaetill/ai-teacher/commit/41fa437e990f591aa91cc8914026283bbaa57694))
+* **nav:** grey out unfinished Differentiation and Communications tabs ([#673](https://github.com/jaetill/ai-teacher/issues/673)) ([af5aefb](https://github.com/jaetill/ai-teacher/commit/af5aefb73ef55f07512f3aa2adcb3ac249681332))
+* read-only batch — standards coverage, vertical alignment, search, sub plans ([#637](https://github.com/jaetill/ai-teacher/issues/637)) ([36c9382](https://github.com/jaetill/ai-teacher/commit/36c9382d4cce8330b75d3c2c1b4dc290650039c2))
+* **templates:** teacher-defined lesson templates, derived from her own lessons ([#677](https://github.com/jaetill/ai-teacher/issues/677)) ([d4cde33](https://github.com/jaetill/ai-teacher/commit/d4cde33a9c882524164c1e1fd25d764c7ba898cc))
+
+
+### Bug Fixes
+
+* **build:** stream the AI enrichment so large quarters don't truncate ([#591](https://github.com/jaetill/ai-teacher/issues/591)) ([a3a9d6a](https://github.com/jaetill/ai-teacher/commit/a3a9d6ace87233629e554e452533da6f78daa3dc))
+* **calendar:** equal-width day columns in the all-sections week view ([#671](https://github.com/jaetill/ai-teacher/issues/671)) ([8975026](https://github.com/jaetill/ai-teacher/commit/8975026fb6c18483ca1ba645bb6f3f746e2006fc))
+* **copilot:** grow the message box with what she types ([cecab1e](https://github.com/jaetill/ai-teacher/commit/cecab1e3171fb21729c681c583d78e6ba128a74b))
+* **copilot:** notes crashed every deck, and the spec never survived the fence ([07ff43b](https://github.com/jaetill/ai-teacher/commit/07ff43b9b3b6057d85cb0921d58f468180b5dccd))
+* **copilot:** repair encoding damage and stop logging google prose ([ebf4d9e](https://github.com/jaetill/ai-teacher/commit/ebf4d9e6b8e128e2f546eb21ead48a97fd48b01d))
+* **copilot:** slides drafts never worked - object ids were too short ([c532311](https://github.com/jaetill/ai-teacher/commit/c532311a0357badcc98c6cf72e651335e162f16f))
+* **copilot:** slides drafts never worked - object ids were too short ([637a28c](https://github.com/jaetill/ai-teacher/commit/637a28c0686fc012be346d204bd28896554dfbe8))
+* **curriculum:** unit week grouping matches the stated duration ([#628](https://github.com/jaetill/ai-teacher/issues/628)) ([058573a](https://github.com/jaetill/ai-teacher/commit/058573a4a251d3b37c31c38db61c1d143ca22b8b))
+* **deps:** clear all 8 high-severity audit findings; record the units rule ([#685](https://github.com/jaetill/ai-teacher/issues/685)) ([d3efd84](https://github.com/jaetill/ai-teacher/commit/d3efd84910a6c99420d66fda84b0523f61c6fd27))
+* **editor:** edit unit summary in a full-width textarea, not a tiny input ([#594](https://github.com/jaetill/ai-teacher/issues/594)) ([0fdc37a](https://github.com/jaetill/ai-teacher/commit/0fdc37a0c09e085ac26b511a3a1df70ff51fe479))
+* **editor:** pool shows all imported materials, filterable by type and unit ([#589](https://github.com/jaetill/ai-teacher/issues/589)) ([9c329bb](https://github.com/jaetill/ai-teacher/commit/9c329bbbeecb42fe7ae1f65d7471743b74e93bb5))
+* **editor:** quarter picker moves the unit into its quarter; readable options ([#630](https://github.com/jaetill/ai-teacher/issues/630)) ([a38d22b](https://github.com/jaetill/ai-teacher/commit/a38d22b5c9d90ba7feaeddd36e913cdc26bda1f6))
+* **editor:** show lesson position, not raw sortOrder, in the number badge ([#598](https://github.com/jaetill/ai-teacher/issues/598)) ([7c5d8ed](https://github.com/jaetill/ai-teacher/commit/7c5d8ed87a3839f8c3a53172dff36dba19a57c47))
+* **editor:** update-item passed snake_case keys to drizzle .set(); dropdown contrast ([#631](https://github.com/jaetill/ai-teacher/issues/631)) ([2919915](https://github.com/jaetill/ai-teacher/commit/29199158a257fd96812ce26771c8cd30396872ef))
+* **import:** a unit folder that mentions a quarter is not a quarter ([#689](https://github.com/jaetill/ai-teacher/issues/689)) ([b5c9ca8](https://github.com/jaetill/ai-teacher/commit/b5c9ca84dbebc4d192b904d7d434071fb7bd3527))
+* **import:** let a built quarter be rebuilt, and show material imported since ([#687](https://github.com/jaetill/ai-teacher/issues/687)) ([b6699fb](https://github.com/jaetill/ai-teacher/commit/b6699fb023941ef1dbe59aa80e11562a4a1f13a7))
+* **import:** mark permanently-unexportable files; drop count from built cards ([#663](https://github.com/jaetill/ai-teacher/issues/663)) ([48429e3](https://github.com/jaetill/ai-teacher/commit/48429e3a3a26b4505f7ee445fc9a899919767bd5))
+* **import:** promote Check to a button, and say when files are being read ([#694](https://github.com/jaetill/ai-teacher/issues/694)) ([cc92d46](https://github.com/jaetill/ai-teacher/commit/cc92d46ebcf0a6f66e8349cc3b47d85064b87bed))
+* **import:** review the material TYPE, not the category ([#692](https://github.com/jaetill/ai-teacher/issues/692)) ([0f9967d](https://github.com/jaetill/ai-teacher/commit/0f9967d85672ed485b192c416bcc39264e37df69))
+* **import:** stop the track placeholder reading as a filled-in value ([#693](https://github.com/jaetill/ai-teacher/issues/693)) ([22865c1](https://github.com/jaetill/ai-teacher/commit/22865c1251be4bc7e1bb73ba23f98d96f1925ebf))
+* **import:** surface root-level files instead of burying them in the scan ([#681](https://github.com/jaetill/ai-teacher/issues/681)) ([92cade7](https://github.com/jaetill/ai-teacher/commit/92cade7f3f745b5d2cb847b7aeaff2923f4d81bc))
+* **import:** year plan must not override her units; nested folders must not become units ([#682](https://github.com/jaetill/ai-teacher/issues/682)) ([c6a9dcb](https://github.com/jaetill/ai-teacher/commit/c6a9dcbb27c5020e818034b1b3e88a495b2f2d99))
+* make her work visible - composer, copilot errors, unit materials, grade 8 standards ([107bfb9](https://github.com/jaetill/ai-teacher/commit/107bfb9ac34ee555b08c175f6753b40ab6901fb9))
+* **materials:** mark empty-extraction files instead of failing them forever ([#642](https://github.com/jaetill/ai-teacher/issues/642)) ([506df4f](https://github.com/jaetill/ai-teacher/commit/506df4f0d2f88bdc46c0c5ba4b52219e0d3a1c65))
+* **materials:** summarize hardening — AI rate limit, prompt-safe titles, rate_limits cleanup ([#652](https://github.com/jaetill/ai-teacher/issues/652)) ([d191d02](https://github.com/jaetill/ai-teacher/commit/d191d025b1ae3b7f3a4b6520dcde755b9abaad02))
+* **security:** materials.owner_email — column, stamped inserts, index ([#655](https://github.com/jaetill/ai-teacher/issues/655)) ([790a4da](https://github.com/jaetill/ai-teacher/commit/790a4dadfbea268e0356962f44613a7093ee1f3b))
+* **security:** scope materials reads by owner; validate ids and enums ([#658](https://github.com/jaetill/ai-teacher/issues/658)) ([e0b3324](https://github.com/jaetill/ai-teacher/commit/e0b332412aa2af5abb4548d80aa56cb4d10b4823))
+* **standards:** build the seed DB client lazily so the roster can be imported ([db61a30](https://github.com/jaetill/ai-teacher/commit/db61a308fc9c40aaf08847ad1e1a4d6a429d3e3e))
+* **standards:** rebuild grade 8 from the VDOE document, not a skill plan ([6694b43](https://github.com/jaetill/ai-teacher/commit/6694b432a6e90e81f163db544ac678313b6fc09d))
+* **ui:** theme-aware native select popups via color-scheme + global option colors ([#632](https://github.com/jaetill/ai-teacher/issues/632)) ([f0db10f](https://github.com/jaetill/ai-teacher/commit/f0db10f471eb01ff9ddbbf9bf507b5fe42294cc7))
+
+
+### Performance Improvements
+
+* **build:** batch lesson/standard/attachment inserts per unit ([#659](https://github.com/jaetill/ai-teacher/issues/659)) ([c227960](https://github.com/jaetill/ai-teacher/commit/c227960f4226fe7cf0dbaeccae2f3d05aeff9a91))
+
+
+### Reverts
+
+* **curriculum:** drop duplicate copy-to-year button and clone route ([#668](https://github.com/jaetill/ai-teacher/issues/668)) ([e227ac4](https://github.com/jaetill/ai-teacher/commit/e227ac400099b85772f587f31c047a5583207626))
+
 ## [1.2.0](https://github.com/jaetill/ai-teacher/compare/v1.1.0...v1.2.0) (2026-07-28)
 
 
