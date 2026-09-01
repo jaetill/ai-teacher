@@ -18,6 +18,9 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/units/[id]/infer-standards";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -138,10 +141,10 @@ ${lessonsList}`,
     }>
   >(text);
   if (mappings === null) {
-    return Response.json(
-      { error: "Failed to parse AI response", raw: text },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse AI response", {
+      detail: { responseChars: text.length },
+      extra: { raw: text },
+    });
   }
 
   // ── Persist to DB ───

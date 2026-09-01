@@ -15,6 +15,9 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
+import { refuse } from "@/lib/error-log";
+
+const ROUTE = "/api/year-plan";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer specializing in full-year planning for grades 6-8.
 
@@ -95,7 +98,19 @@ export async function POST(request: Request) {
     (existingCurriculum && existingCurriculum.length > 20_000) ||
     (notes && notes.length > 5_000)
   ) {
-    return new Response("Input too large", { status: 413 });
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "input_too_large",
+      message: "Input too large",
+      detail: {
+        schoolYearChars: schoolYear.length,
+        standardsChars: standards.length,
+        existingCurriculumChars: existingCurriculum?.length ?? 0,
+        notesChars: notes?.length ?? 0,
+        limits: "schoolYear 50 / standards 10000 / existing 20000 / notes 5000",
+      },
+    });
   }
 
   let userMessage = `Please create a year plan:

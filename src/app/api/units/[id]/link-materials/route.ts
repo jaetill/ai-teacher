@@ -23,6 +23,9 @@ import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { ownedMaterials } from "@/lib/material-scope";
 import { isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/units/[id]/link-materials";
 
 
 export async function POST(
@@ -179,10 +182,10 @@ ${materialList}`,
     }>
   >(text);
   if (mappings === null) {
-    return Response.json(
-      { error: "Failed to parse AI response", raw: text },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse AI response", {
+      detail: { responseChars: text.length },
+      extra: { raw: text },
+    });
   }
 
   // ── Persist to DB ───

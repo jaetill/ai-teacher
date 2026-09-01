@@ -11,6 +11,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum/editor/delete-unit";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -93,8 +96,7 @@ export async function POST(req: Request) {
     ];
     await db.batch(stmts as [(typeof stmts)[number], ...(typeof stmts)[number][]]);
   } catch (err) {
-    console.error("[delete-unit] transaction failed", err);
-    return Response.json({ error: "Failed to delete unit" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to delete unit", { cause: err });
   }
 
   try {

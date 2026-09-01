@@ -11,6 +11,9 @@ import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { RetypeContentPayload } from "@/types/curriculum-editor";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum/editor/retype-content";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -74,8 +77,7 @@ export async function POST(req: Request) {
         db.delete(lessons).where(eq(lessons.id, entityId)),
       ]);
     } catch (err) {
-      console.error("[retype-content] transaction failed", err);
-      return Response.json({ error: "Failed to retype content" }, { status: 500 });
+      return apiError(ROUTE, 500, "write_failed", "Failed to retype content", { cause: err });
     }
 
     try {
@@ -128,8 +130,7 @@ export async function POST(req: Request) {
         db.delete(assessments).where(eq(assessments.id, entityId)),
       ]);
     } catch (err) {
-      console.error("[retype-content] transaction failed", err);
-      return Response.json({ error: "Failed to retype content" }, { status: 500 });
+      return apiError(ROUTE, 500, "write_failed", "Failed to retype content", { cause: err });
     }
 
     try {

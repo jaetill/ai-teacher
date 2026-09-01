@@ -12,6 +12,7 @@
 //      database still returns the user's error, just without the breadcrumb.
 //   2. `detail` carries measurements, never content. See error-events.ts.
 
+import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
 import { errorEvents } from "@/db/schema";
 
@@ -32,7 +33,18 @@ export type ErrorReason =
   | "stream_failed"
   // accept-draft: Google rejected the write, or returned nothing usable.
   | "drive_create_failed"
-  | "drive_no_file_id";
+  | "drive_no_file_id"
+  // Generic codes for routes migrated onto apiError() (2026-09-01). Prefer a
+  // route-specific code above when one guard's identity matters; these exist
+  // so a 5xx can never again be a bare Response with no row and no Sentry event.
+  | "input_too_large"
+  | "upstream_failed"
+  | "ai_parse_failed"
+  | "ai_empty_result"
+  | "write_failed"
+  | "record_missing"
+  | "config_missing"
+  | "unhandled";
 
 export interface ErrorEventInput {
   route: string;
@@ -44,6 +56,12 @@ export interface ErrorEventInput {
   conversationId?: string | null;
   /** Counts, byte sizes and limits only — never message text or file contents. */
   detail?: Record<string, number | string | boolean | null>;
+  /**
+   * The underlying error, when there is one. Forwarded to Sentry for 5xx so a
+   * caught-and-converted failure still produces a stack trace somewhere. Never
+   * written to Postgres.
+   */
+  cause?: unknown;
 }
 
 /**
@@ -52,6 +70,23 @@ export interface ErrorEventInput {
  * clear 413 into an opaque 500.
  */
 export async function logErrorEvent(input: ErrorEventInput): Promise<void> {
+  // 5xx means *we* failed, not the user. Those belong in Sentry too — until
+  // 2026-09-01 every route caught its own errors and console.error'd them, so
+  // Sentry saw only the unhandled ones. captureException is a no-op when the
+  // SDK isn't initialised (tests, missing DSN).
+  if (input.status >= 500) {
+    try {
+      Sentry.captureException(
+        input.cause instanceof Error ? input.cause : new Error(input.message),
+        {
+          tags: { route: input.route, reason: input.reason, status: String(input.status) },
+          extra: { ...(input.detail ?? {}), cause: input.cause instanceof Error ? undefined : input.cause },
+        }
+      );
+    } catch {
+      // Sentry must never change the outcome either.
+    }
+  }
   try {
     await db.insert(errorEvents).values({
       route: input.route,
@@ -89,4 +124,40 @@ export async function refuse(
         status: input.status,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
+}
+
+/**
+ * The JSON-body shorthand most routes want: `{ error: message, ...extra }`
+ * with the row and (for 5xx) the Sentry event written first.
+ *
+ *   return apiError(ROUTE, 502, "upstream_failed", "Drive didn't answer.", { cause: err });
+ *
+ * `extra` is spread into the response body (e.g. validation `errors`, a
+ * `raw` AI reply for the UI to show) and is NOT logged — keep `detail` for the
+ * measurements that are.
+ */
+export async function apiError(
+  route: string,
+  status: number,
+  reason: ErrorReason,
+  message: string,
+  opts: {
+    cause?: unknown;
+    detail?: ErrorEventInput["detail"];
+    ownerEmail?: string | null;
+    conversationId?: string | null;
+    extra?: Record<string, unknown>;
+  } = {}
+): Promise<Response> {
+  await logErrorEvent({
+    route,
+    status,
+    reason,
+    message,
+    cause: opts.cause,
+    detail: opts.detail,
+    ownerEmail: opts.ownerEmail,
+    conversationId: opts.conversationId,
+  });
+  return Response.json({ error: message, ...(opts.extra ?? {}) }, { status });
 }

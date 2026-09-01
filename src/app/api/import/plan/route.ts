@@ -24,6 +24,9 @@ import {
   MAX_PLAN_FILES,
   type ImportPlan,
 } from "@/lib/import-plan";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/import/plan";
 
 export const maxDuration = 300;
 
@@ -81,8 +84,7 @@ export async function POST(req: Request) {
   try {
     tree = await loadTree(accessToken, body.source);
   } catch (err) {
-    console.error("import plan scan failed:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "Failed to read the source folder" }, { status: 502 });
+    return apiError(ROUTE, 502, "upstream_failed", "Failed to read the source folder", { cause: err, ownerEmail });
   }
 
   const preview = previewPlan(tree, body);
@@ -118,7 +120,7 @@ export async function POST(req: Request) {
 
   const course = await resolveTargetCourse(body.target, ownerEmail, { create: true });
   if (!course) {
-    return Response.json({ error: "Could not find or create the target course" }, { status: 500 });
+    return apiError(ROUTE, 500, "record_missing", "Could not find or create the target course", { ownerEmail });
   }
 
   let written;
@@ -131,8 +133,7 @@ export async function POST(req: Request) {
       userId: session.user?.id,
     });
   } catch (err) {
-    console.error("import plan commit failed:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "Failed to save the imported materials" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to save the imported materials", { cause: err, ownerEmail });
   }
 
   return Response.json({

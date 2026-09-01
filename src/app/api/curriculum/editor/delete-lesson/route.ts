@@ -10,6 +10,9 @@ import { and, eq } from "drizzle-orm";
 import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum/editor/delete-lesson";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -60,8 +63,7 @@ export async function POST(req: Request) {
       db.delete(lessons).where(eq(lessons.id, lessonId)),
     ]);
   } catch (err) {
-    console.error("[delete-lesson] transaction failed", err);
-    return Response.json({ error: "Failed to delete lesson" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to delete lesson", { cause: err });
   }
 
   try {

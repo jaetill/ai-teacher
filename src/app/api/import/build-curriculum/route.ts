@@ -37,6 +37,9 @@ import {
   coerceToTemplate,
   type TemplateField,
 } from "@/lib/lesson-template";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/import/build-curriculum";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -450,16 +453,19 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     // In faithful mode the teacher's units come from her folders, not the AI, so
     // a parse failure only loses enrichment — proceed instead of failing her build.
     if (!faithful) {
-      return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
+      return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse AI response", {
+        ownerEmail,
+        detail: { responseChars: text.length },
+      });
     }
   }
 
   const parsedUnits = Array.isArray(parsed.units) ? parsed.units : [];
   if (!faithful && parsedUnits.length === 0) {
-    return Response.json(
-      { error: "The AI did not return any units for this quarter." },
-      { status: 500 },
-    );
+    return apiError(ROUTE, 500, "ai_empty_result", "The AI did not return any units for this quarter.", {
+      ownerEmail,
+      detail: { responseChars: text.length },
+    });
   }
 
   // Map AI enrichment back to the teacher's units by title (faithful mode).
@@ -533,10 +539,9 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   }
 
   if (!course) {
-    return Response.json(
-      { error: "Course not found or could not be created" },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "record_missing", "Course not found or could not be created", {
+      ownerEmail,
+    });
   }
 
   const courseId = course.id;
@@ -789,10 +794,6 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   } catch (err) {
     // Log the full error server-side, but never return err.message to the
     // client — it can leak DB internals, query fragments, or upstream details.
-    console.error("build-curriculum error:", err);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "unhandled", "Internal server error", { cause: err });
   }
 }

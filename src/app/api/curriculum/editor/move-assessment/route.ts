@@ -10,6 +10,9 @@ import { logEdit } from "../log-edit";
 import { assertCourseOwnership } from "../assert-ownership";
 import type { MoveAssessmentPayload } from "@/types/curriculum-editor";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum/editor/move-assessment";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -95,8 +98,7 @@ export async function POST(req: Request) {
         .where(eq(assessments.id, assessmentId)),
     ]);
   } catch (err) {
-    console.error("[move-assessment] transaction failed", err);
-    return Response.json({ error: "Failed to move assessment" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to move assessment", { cause: err });
   }
 
   try {

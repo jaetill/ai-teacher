@@ -8,6 +8,9 @@
 import { getAccessToken } from "@/lib/auth-helpers";
 import { scanTree, getDriveClient, type ScannedNode } from "@/lib/drive";
 import { proposeLevelMap } from "@/lib/import-structure";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/import/scan";
 
 export const maxDuration = 60;
 
@@ -80,7 +83,6 @@ export async function GET(req: Request) {
   } catch (err) {
     // Log upstream Drive detail server-side but return a generic message —
     // err.message can leak Drive internals and folder names to the client (#542).
-    console.error("import scan failed:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "Failed to scan" }, { status: 500 });
+    return apiError(ROUTE, 502, "upstream_failed", "Failed to scan", { cause: err });
   }
 }

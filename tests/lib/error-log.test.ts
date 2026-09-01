@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockDbInsert } = vi.hoisted(() => ({ mockDbInsert: vi.fn() }));
+const { mockDbInsert, mockCapture } = vi.hoisted(() => ({
+  mockDbInsert: vi.fn(),
+  mockCapture: vi.fn(),
+}));
 
 vi.mock("@/db", () => ({ db: { insert: mockDbInsert } }));
 vi.mock("@/db/schema", () => ({ errorEvents: {} }));
+vi.mock("@sentry/nextjs", () => ({ captureException: mockCapture }));
 
-import { logErrorEvent, refuse } from "@/lib/error-log";
+import { logErrorEvent, refuse, apiError } from "@/lib/error-log";
 
 /** Minimal stand-in for the drizzle insert chain: .values() resolves. */
 function insertOk() {
@@ -122,5 +126,76 @@ describe("refuse", () => {
     const res = await refuse(BASE);
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(BASE.message);
+  });
+});
+
+describe("Sentry forwarding", () => {
+  it("does not bother Sentry with a 4xx — the user did that, not us", async () => {
+    insertOk();
+    await logErrorEvent(BASE);
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  it("forwards a 5xx with its cause and route/reason tags", async () => {
+    insertOk();
+    const cause = new Error("neon: connection reset");
+    await logErrorEvent({ ...BASE, status: 500, reason: "write_failed", cause });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+    const [err, ctx] = mockCapture.mock.calls[0];
+    expect(err).toBe(cause);
+    expect(ctx.tags).toMatchObject({ route: "/api/copilot", reason: "write_failed", status: "500" });
+  });
+
+  it("synthesises an Error from the message when there is no cause", async () => {
+    insertOk();
+    await logErrorEvent({ ...BASE, status: 502, reason: "upstream_failed" });
+    const [err] = mockCapture.mock.calls[0];
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe(BASE.message);
+  });
+
+  it("never writes the cause to Postgres", async () => {
+    const captured = insertOk();
+    await logErrorEvent({ ...BASE, status: 500, reason: "unhandled", cause: new Error("x") });
+    expect(captured[0]).not.toHaveProperty("cause");
+  });
+
+  it("still returns when Sentry itself throws", async () => {
+    insertOk();
+    mockCapture.mockImplementationOnce(() => {
+      throw new Error("sentry exploded");
+    });
+    await expect(
+      logErrorEvent({ ...BASE, status: 500, reason: "unhandled" }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("apiError", () => {
+  it("returns { error } JSON with the status, and logs it", async () => {
+    const captured = insertOk();
+    const res = await apiError("/api/x", 502, "upstream_failed", "Drive didn't answer.", {
+      ownerEmail: "t@x.org",
+      detail: { upstreamStatus: 503 },
+    });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Drive didn't answer." });
+    expect(captured[0]).toMatchObject({
+      route: "/api/x",
+      status: 502,
+      reason: "upstream_failed",
+      ownerEmail: "t@x.org",
+      detail: { upstreamStatus: 503 },
+    });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("spreads extra into the body but not into the row", async () => {
+    const captured = insertOk();
+    const res = await apiError("/api/x", 500, "ai_parse_failed", "Failed to parse", {
+      extra: { raw: "not json" },
+    });
+    expect(await res.json()).toEqual({ error: "Failed to parse", raw: "not json" });
+    expect(JSON.stringify(captured[0])).not.toContain("not json");
   });
 });

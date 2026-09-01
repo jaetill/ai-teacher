@@ -35,6 +35,9 @@ import { and, eq, isNull, or, inArray, like } from "drizzle-orm";
 import { scanFolderUnits } from "@/lib/drive";
 import { readJson } from "@/lib/api-utils";
 import { ownedMaterials } from "@/lib/material-scope";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/import/backfill-units";
 
 export async function POST(req: Request) {
   const accessToken = await getAccessToken(req);
@@ -72,8 +75,7 @@ export async function POST(req: Request) {
   try {
     scanned = await scanFolderUnits(accessToken, body.sourceFolderId);
   } catch (err) {
-    console.error("Backfill scan failed:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "Failed to scan folder" }, { status: 500 });
+    return apiError(ROUTE, 502, "upstream_failed", "Failed to scan folder", { cause: err, ownerEmail });
   }
   const unitByTitle = new Map<string, string>();
   const ambiguous = new Set<string>();

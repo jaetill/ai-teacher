@@ -36,6 +36,9 @@ import {
   type ItemFormat,
   type ItemType,
 } from "@/lib/items";
+import { apiError, logErrorEvent } from "@/lib/error-log";
+
+const ROUTE = "/api/lessons/[id]/items";
 
 export const maxDuration = 60;
 
@@ -135,7 +138,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const text = await fetchDriveText(accessToken, mat.driveFileId, mat.driveMimeType);
         passage = (text ?? "").trim();
       } catch (err) {
-        console.error("items.drive_read_failed", err);
+        // Title goes to the user (it's hers); the logged message stays generic
+        // because error_events must not carry filenames.
+        await logErrorEvent({
+          route: ROUTE,
+          status: 502,
+          reason: "upstream_failed",
+          message: "Couldn't read a material from Drive.",
+          cause: err,
+        });
         return Response.json(
           { error: `Couldn't read "${mat.title}" from Drive. Paste the passage instead.` },
           { status: 502 },
@@ -187,11 +198,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const text = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
     parsed = parseAiJson<unknown>(text);
   } catch (err) {
-    console.error("items.ai_failed", err);
-    return Response.json(
-      { error: "Couldn't write questions just now. Try again in a moment." },
-      { status: 502 },
-    );
+    return apiError(ROUTE, 502, "upstream_failed", "Couldn't write questions just now. Try again in a moment.", {
+      cause: err,
+    });
   }
 
   // The grounding gate. Anything whose evidence isn't in the passage dies here.
