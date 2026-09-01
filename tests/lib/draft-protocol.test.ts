@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   parseDraftBlock,
+  renderSpecAsDraftBlock,
   normalizeMaterialType,
   normalizeQuarter,
   DRAFT_SYSTEM_INSTRUCTIONS,
+  SPEC_SENTINEL,
 } from "../../src/lib/draft-protocol";
+import { COPILOT_TOOLS, TOOL_TO_KIND, TOOL_SYSTEM_INSTRUCTIONS } from "../../src/lib/copilot-tools";
 
 const FULL_BLOCK = `TITLE: Animal Farm Ch. 1–4 Quiz
 TYPE: assessment
@@ -138,5 +141,147 @@ describe("DRAFT_SYSTEM_INSTRUCTIONS", () => {
   it("tells the model not to claim it cannot produce a file", () => {
     expect(DRAFT_SYSTEM_INSTRUCTIONS).toContain("never say you cannot produce a file");
     expect(DRAFT_SYSTEM_INSTRUCTIONS).not.toContain("no markdown tables, no interactive elements");
+  });
+});
+
+// ── Tool-call drafts ───
+// A propose_* tool call is serialised into the same ```draft fence the panel
+// already renders, so DraftCard, the accept flow and the stored transcript all
+// keep working. This round trip is the contract between route and client: if it
+// breaks, the card either vanishes or loses its styling silently.
+describe("renderSpecAsDraftBlock -> parseDraftBlock", () => {
+  const spec = {
+    kind: "slides" as const,
+    title: "Day 4 — Bystander Effect",
+    theme: { backgroundColor: "#F3E9D2", titleFont: "Libre Baskerville" },
+    slides: [{ title: "What Is the Bystander Effect?", bullets: ["Diffusion of responsibility"] }],
+  };
+
+  // Extract the way CommonMark does: an opening fence, then the FIRST line
+  // that is only backticks of at least the opening length.
+  //
+  // The original helper here anchored to the end of the string, so it found the
+  // outermost fence and happily parsed a block that remark would have cut in
+  // half. It passed while the feature was broken — every theme was being
+  // discarded on accept, which is the exact bug this work exists to fix. A test
+  // that models the real parser is the only kind worth having here.
+  const inner = (block: string): string => {
+    const lines = block.split("\n");
+    const openAt = lines.findIndex((l) => /^`{3,}draft\s*$/.test(l.trim()));
+    if (openAt === -1) return "";
+    const openLen = (lines[openAt].trim().match(/^`+/) ?? [""])[0].length;
+    const closeAt = lines.findIndex(
+      (l, i) => i > openAt && new RegExp(`^\`{${openLen},}\\s*$`).test(l.trim()),
+    );
+    return lines.slice(openAt + 1, closeAt === -1 ? undefined : closeAt).join("\n");
+  };
+
+  it("round-trips the spec, styling intact", () => {
+    const rendered = renderSpecAsDraftBlock(spec, {
+      materialType: "lesson",
+      grade: 8,
+      quarter: "Q1",
+      unitTitle: "Night & The Hiding Place",
+    });
+    const parsed = parseDraftBlock(inner(rendered));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.title).toBe("Day 4 — Bystander Effect");
+    expect(parsed!.format).toBe("slides");
+    expect(parsed!.grade).toBe(8);
+    expect(parsed!.unitTitle).toBe("Night & The Hiding Place");
+    // The part that matters: the theme survives to the accept route.
+    expect(parsed!.spec?.theme?.backgroundColor).toBe("#F3E9D2");
+    expect(parsed!.spec?.kind).toBe("slides");
+  });
+
+  it("shows her the real content, not the JSON, in the preview", () => {
+    const parsed = parseDraftBlock(inner(renderSpecAsDraftBlock(spec)));
+    expect(parsed!.content).toContain("# What Is the Bystander Effect?");
+    expect(parsed!.content).toContain("- Diffusion of responsibility");
+  });
+
+  it("leaves spec null for an old-style text draft", () => {
+    const parsed = parseDraftBlock("TITLE: Plain\nTYPE: lesson\n---\nJust text.");
+    expect(parsed!.spec).toBeNull();
+    expect(parsed!.content).toBe("Just text.");
+  });
+
+  it("degrades to text rather than throwing on malformed spec JSON", () => {
+    // Half-streamed JSON is the common case here, not corruption.
+    const parsed = parseDraftBlock(
+      `TITLE: X\nSPEC: 1\n---\npreview\n${SPEC_SENTINEL}\n{"kind":"sli`,
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed!.spec).toBeNull();
+    expect(parsed!.content).toBe("preview"); // she still sees the draft
+  });
+
+  it("survives a stray triple backtick in her content", () => {
+    // A lesson containing a code sample would otherwise close the block early.
+    const withTicks = renderSpecAsDraftBlock({
+      ...spec,
+      slides: [{ title: "Code", bullets: ["Use ``` to fence a block"] }],
+    });
+    const parsed = parseDraftBlock(inner(withTicks));
+    expect(parsed?.spec?.kind).toBe("slides");
+  });
+
+  it("flattens a newline in the title so it cannot shift the separator", () => {
+    const rendered = renderSpecAsDraftBlock({ ...spec, title: "Day 4\n---\nInjected" });
+    const parsed = parseDraftBlock(inner(rendered));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.title).not.toContain("\n");
+    expect(parsed!.spec).not.toBeNull();
+  });
+
+  it("keeps the machine-readable spec out of what she reads", () => {
+    const parsed = parseDraftBlock(inner(renderSpecAsDraftBlock(spec)));
+    expect(parsed!.content).not.toContain(SPEC_SENTINEL);
+    expect(parsed!.content).not.toContain('"kind"');
+  });
+});
+
+// ── Tool wiring ───
+// TOOL_TO_KIND is how the route decides whether a tool_use block becomes a
+// draft. A name that does not match silently drops the card — the model would
+// appear to have proposed nothing at all.
+describe("copilot tools", () => {
+  it("maps every tool name to a spec kind", () => {
+    for (const tool of COPILOT_TOOLS) {
+      expect(
+        TOOL_TO_KIND[tool.name],
+        `${tool.name} has no kind, so its drafts vanish`,
+      ).toBeDefined();
+    }
+  });
+
+  it("has no kind mapping for a tool that does not exist", () => {
+    expect(Object.keys(TOOL_TO_KIND).sort()).toEqual(COPILOT_TOOLS.map((t) => t.name).sort());
+  });
+
+  it("requires the fields each executor cannot work without", () => {
+    const required = (name: string) =>
+      (COPILOT_TOOLS.find((t) => t.name === name)!.input_schema as { required?: string[] })
+        .required ?? [];
+    expect(required("propose_slides")).toEqual(expect.arrayContaining(["title", "slides"]));
+    expect(required("propose_sheet")).toEqual(expect.arrayContaining(["title", "headers", "rows"]));
+    expect(required("propose_doc")).toEqual(expect.arrayContaining(["title", "blocks"]));
+  });
+
+  it("tells the model it owns the design, since that was the whole failure", () => {
+    // The old prompt said "never say you cannot produce a file" while giving it
+    // no way to style one, which is how a "(Barbed Wire Theme)" deck came out
+    // plain white.
+    // Collapsed, because the prompt hard-wraps and an assertion that breaks on
+    // rewrapping is noise rather than a guard.
+    const flat = TOOL_SYSTEM_INSTRUCTIONS.replace(/\s+/g, " ");
+    expect(flat).toMatch(/you control the design/i);
+    expect(flat).toMatch(/never tell her to apply styling herself/i);
+  });
+
+  it("tells the model a tool call proposes rather than creates", () => {
+    expect(TOOL_SYSTEM_INSTRUCTIONS).toMatch(/PROPOSES|proposes/);
+    expect(TOOL_SYSTEM_INSTRUCTIONS).toMatch(/Accept & Create/);
   });
 });

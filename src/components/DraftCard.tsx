@@ -68,6 +68,9 @@ export default function DraftCard({
           unitTitle: draft.unitTitle ?? undefined,
           lessonTitle: draft.lessonTitle ?? undefined,
           conversationId: conversationId ?? undefined,
+          // Present when the copilot proposed through a tool call. Carries the
+          // styling — background, fonts, colours — that plain text could not.
+          spec: draft.spec ?? undefined,
         }),
       });
       if (!res.ok) {

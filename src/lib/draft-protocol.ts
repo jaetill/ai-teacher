@@ -23,6 +23,7 @@
 
 import { MATERIAL_TYPES, type MaterialType } from "@/lib/upload-utils";
 import { normalizeDraftFormat, type DraftFormat } from "@/lib/draft-formats";
+import { parseSpec, type DraftSpec } from "@/lib/draft-spec";
 
 export type ParsedDraft = {
   title: string;
@@ -34,9 +35,21 @@ export type ParsedDraft = {
   unitTitle: string | null;
   lessonTitle: string | null;
   content: string;
+  /** Set when the draft came from a tool call and carries full styling. */
+  spec: DraftSpec | null;
 };
 
 const VALID_QUARTERS = ["Summer", "Q1", "Q2", "Q3", "Q4"] as const;
+
+/**
+ * Separates the readable preview from the machine-readable spec.
+ *
+ * A sentinel rather than a nested ```json fence: CommonMark closes a fence at
+ * the first matching backtick line, so nesting one inside the draft block
+ * closed the draft block instead, and the spec was silently lost on every
+ * accept. Plain text cannot interact with the renderer.
+ */
+export const SPEC_SENTINEL = "<<<SPEC>>>";
 
 export function normalizeMaterialType(value: unknown): MaterialType {
   return typeof value === "string" &&
@@ -83,6 +96,32 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
 
   const gradeNum = header.GRADE ? parseInt(header.GRADE, 10) : NaN;
 
+  // A spec-backed draft carries its whole structure — including the theme —
+  // as one line of JSON after a sentinel. The readable preview above it is
+  // what she sees; the spec is what Accept & Create executes.
+  //
+  // Deliberately NOT a nested ```json fence. CommonMark closes a fence at the
+  // first line of matching backticks, so an inner fence closes the OUTER draft
+  // block — remark then hands the card a truncated body, the JSON never parses,
+  // and every theme is silently discarded on accept. A sentinel cannot collide
+  // with the renderer at all.
+  let spec: DraftSpec | null = null;
+  let body = content;
+  const sentinel = content.indexOf(SPEC_SENTINEL);
+  if (sentinel !== -1) {
+    body = content.slice(0, sentinel).trimEnd();
+    if (header.SPEC === "1") {
+      try {
+        const json = content.slice(sentinel + SPEC_SENTINEL.length).trim();
+        const parsed = JSON.parse(json) as { kind?: unknown };
+        spec = parseSpec(parsed.kind, parsed);
+      } catch {
+        spec = null; // Still streaming, or malformed — fall back to text.
+      }
+    }
+  }
+  if (body.length === 0) return null;
+
   return {
     title: title.slice(0, 200),
     materialType: normalizeMaterialType(header.TYPE),
@@ -91,8 +130,73 @@ export function parseDraftBlock(raw: string): ParsedDraft | null {
     quarter: normalizeQuarter(header.QUARTER),
     unitTitle: header.UNIT || null,
     lessonTitle: header.LESSON || null,
-    content,
+    content: body,
+    spec,
   };
+}
+
+/**
+ * A spec -> the ```draft block the panel already knows how to render.
+ *
+ * Two audiences in one block. The human-readable preview is what she reads
+ * before deciding, so it must show the real content; the JSON is what the
+ * accept route executes, so it must be complete. Keeping both in the existing
+ * fence means DraftCard, the accept flow and the stored transcript all keep
+ * working unchanged.
+ */
+export function renderSpecAsDraftBlock(
+  spec: DraftSpec,
+  placement: Record<string, unknown> = {}
+): string {
+  // A newline inside any header value would shift parseDraftBlock's `---`
+  // search and garble the card, so every value is flattened to one line.
+  const line = (v: string) => v.replace(/[\r\n]+/g, " ").trim();
+
+  const header = [
+    `TITLE: ${line(spec.title)}`,
+    `TYPE: ${normalizeMaterialType(placement.materialType)}`,
+    `FORMAT: ${spec.kind}`,
+    `SPEC: 1`,
+  ];
+  if (typeof placement.grade === "number") header.push(`GRADE: ${placement.grade}`);
+  const q = normalizeQuarter(placement.quarter);
+  if (q) header.push(`QUARTER: ${q}`);
+  if (typeof placement.unitTitle === "string" && line(placement.unitTitle)) {
+    header.push(`UNIT: ${line(placement.unitTitle)}`);
+  }
+  if (typeof placement.lessonTitle === "string" && line(placement.lessonTitle)) {
+    header.push(`LESSON: ${line(placement.lessonTitle)}`);
+  }
+
+  // Four backticks so a stray ``` in her content — a code sample in a lesson,
+  // say — cannot close the block early.
+  return `\n\n\`\`\`\`draft\n${header.join("\n")}\n---\n${specPreview(spec)}\n${SPEC_SENTINEL}\n${JSON.stringify(spec)}\n\`\`\`\`\n`;
+}
+
+/** What she reads in the card — the content, not the JSON. */
+function specPreview(spec: DraftSpec): string {
+  if (spec.kind === "slides") {
+    return spec.slides
+      .map(
+        (s) =>
+          `# ${s.title}` +
+          (s.bullets.length ? `\n${s.bullets.map((b) => `- ${b}`).join("\n")}` : "") +
+          (s.notes ? `\n  (notes: ${s.notes})` : "")
+      )
+      .join("\n\n");
+  }
+  if (spec.kind === "sheet") {
+    return [spec.headers, ...spec.rows].map((r) => r.join("\t")).join("\n");
+  }
+  return spec.blocks
+    .map((b) => {
+      if (b.type === "heading1") return `# ${b.text}`;
+      if (b.type === "heading2") return `## ${b.text}`;
+      if (b.type === "heading3") return `### ${b.text}`;
+      if (b.type === "bullet") return `- ${b.text}`;
+      return b.text;
+    })
+    .join("\n");
 }
 
 // Appended to the copilot system prompt. Kept here so route and tests share
