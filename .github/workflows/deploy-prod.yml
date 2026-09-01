@@ -1,0 +1,76 @@
+name: deploy-prod
+# Production deploy, gated on CI (ADR-0043).
+#
+# Runs only after the `CI` workflow completes SUCCESSFULLY on `main`. Vercel's
+# git auto-deploy for `main` is disabled in vercel.json, so this workflow is the
+# only path to production. PR previews are untouched (Vercel still builds every
+# non-main branch).
+#
+# Protection rules (wait timer, required reviewer) live on the GitHub
+# `production` Environment, not here.
+#
+# Required Environment secrets (GitHub → Settings → Environments → production):
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# Until they exist this job fails at `vercel pull` and nothing ships — which is
+# the safe direction. Rollback procedure: docs/runbooks/rollback.md.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Manual re-deploy of main (e.g. after fixing secrets) without a new commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # workflow_run fires on failure too; only proceed on success (or manual).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ai-teacher-omega-sage.vercel.app
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Deploy exactly the commit CI validated, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g vercel@latest
+      - name: Link project + fetch production env
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy to production (Vercel builds it)
+        id: deploy
+        run: |
+          url=$(vercel deploy --prod --yes --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed $GITHUB_SHA → $url"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Smoke check
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "https://ai-teacher-omega-sage.vercel.app/api/health" | grep -q '"ok":true'; then
+              echo "healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::/api/health did not report ok within 60s — roll back per docs/runbooks/rollback.md"
+          exit 1

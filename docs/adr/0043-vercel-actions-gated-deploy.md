@@ -80,15 +80,22 @@ step after merging this ADR).
 
 ## Implementation notes
 
-- New workflow: `.github/workflows/deploy-prod.yml`.
-- `ci.yml` comment updated to remove "Vercel owns deployment" language.
-- **Post-merge setup checklist:**
-  1. Vercel dashboard → Project → Settings → Git → disable "Auto-assign
-     Production Domains to latest push" (or revoke the GitHub integration for
-     the main branch while keeping PR previews).
-  2. GitHub → Settings → Environments → create `production` environment.
-  3. Add environment secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
-  4. Optionally add a wait timer or required reviewer to the environment.
+- **Implemented 2026-09-01** (the ADR was Accepted on 2026-06-26 but the
+  workflow was never written; Vercel kept auto-deploying `main` for two months).
+- New workflow: `.github/workflows/deploy-prod.yml` — `workflow_run` on `CI`,
+  checks out the exact `head_sha` CI validated, `vercel pull` + `vercel deploy
+  --prod`, then polls `/api/health` and fails the job if it isn't `ok` within
+  60s. `workflow_dispatch` for a manual re-deploy.
+- `ci.yml` gained `npm run build` so build-only failures gate too.
+- Auto-deploy for `main` is disabled **in code**, not the dashboard:
+  `vercel.json` → `git.deploymentEnabled.main = false`. Previews unaffected.
+- **Post-merge setup checklist (one-time, GitHub UI):**
+  1. Settings → Environments → create `production`.
+  2. Add environment secrets `VERCEL_TOKEN` (vercel.com → Account → Tokens),
+     `VERCEL_ORG_ID` = `team_sl0N0qZqizfYQdMu8IlANV0I`,
+     `VERCEL_PROJECT_ID` = `prj_0PsGvPVtVdLJNecwEYeX0qeDvp6b`.
+  3. Optionally add a wait timer or required reviewer.
+  Until step 2 is done, merges to `main` do not reach production (fail-safe).
 
 ## Links
 
