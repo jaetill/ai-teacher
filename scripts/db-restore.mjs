@@ -25,7 +25,7 @@ const force = args.includes("--force");
 
 if (!dir) {
   console.error(
-    "usage: npm run db:restore -- <backup-dir> [--dry-run|--confirm] [--replace] [--force]",
+    "usage: npm run db:restore -- <backup-dir> [--dry-run|--confirm] [--replace] [--force] [--prod]",
   );
   process.exit(1);
 }
@@ -35,7 +35,9 @@ if (!dryRun && !confirmed) {
 }
 
 const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
-const db = connect();
+// --replace truncates; a plain restore only inserts into empty tables. Either
+// way it rewrites the target, so a production host needs --prod.
+const db = connect({ destructive: !dryRun });
 
 console.log(`Restoring ${dir}`);
 console.log(`  taken:  ${manifest.takenAt} (from ${manifest.databaseHost})`);

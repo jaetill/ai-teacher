@@ -7,8 +7,10 @@
 //   npm run db:reset -- --confirm          → wipe curriculum data
 //   npm run db:reset -- --confirm --all    → wipe reference data too
 //   npm run db:reset -- --confirm --keep standards,school_years
+//   npm run db:reset -- --confirm --prod   → required when DATABASE_URL is production
 //
-// Refuses to run without --confirm. Take a backup first (npm run db:backup).
+// Refuses to run without --confirm, and refuses a production host without
+// --prod. Take a backup first (npm run db:backup).
 import { sql } from "drizzle-orm";
 import { connect, listTables, topoSort, quoteIdent, REFERENCE_TABLES } from "./lib/db-tools.mjs";
 
@@ -28,7 +30,7 @@ if (!dryRun && !confirmed) {
   process.exit(1);
 }
 
-const db = connect();
+const db = connect({ destructive: !dryRun });
 
 const all = await topoSort(db, await listTables(db));
 const keep = new Set(

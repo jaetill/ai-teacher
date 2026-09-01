@@ -24,13 +24,42 @@ export const REFERENCE_TABLES = [
   "__drizzle_migrations",
 ];
 
-export function connect() {
+// Neon endpoints that hold the teacher's live data. Destructive scripts refuse
+// to run against these unless --prod is passed explicitly. Host names are not
+// secrets; the point is that a laptop `.env.local` accidentally still pointing
+// at prod cannot truncate it by muscle memory. Dev work belongs on a Neon
+// branch (see docs/runbooks/database.md).
+export const PROD_DB_HOST_PATTERNS = [/^ep-icy-morning-antemsbt\b/];
+
+export function isProdHost(url) {
+  try {
+    const host = new URL(url).host;
+    return PROD_DB_HOST_PATTERNS.some((re) => re.test(host));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {{destructive?: boolean}} [opts]  `destructive: true` makes the call
+ *   refuse a production host unless `--prod` is on argv.
+ */
+export function connect(opts = {}) {
   config({ path: ".env.local" });
-  if (!process.env.DATABASE_URL) {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
     console.error("DATABASE_URL is not set (checked .env.local and environment)");
     process.exit(1);
   }
-  return drizzle(neon(process.env.DATABASE_URL));
+  if (opts.destructive && isProdHost(url) && !process.argv.includes("--prod")) {
+    console.error(
+      `REFUSING: ${new URL(url).host} is the PRODUCTION database.\n` +
+        "This script destroys data. Point .env.local at a Neon dev branch, or pass\n" +
+        "--prod if you really mean production (take a backup first: npm run db:backup).",
+    );
+    process.exit(1);
+  }
+  return drizzle(neon(url));
 }
 
 /** Every base table in the public schema, alphabetically. */

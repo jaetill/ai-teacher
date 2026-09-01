@@ -15,8 +15,9 @@ function getDb(): DB {
     const url = process.env.DATABASE_URL;
     if (!url) {
       throw new Error(
-        "DATABASE_URL is not set. Configure it in .env.local for local dev, " +
-          "or in Vercel project settings (Production + Preview + Development).",
+        "DATABASE_URL is not set. Configure it in .env.local for local dev " +
+          "(a Neon dev branch — see .env.example), or in Vercel project settings. " +
+          "Production and Preview must point at DIFFERENT Neon branches.",
       );
     }
     cached = drizzle(neon(url), { schema });
