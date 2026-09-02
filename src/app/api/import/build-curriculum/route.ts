@@ -37,7 +37,7 @@ import {
   coerceToTemplate,
   type TemplateField,
 } from "@/lib/lesson-template";
-import { apiError } from "@/lib/error-log";
+import { apiError, logErrorEvent } from "@/lib/error-log";
 
 const ROUTE = "/api/import/build-curriculum";
 
@@ -422,6 +422,9 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   const message = await stream.finalMessage();
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
+  // "max_tokens" here means the JSON was cut off mid-stream — the most common
+  // cause of an unparseable reply, and one the row below should name.
+  const stopReason: string | undefined = message.stop_reason ?? undefined;
 
   type ParsedUnit = {
     title: string;
@@ -449,7 +452,6 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   if (parseResult !== null) {
     parsed = parseResult;
   } else {
-    console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
     // In faithful mode the teacher's units come from her folders, not the AI, so
     // a parse failure only loses enrichment — proceed instead of failing her build.
     if (!faithful) {
@@ -458,6 +460,17 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
         detail: { responseChars: text.length },
       });
     }
+    // She gets a 200 with empty units. Record it anyway: this is the exact
+    // "quarter built with zero lessons" symptom, and without a row it looks
+    // identical to a model that simply answered badly.
+    await logErrorEvent({
+      route: ROUTE,
+      status: 200,
+      reason: "ai_parse_failed",
+      message: "Build proceeded without AI enrichment (faithful mode)",
+      ownerEmail,
+      detail: { responseChars: text.length, stopReason: stopReason ?? null },
+    });
   }
 
   const parsedUnits = Array.isArray(parsed.units) ? parsed.units : [];

@@ -120,4 +120,4 @@ this and additionally requires a backup to exist.
 ## Escalation
 
 Single operator. If Neon itself is down: https://neonstatus.com. The app
-returns 500s on every DB route; `GET /api/health` reports `db: false`.
+returns 500s on every DB route; `GET /api/health` returns 503 `{ ok: false }`.

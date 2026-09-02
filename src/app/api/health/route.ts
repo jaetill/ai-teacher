@@ -5,7 +5,8 @@
 // could use. `release` is the deploy SHA so a checker's "it's down" can be
 // matched to a deploy without opening Vercel.
 //
-// 200 { ok: true }   — app up, DB reachable
+// 200 { ok: true }   — app up, DB reachable (ok IS the db check; nothing else
+//                      is probed, so there is no separate per-subsystem flag)
 // 503 { ok: false }  — app up, DB not reachable (Neon down, bad DATABASE_URL)
 // anything else      — app down; Vercel itself is answering
 //
@@ -26,7 +27,6 @@ export async function GET(): Promise<Response> {
   }
   const body = {
     ok: dbOk,
-    db: dbOk,
     dbMs: Date.now() - started,
     release: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
     time: new Date().toISOString(),

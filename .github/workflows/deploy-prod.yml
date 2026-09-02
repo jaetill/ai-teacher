@@ -20,6 +20,7 @@ on:
     types: [completed]
     branches: [main]
   # Manual re-deploy of main (e.g. after fixing secrets) without a new commit.
+  # Only honoured when dispatched FROM main — see the job `if`.
   workflow_dispatch:
 
 permissions:
@@ -33,7 +34,7 @@ jobs:
   deploy:
     # workflow_run fires on failure too; only proceed on success (or manual).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
@@ -52,25 +53,42 @@ jobs:
         with:
           node-version: 22
       - run: npm i -g vercel@latest
+      # The CLI reads VERCEL_TOKEN from the environment; never pass it as a
+      # flag (it would sit in the process argv for the life of the step).
       - name: Link project + fetch production env
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       - name: Deploy to production (Vercel builds it)
         id: deploy
         run: |
-          url=$(vercel deploy --prod --yes --token="$VERCEL_TOKEN")
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          url=$(vercel deploy --prod --yes)
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "Deployed $GITHUB_SHA → $url"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deployed $sha → $url"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # Poll the canonical domain (the deployment-specific URL is behind Vercel
+      # Authentication) but insist that the release it reports is the SHA we
+      # just shipped — a stale edge serving the previous build cannot false-pass.
       - name: Smoke check
         run: |
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS "https://ai-teacher-omega-sage.vercel.app/api/health" | grep -q '"ok":true'; then
-              echo "healthy"; exit 0
+          want="$(printf '%.7s' "${{ steps.deploy.outputs.sha }}")"
+          for i in $(seq 1 12); do
+            body=$(curl -fsS "https://ai-teacher-omega-sage.vercel.app/api/health" || true)
+            if echo "$body" | grep -q '"ok":true'; then
+              if echo "$body" | grep -q "\"release\":\"$want\""; then
+                echo "healthy at release $want"; exit 0
+              fi
+              if echo "$body" | grep -q '"release":null'; then
+                # VERCEL_GIT_COMMIT_SHA not populated for this deploy — can't
+                # prove which build answered. Don't fail a good deploy over it.
+                echo "::warning::/api/health is ok but reports no release SHA; cannot confirm it is $want"
+                exit 0
+              fi
             fi
             sleep 10
           done
-          echo "::error::/api/health did not report ok within 60s — roll back per docs/runbooks/rollback.md"
+          echo "::error::/api/health did not report ok at release $want within 120s (last: $body) — roll back per docs/runbooks/rollback.md"
           exit 1

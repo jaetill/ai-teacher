@@ -106,13 +106,7 @@ export async function POST(req: Request) {
   if (classifications !== null) {
     return Response.json({ classifications });
   }
-  {
-    console.error(
-      "[classify] unparseable AI response:",
-      text.slice(0, 500),
-    );
-    return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse classification response", {
-      detail: { responseChars: text.length },
-    });
-  }
+  return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse classification response", {
+    detail: { responseChars: text.length },
+  });
 }
