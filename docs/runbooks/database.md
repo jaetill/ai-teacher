@@ -9,14 +9,15 @@ reimport.
 ## The rule
 
 **Production data lives on one Neon endpoint (`ep-icy-morning-antemsbt…`), and
-nothing on a laptop points at it by default.** Local `.env.local` and Vercel
-Preview each point at their own Neon branch. `scripts/lib/db-tools.mjs`
+nothing on a laptop points at it by default.** Local `.env.local` uses the
+`vercel-dev` branch; Vercel Previews get a per-PR branch from the Neon
+integration. `scripts/lib/db-tools.mjs`
 refuses `db:reset` and `db:restore` against the production host unless you pass
 `--prod`.
 
-Before 2026-09-01 local, preview, and prod all shared the production endpoint
-(handoff 2026-06-28: "serves BOTH local and prod"). That is what this runbook
-fixes.
+Before 2026-09-01 the laptop `.env.local` pointed at production (handoff
+2026-06-28: "serves BOTH local and prod"). Previews were already isolated by
+the integration; the 2026-09-01 readiness report was wrong to say otherwise.
 
 ## Prerequisites
 
@@ -26,28 +27,34 @@ fixes.
 
 ## Steps
 
-### 1. One-time: create the branches (Neon console)
+### 1. Vercel previews — already handled (Neon↔Vercel integration)
 
-1. Neon → Branches → **Create branch** from `main` (production).
-   Name: `dev`. Data: *include data* (a copy of prod is the most useful dev
-   fixture; it is a copy-on-write snapshot, effectively free).
-2. Repeat for `preview` — this is what Vercel PR previews will use.
-3. For each branch, copy its connection string (pooled is fine for the app;
-   direct is fine for scripts — both work over the HTTP driver).
+The Neon Vercel integration is installed on this project. It creates a Neon
+branch `preview/<git-branch>` for every PR and injects its `DATABASE_URL` /
+`DATABASE_URL_UNPOOLED` into that Preview deployment. Nothing to configure.
 
-### 2. One-time: point each environment at its branch
+Housekeeping: it does **not** reliably delete those branches when the PR
+merges, and the free plan caps the project at 10 branches. When you hit
+"Branch limit reached", Neon → Branches → ⋮ → Delete on every `preview/*`
+whose PR is closed.
 
-- **Laptop:** `.env.local` → `DATABASE_URL` = the `dev` branch string.
-  (`cp .env.example .env.local` if starting fresh.)
-- **Vercel Preview:** Settings → Environment Variables → `DATABASE_URL`,
-  scope **Preview only** → the `preview` branch string.
-- **Vercel Production:** `DATABASE_URL`, scope **Production only** → the
-  production string. Remove any Preview/Development scoping from it.
-- Redeploy the latest preview to pick up the change.
+### 2. Laptop — point `.env.local` at `vercel-dev`, never at production
+
+The integration also created a `vercel-dev` branch. That is your local
+database:
+
+1. Neon → Branches → `vercel-dev` → **Connect** → copy the connection string.
+2. `.env.local` → `DATABASE_URL` = that string. (`cp .env.example .env.local`
+   if starting fresh.)
+3. `npm run db:reset -- --dry-run` must print a host that is **not**
+   `ep-icy-morning-antemsbt`.
+
+Vercel → Settings → Environment Variables: `DATABASE_URL` should be scoped to
+**Production** only. The integration owns Preview.
 
 ### 3. Refresh a dev branch from prod (whenever you want current data)
 
-Neon → Branches → `dev` → **Reset from parent**. Seconds; no app change.
+Neon → Branches → `vercel-dev` → **Reset from parent**. Seconds; no app change.
 
 ### 4. Apply migrations
 
@@ -57,7 +64,7 @@ npm run db:migrate           # applies pending files in drizzle/ to $DATABASE_UR
 ```
 
 `db:migrate` is journal-tracked (`drizzle.__drizzle_migrations`) and safe to
-re-run. Apply to `dev` first, then run against production by temporarily
+re-run. Apply to `vercel-dev` first, then run against production by temporarily
 exporting the prod URL in the shell (not by editing `.env.local`):
 
 ```
