@@ -116,6 +116,15 @@ empty — see `unmatchedUnits` in the build response.
   production host without `--prod`. `.env.example` is the template. See
   `docs/runbooks/database.md`.
 - Build-time secrets (Vercel + CI): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
+- **`ANTHROPIC_API_KEY` belongs to Jason's hotmail Anthropic org (`8a0c287a…`), not the
+  jaetill@gmail.com org (`8d63eee8…`) that holds his Claude subscription.** Decided
+  2026-09-03: ride the hotmail org's prepaid credit until it runs out; the app detects
+  the "credit balance is too low" 400 (`src/lib/anthropic-failure.ts`), raises a fatal
+  Sentry issue titled "ACTION NEEDED…", and tells the teacher the feature is paused.
+  Swap procedure: `docs/runbooks/ai-billing.md`. Do not "fix" a $0 balance in the
+  gmail console — that console has never billed this app. The Claude subscription
+  cannot power the copilot for other users (Anthropic terms); the API key is the
+  only legitimate path.
 - To deploy: `git push origin main` (CI gates it). Manual re-run: Actions → deploy-prod.
 
 ## Server-code conventions (2026-07 eval)

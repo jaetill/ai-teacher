@@ -15,6 +15,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
 import { errorEvents } from "@/db/schema";
+import { classifyAnthropicFailure, operatorAlertTitle } from "@/lib/anthropic-failure";
 
 /** Machine codes. Stable across releases — grouping depends on it. */
 export type ErrorReason =
@@ -45,7 +46,11 @@ export type ErrorReason =
   | "write_failed"
   | "record_missing"
   | "config_missing"
-  | "unhandled";
+  | "unhandled"
+  // The Anthropic ACCOUNT is the problem, not the request. Set automatically
+  // by logErrorEvent when `cause` carries the API's billing/auth signature.
+  | "ai_billing_exhausted"
+  | "ai_key_invalid";
 
 export interface ErrorEventInput {
   route: string;
@@ -71,6 +76,29 @@ export interface ErrorEventInput {
  * clear 413 into an opaque 500.
  */
 export async function logErrorEvent(input: ErrorEventInput): Promise<void> {
+  // ── Account-level Anthropic failures get their own reason and their own
+  // Sentry issue, whatever the route called them. The whole point is that the
+  // alert email says "credits ran out — swap the key", not "upstream_failed".
+  const failure = input.cause !== undefined ? classifyAnthropicFailure(input.cause) : null;
+  if (failure?.needsOperator) {
+    input = {
+      ...input,
+      reason: failure.kind === "billing_exhausted" ? "ai_billing_exhausted" : "ai_key_invalid",
+      detail: { ...(input.detail ?? {}), upstreamStatus: failure.status ?? null },
+    };
+    try {
+      Sentry.captureMessage(operatorAlertTitle(failure), {
+        level: "fatal",
+        // One issue per kind, however many routes and users hit it.
+        fingerprint: ["anthropic-account", failure.kind],
+        tags: { route: input.route, reason: input.reason, anthropic_failure: failure.kind },
+        extra: { apiMessage: failure.apiMessage, upstreamStatus: failure.status },
+      });
+    } catch {
+      // Never let alerting change the outcome.
+    }
+  }
+
   // 5xx means *we* failed, not the user. Those belong in Sentry too — until
   // 2026-09-01 every route caught its own errors and console.error'd them, so
   // Sentry saw only the unhandled ones. captureException is a no-op when the
@@ -150,6 +178,14 @@ export async function apiError(
     extra?: Record<string, unknown>;
   } = {}
 ): Promise<Response> {
+  // An account-level Anthropic failure overrides whatever the route was going
+  // to say: "Classification failed, try again" is wrong advice when the
+  // credits are gone. 503 so clients that retry on 5xx don't hammer it.
+  const failure = opts.cause !== undefined ? classifyAnthropicFailure(opts.cause) : null;
+  if (failure?.needsOperator) {
+    message = failure.userMessage;
+    status = 503;
+  }
   await logErrorEvent({
     route,
     status,
@@ -160,5 +196,8 @@ export async function apiError(
     ownerEmail: opts.ownerEmail,
     conversationId: opts.conversationId,
   });
-  return Response.json({ error: message, ...(opts.extra ?? {}) }, { status });
+  return Response.json(
+    { error: message, ...(failure?.needsOperator ? { needsOperator: true } : {}), ...(opts.extra ?? {}) },
+    { status },
+  );
 }

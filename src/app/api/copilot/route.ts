@@ -14,6 +14,7 @@ import { parseSpec } from "@/lib/draft-spec";
 import { COPILOT_TOOLS, TOOL_SYSTEM_INSTRUCTIONS, TOOL_TO_KIND } from "@/lib/copilot-tools";
 import { checkAiRateLimit, chargeAiTokens } from "@/lib/rate-limit";
 import { billableTokens } from "@/lib/ai-usage";
+import { classifyAnthropicFailure } from "@/lib/anthropic-failure";
 import { readJson, UUID_RE } from "@/lib/api-utils";
 import { refuse, logErrorEvent } from "@/lib/error-log";
 import { MODELS } from "@/lib/models";
@@ -623,6 +624,9 @@ export async function POST(request: Request) {
 
   let assistantText = "";
   let usage: Anthropic.Messages.Usage | undefined;
+  // Set when the failure is the Anthropic account itself; the stream then
+  // closes cleanly (so the explanation renders) instead of erroring.
+  let operatorFailure = false;
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -697,6 +701,18 @@ export async function POST(request: Request) {
       } catch (err) {
         streamError = err;
         console.error("[copilot] Anthropic stream failed:", err);
+        // If the ACCOUNT is the problem (credits gone, key revoked), say so in
+        // the stream itself — the panel shows streamed text verbatim, and
+        // "Something went wrong" would send her retrying a dead key.
+        const failure = classifyAnthropicFailure(err);
+        operatorFailure = failure.needsOperator;
+        if (failure.needsOperator && !clientGone) {
+          try {
+            controller.enqueue(encoder.encode(`\n\n⚠️ ${failure.userMessage}`));
+          } catch {
+            clientGone = true;
+          }
+        }
         // A mid-stream failure is the one case where the user sees a broken
         // answer rather than a status code, so it needs a row more than the
         // refusals above do. `charsDelivered` separates "died immediately"
@@ -707,6 +723,7 @@ export async function POST(request: Request) {
           status: 200,
           reason: "stream_failed",
           message: err instanceof Error ? err.message : String(err),
+          cause: err,
           ownerEmail: email,
           conversationId: convId,
           detail: {
@@ -758,7 +775,7 @@ export async function POST(request: Request) {
       }
 
       try {
-        if (streamError && !clientGone) {
+        if (streamError && !clientGone && !operatorFailure) {
           controller.error(streamError);
         } else {
           controller.close();

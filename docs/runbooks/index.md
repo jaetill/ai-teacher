@@ -10,6 +10,8 @@ Operational playbooks. Format spec in [README.md](README.md).
   forward-only-migrations rule + Neon point-in-time branch.
 - [`database.md`](database.md) — Neon branches per environment, migrate,
   backup, restore, reset, and the production-host guard on destructive scripts.
+- [`ai-billing.md`](ai-billing.md) — Anthropic credits ran out or the key was
+  rejected: mint a key in the jaetill org, fund it, swap it in Vercel.
 
 ## Deploy (no runbook needed)
 
