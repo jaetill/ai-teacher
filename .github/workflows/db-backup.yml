@@ -1,0 +1,82 @@
+name: db-backup
+# Nightly production backup → encrypted GitHub artifact (90-day retention).
+#
+# Why: before 2026-09-03 the only backups were two ad-hoc JSON dumps on one
+# laptop. Neon's free-plan point-in-time window is hours, not days.
+#
+# Why encrypted: THIS REPOSITORY IS PUBLIC. Artifacts on a public repo are
+# downloadable by any signed-in GitHub user. The dump holds the teacher's
+# curriculum and copilot transcripts, so it never leaves the runner in the
+# clear. The job refuses to run without BACKUP_PASSPHRASE.
+#
+# Why no new DB secret: `vercel pull --environment=production` fetches the
+# production env (including DATABASE_URL) with the same VERCEL_* secrets
+# deploy-prod.yml already uses. One fewer copy of the prod connection string.
+#
+# Restore: docs/runbooks/database.md §6 (download artifact → decrypt → untar →
+# npm run db:restore).
+
+on:
+  schedule:
+    - cron: "17 7 * * *" # 07:17 UTC ≈ 03:17 ET, after any late-evening work
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Refuse to run without an encryption passphrase
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::BACKUP_PASSPHRASE is not set on the production Environment. Refusing to upload a plaintext dump of a public repo."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: npm i -g vercel@latest
+      - name: Fetch production env from Vercel
+        run: vercel pull --yes --environment=production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Dump every table
+        run: |
+          # scripts/lib/db-tools.mjs reads .env.local; hand it only the one
+          # variable it needs, extracted from what vercel pull wrote.
+          grep '^DATABASE_URL=' .vercel/.env.production.local > .env.local
+          npm run db:backup -- --label nightly
+          ls backups
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          dir=$(ls -d backups/*_nightly | head -1)
+          name=$(basename "$dir")
+          tar -czf "$name.tar.gz" -C backups "$name"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in "$name.tar.gz" -out "$name.tar.gz.enc" -pass env:BACKUP_PASSPHRASE
+          rm -rf "$name.tar.gz" backups .env.local .vercel
+          echo "name=$name" >> "$GITHUB_ENV"
+          ls -la "$name.tar.gz.enc"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.name }}
+          path: ${{ env.name }}.tar.gz.enc
+          retention-days: 90
+          if-no-files-found: error
