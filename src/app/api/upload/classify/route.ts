@@ -10,6 +10,7 @@ import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { apiError } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/upload/classify";
 
@@ -52,7 +53,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const rateLimited = await checkAiRateLimit(await getUserEmail());
+  const ownerEmail = await getUserEmail();
+  const rateLimited = await checkAiRateLimit(ownerEmail);
   if (rateLimited) return rateLimited;
 
   const body = await readJson<{ filenames: string[]; zipName?: string }>(req);
@@ -101,6 +103,14 @@ export async function POST(req: Request) {
 
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
+  await recordAiUsage({
+    route: ROUTE,
+    ownerEmail,
+    model: MODELS.structured,
+    usage: message.usage,
+    entityType: "material",
+    action: "classify",
+  });
 
   const classifications = parseAiJson<unknown>(text);
   if (classifications !== null) {

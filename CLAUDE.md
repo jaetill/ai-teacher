@@ -108,7 +108,9 @@ empty — see `unmatchedUnits` in the build response.
 - `ALLOWED_EMAILS` (comma-separated sign-in allowlist) is **required in production** —
   since 2026-09-01 `signIn` fails closed when `VERCEL_ENV=production` and it is unset.
   Unset outside production still means "anyone" so a fresh clone works.
-  `AI_RATE_LIMIT_PER_HOUR` (shared per-user AI budget, default 40) stays optional.
+  `AI_RATE_LIMIT_PER_HOUR` (shared per-user AI budget, default 40 calls) and
+  `AI_TOKEN_LIMIT_PER_HOUR` (default 2,000,000 billable tokens; charged from real
+  `usage` after each call) stay optional.
 - **Databases:** production, Vercel Preview and each laptop each get their OWN Neon
   branch. `scripts/lib/db-tools.mjs` refuses `db:reset`/`db:restore` against the
   production host without `--prod`. `.env.example` is the template. See
@@ -121,7 +123,16 @@ empty — see `unmatchedUnits` in the build response.
 - Parse request bodies with `readJson()` and validate ids with `isUuid()` from
   `src/lib/api-utils.ts` — never call `req.json()` bare or pass unvalidated ids to Postgres.
 - Every Anthropic-calling route must call `checkAiRateLimit(email)` (`src/lib/rate-limit.ts`)
-  after auth and cheap validation, before any AI spend.
+  after auth and cheap validation, before any AI spend — and `recordAiUsage(...)`
+  (`src/lib/ai-usage.ts`) with `message.usage` afterwards. That writes the
+  `ai_interactions` row and charges the token budget; `tests/lib/ai-usage.test.ts`
+  fails if a `getAnthropic()` route skips it. The copilot records onto
+  `copilot_messages.token_count_*` instead and calls `chargeAiTokens` directly.
+  Cost query: see the header comment in `src/db/schema/ai-interactions.ts`.
+- The copilot's `system` is a content-block array with `cache_control: ephemeral`
+  on the base-prompt + curriculum block (identical across turns; tens of thousands
+  of tokens). Keep per-turn text (attachment guard, page context) in the second
+  block so it never invalidates the cached prefix.
 - Get the Anthropic client via `getAnthropic()` (`src/lib/anthropic.ts`) — never construct
   `new Anthropic()` at module scope (breaks builds where the key env var is scoped).
 - Atomic multi-statement writes use `db.batch([...])`; `db.transaction()` throws on the

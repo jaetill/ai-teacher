@@ -27,6 +27,7 @@ import { glossaryTerms } from "@/db/schema";
 import { DEFAULT_TERMS } from "@/lib/glossary-terms";
 import { and, eq, inArray } from "drizzle-orm";
 import { apiError } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/import/classify";
 
@@ -134,6 +135,15 @@ No markdown fencing, no explanation.`;
       ],
     });
     raw = message.content[0].type === "text" ? message.content[0].text : "";
+    await recordAiUsage({
+      route: ROUTE,
+      ownerEmail,
+      model: MODELS.structured,
+      usage: message.usage,
+      entityType: "material",
+      action: "classify",
+      promptSummary: `classify ${body.files.length} files`,
+    });
   } catch (err) {
     return apiError(ROUTE, 502, "upstream_failed", "Classification failed", { cause: err, ownerEmail });
   }

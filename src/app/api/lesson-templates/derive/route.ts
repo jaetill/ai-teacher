@@ -25,6 +25,7 @@ import { parseAiJson } from "@/lib/parse-ai-json";
 import { isUuid, readJson } from "@/lib/api-utils";
 import { normalizeFields, STARTER_FIELDS, MAX_FIELDS } from "@/lib/lesson-template";
 import { apiError } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/lesson-templates/derive";
 
@@ -133,6 +134,14 @@ export async function POST(req: Request) {
     const text = message.content
       .map((c) => (c.type === "text" ? c.text : ""))
       .join("");
+    await recordAiUsage({
+      route: ROUTE,
+      ownerEmail,
+      model: MODELS.structured,
+      usage: message.usage,
+      entityType: "lesson_template",
+      action: "derive",
+    });
     parsed = parseAiJson<{ fields?: unknown; notes?: unknown }>(text);
   } catch (err) {
     return apiError(ROUTE, 502, "upstream_failed", "Could not read your lessons just now. Try again in a moment.", {

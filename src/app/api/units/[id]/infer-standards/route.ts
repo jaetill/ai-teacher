@@ -19,6 +19,7 @@ import { checkAiRateLimit } from "@/lib/rate-limit";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { apiError } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/units/[id]/infer-standards";
 
@@ -133,6 +134,15 @@ ${lessonsList}`,
 
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
+  await recordAiUsage({
+    route: ROUTE,
+    ownerEmail: session.user?.email,
+    model: MODELS.structured,
+    usage: message.usage,
+    entityType: "unit",
+    entityId: id,
+    action: "infer_standards",
+  });
 
   const mappings = parseAiJson<
     Array<{

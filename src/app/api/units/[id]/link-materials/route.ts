@@ -24,6 +24,7 @@ import { parseAiJson } from "@/lib/parse-ai-json";
 import { ownedMaterials } from "@/lib/material-scope";
 import { isUuid } from "@/lib/api-utils";
 import { apiError } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/units/[id]/link-materials";
 
@@ -174,6 +175,15 @@ ${materialList}`,
 
   const text =
     message.content[0].type === "text" ? message.content[0].text : "";
+  await recordAiUsage({
+    route: ROUTE,
+    ownerEmail,
+    model: MODELS.structured,
+    usage: message.usage,
+    entityType: "unit",
+    entityId: id,
+    action: "link_materials",
+  });
 
   const mappings = parseAiJson<
     Array<{
