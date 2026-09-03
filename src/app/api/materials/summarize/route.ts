@@ -28,12 +28,14 @@ import { db } from "@/db";
 import { courses, driveFolders, materials, units } from "@/db/schema";
 import { ownedMaterials } from "@/lib/material-scope";
 import { and, eq, inArray, isNull, or, sql as dsql } from "drizzle-orm";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 export const maxDuration = 60;
 
 const BATCH_SIZE = 5;
 const MAX_CONTENT_CHARS = 12_000;
 const SUMMARIZER_MODEL = MODELS.summarizer;
+const ROUTE = "/api/materials/summarize";
 
 
 
@@ -169,6 +171,15 @@ export async function POST(req: Request) {
             content: `Summarize this teaching material in 2-3 plain sentences for an AI index. State what kind of document it is, what content it covers (texts, chapters, vocabulary words, skills), and notable components (word banks, rubric rows, question types and counts, answer keys). No preamble.\n\nTitle: ${promptSafe(m.title)}\nCategorized as: ${promptSafe(m.materialType, 40)}\n\n--- DOCUMENT (may be truncated) ---\n${truncated}`,
           },
         ],
+      });
+      await recordAiUsage({
+        route: ROUTE,
+        ownerEmail,
+        model: SUMMARIZER_MODEL,
+        usage: msg.usage,
+        entityType: "material",
+        entityId: m.id,
+        action: "summarize",
       });
       const summary =
         msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";

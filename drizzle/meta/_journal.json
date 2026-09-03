@@ -127,6 +127,13 @@
       "when": 1788115207961,
       "tag": "0017_add_error_events",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788457171188,
+      "tag": "0018_ai_usage_accounting",
+      "breakpoints": true
     }
   ]
 }

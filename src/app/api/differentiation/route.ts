@@ -10,6 +10,7 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
+import { recordAiUsage, usageFromStream } from "@/lib/ai-usage";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA teacher with deep experience adapting materials for diverse learners.
 
@@ -107,6 +108,15 @@ ${outputRequest}`;
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
+        // Usage is only known once the stream has drained; finalMessage()
+        // resolves immediately at this point.
+        await recordAiUsage({
+          route: "/api/differentiation",
+          ownerEmail: session.user?.email,
+          model: MODELS.reasoning,
+          usage: await usageFromStream(stream),
+          entityType: "differentiation",
+        });
       } catch (err) {
         // Log server-side (was silently swallowed) and don't call close() on
         // an errored controller — that throws and masks the original failure.

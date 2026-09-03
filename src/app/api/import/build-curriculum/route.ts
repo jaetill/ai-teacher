@@ -38,6 +38,7 @@ import {
   type TemplateField,
 } from "@/lib/lesson-template";
 import { apiError, logErrorEvent } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/import/build-curriculum";
 
@@ -420,6 +421,15 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     messages: [{ role: "user", content: userContent }],
   });
   const message = await stream.finalMessage();
+  await recordAiUsage({
+    route: ROUTE,
+    ownerEmail,
+    model: MODELS.structured,
+    usage: message.usage,
+    entityType: "unit",
+    action: rebuild ? "regenerate" : "generate",
+    promptSummary: `build grade ${grade} ${quarter}`,
+  });
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
   // "max_tokens" here means the JSON was cut off mid-stream — the most common

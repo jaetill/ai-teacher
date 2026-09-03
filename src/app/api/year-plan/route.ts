@@ -16,6 +16,7 @@ import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { refuse } from "@/lib/error-log";
+import { recordAiUsage, usageFromStream } from "@/lib/ai-usage";
 
 const ROUTE = "/api/year-plan";
 
@@ -148,6 +149,15 @@ ${standards}`;
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
+        // Usage is only known once the stream has drained; finalMessage()
+        // resolves immediately at this point.
+        await recordAiUsage({
+          route: "/api/year-plan",
+          ownerEmail: session.user?.email,
+          model: MODELS.reasoning,
+          usage: await usageFromStream(stream),
+          entityType: "year_plan",
+        });
       } catch (err) {
         // Log server-side (was silently swallowed) and don't call close() on
         // an errored controller — that throws and masks the original failure.

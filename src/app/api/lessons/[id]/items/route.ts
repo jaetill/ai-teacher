@@ -37,6 +37,7 @@ import {
   type ItemType,
 } from "@/lib/items";
 import { apiError, logErrorEvent } from "@/lib/error-log";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 const ROUTE = "/api/lessons/[id]/items";
 
@@ -196,6 +197,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       messages: [{ role: "user", content: user }],
     });
     const text = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+    await recordAiUsage({
+      route: ROUTE,
+      ownerEmail,
+      model: MODELS.structured,
+      usage: message.usage,
+      entityType: "lesson",
+      entityId: id,
+      action: "items",
+    });
     parsed = parseAiJson<unknown>(text);
   } catch (err) {
     return apiError(ROUTE, 502, "upstream_failed", "Couldn't write questions just now. Try again in a moment.", {

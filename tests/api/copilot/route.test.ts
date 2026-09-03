@@ -303,7 +303,10 @@ describe("POST /api/copilot — curriculum context owner isolation", () => {
     await POST(makeRequest({ messages: VALID_MESSAGES }));
 
     expect(mockStreamFn).toHaveBeenCalledOnce();
-    const { system } = mockStreamFn.mock.calls[0][0] as { system: string };
+    const { system: blocks } = mockStreamFn.mock.calls[0][0] as {
+      system: Array<{ type: string; text: string; cache_control?: { type: string } }>;
+    };
+    const system = blocks.map((b) => b.text).join("\n");
 
     // Teacher A's course is in the AI context
     expect(system).toContain("Grade 6 ELA");
@@ -311,6 +314,11 @@ describe("POST /api/copilot — curriculum context owner isolation", () => {
     // Teacher B's hypothetical course is absent — the owner filter prevented it
     expect(system).not.toContain("teacher-b");
     expect(system).not.toContain("Grade 8 History");
+
+    // The curriculum block is the cached prefix (2026-09-03): identical across
+    // turns, tens of thousands of tokens, read from cache at ~10% cost.
+    expect(blocks[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(blocks[0].text).toContain("Grade 6 ELA");
   });
 
   it("owner email is passed to the courses where clause", async () => {
