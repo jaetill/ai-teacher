@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.0](https://github.com/jaetill/ai-teacher/compare/v1.3.0...v1.4.0) (2026-09-03)
+
+
+### Features
+
+* **ai:** record usage on every call, token-weighted budget, cache the copilot prompt ([5ba470c](https://github.com/jaetill/ai-teacher/commit/5ba470c1142e67ccdb73db9ac829549d70df39ef))
+* **ai:** usage accounting, token-weighted budget, copilot prompt caching ([50eaae3](https://github.com/jaetill/ai-teacher/commit/50eaae3bca1ff60ff33a6e274b2094f3c39a7a32))
+* **db:** refuse destructive scripts against the production host ([9c8eb78](https://github.com/jaetill/ai-teacher/commit/9c8eb780564e5070cfb3cc0fa5e2f7b75f752da4))
+* **observability:** every 5xx now reaches error_events and Sentry ([074cec7](https://github.com/jaetill/ai-teacher/commit/074cec794d6d3de936679126a037594b760eb498))
+
+
+### Bug Fixes
+
+* address review findings on [#705](https://github.com/jaetill/ai-teacher/issues/705) ([93ee40e](https://github.com/jaetill/ai-teacher/commit/93ee40ecdc40e9739766537a1dbdb863fa03c74a))
+* address review-lead findings on [#702](https://github.com/jaetill/ai-teacher/issues/702) ([82517a1](https://github.com/jaetill/ai-teacher/commit/82517a11397e4497b1484784e7c9790c3aaba76a))
+* **auth:** fail closed when ALLOWED_EMAILS is unset in production ([41fd06d](https://github.com/jaetill/ai-teacher/commit/41fd06da3852be792a97ba717205cfbd6bf1b222))
+* **import:** build-curriculum is one transaction; refuse truncated AI replies ([8a0a873](https://github.com/jaetill/ai-teacher/commit/8a0a8733f49dc462a0de209a0a2e9c958e58722b))
+* **import:** build-curriculum writes are one transaction; refuse truncated AI replies ([1b98f3c](https://github.com/jaetill/ai-teacher/commit/1b98f3c26555ee5f57ed8a3bbb83e9cc706a0857))
+* **scripts:** db-reset --keep validation always failed on __drizzle_migrations ([92cb6d5](https://github.com/jaetill/ai-teacher/commit/92cb6d596da94d0267191e319bd92c6896c1f101))
+
 ## [1.3.0](https://github.com/jaetill/ai-teacher/compare/v1.2.0...v1.3.0) (2026-09-01)
 
 
