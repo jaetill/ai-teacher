@@ -19,6 +19,19 @@ recognises it, `error_events.reason` becomes `ai_billing_exhausted` /
 title. Every AI route returns 503 with a plain sentence; the copilot says it
 in-stream. No teacher data is at risk; only AI features pause.
 
+## Early warning (the $1 line)
+
+`.github/workflows/ai-credit-watch.yml` runs daily and **fails on purpose** when
+the estimate in `scripts/ai-credit-estimate.mjs` drops below
+`alertBelowUsd` in `scripts/ai-credit-baseline.json` — GitHub's failure email is
+the notification. The estimate = the balance a human last read off the console
+(`usd` / `at` in the baseline file) minus every call recorded since, at list
+prices, rounded against us. Run it yourself any time: `npm run ai:credit`.
+
+**Whenever you read the real balance or top up, update `usd` and `at` in the
+baseline file** — otherwise the estimate drifts. When you move to the jaetill
+org, update `org` too.
+
 ## Prerequisites
 
 - Console access as jaetill@gmail.com: https://platform.claude.com

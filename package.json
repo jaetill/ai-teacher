@@ -21,7 +21,8 @@
     "db:restore": "node scripts/db-restore.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "db:studio": "drizzle-kit studio",
-    "prepare": "husky"
+    "prepare": "husky",
+    "ai:credit": "node scripts/ai-credit-estimate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

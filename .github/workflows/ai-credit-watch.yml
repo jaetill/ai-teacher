@@ -1,0 +1,48 @@
+name: ai-credit-watch
+# Daily estimate of the prepaid Anthropic credit left on the org that owns
+# ANTHROPIC_API_KEY, from our own usage records (scripts/ai-credit-estimate.mjs).
+#
+# Anthropic has no balance API. The baseline is a number a human read off the
+# console (scripts/ai-credit-baseline.json); this job subtracts everything
+# recorded since. When the estimate drops below the threshold the job FAILS on
+# purpose — GitHub's workflow-failure email to the repo owner is the alert.
+# The estimate is also written to the run's job summary every day, so "how
+# much is left?" is one click away.
+#
+# Same trick as db-backup.yml for the prod DATABASE_URL: vercel pull with the
+# deploy secrets. Nothing new to configure.
+
+on:
+  schedule:
+    - cron: "45 7 * * *" # 07:45 UTC, after the 07:17 backup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  estimate:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: npm i -g vercel@latest
+      - name: Fetch production env from Vercel
+        run: vercel pull --yes --environment=production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Estimate remaining credit (fails below threshold)
+        run: |
+          grep '^DATABASE_URL=' .vercel/.env.production.local > .env.local
+          npm run ai:credit -- --strict
+      - name: Scrub
+        if: always()
+        run: rm -f .env.local && rm -rf .vercel
