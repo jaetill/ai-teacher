@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Hoisted mocks (must be initialized before any import runs) ──────────
-const { mockDbSelect, mockDbInsert, mockDbDelete, mockMessagesCreate, mockLoadYearPlan } =
+const { mockDbSelect, mockDbInsert, mockDbDelete, mockDbBatch, mockMessagesCreate, mockLoadYearPlan } =
   vi.hoisted(() => ({
     mockDbSelect: vi.fn(),
     mockDbInsert: vi.fn(),
     mockDbDelete: vi.fn(),
+    mockDbBatch: vi.fn(),
     mockMessagesCreate: vi.fn(),
     mockLoadYearPlan: vi.fn(),
   }));
@@ -40,7 +41,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 vi.mock("@/db", () => ({
-  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete },
+  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, batch: mockDbBatch },
 }));
 vi.mock("@/db/schema", () => ({
   courses: {},
@@ -188,7 +189,9 @@ function setupMocks({
     mockDbSelect.mockReturnValueOnce(makeChain(courseFallbackReturn)); // 6. courses race fallback
   }
   if (courseFound) {
-    mockDbSelect.mockReturnValueOnce(makeChain([])); // existingUnits
+    mockDbSelect
+      .mockReturnValueOnce(makeChain([])) // existingUnits
+      .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
   }
 
   mockDbInsert.mockReset();
@@ -219,6 +222,14 @@ function makeRequest() {
 describe("POST /api/import/build-curriculum", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDbBatch.mockResolvedValue([]);
+    // Ids are minted client-side now (the whole write set is one db.batch, and
+    // batched statements can't consume each other's RETURNING). First mint is
+    // the first unit's id; the tests assert on it.
+    let n = 0;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+      () => (n++ === 0 ? CREATED_UNIT.id : `id${n}`) as `${string}-${string}-${string}-${string}-${string}`,
+    );
     // Default: no year plan imported, so the prompt is exactly what it was
     // before the feature existed.
     mockLoadYearPlan.mockResolvedValue("");
@@ -368,7 +379,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([{ id: "c1" }])) // course found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const unitChain = makeChain([CREATED_UNIT]);
       const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
@@ -423,7 +435,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([{ id: "c1" }]))
-        .mockReturnValueOnce(makeChain([]));
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       mockDbInsert.mockReset();
       mockDbInsert
@@ -506,7 +519,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([{ id: "c1" }]))
-        .mockReturnValueOnce(makeChain([]));
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const unitChain = makeChain([CREATED_UNIT]);
       const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
@@ -562,7 +576,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([{ id: "c1" }]))
-        .mockReturnValueOnce(makeChain([]));
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       mockDbInsert.mockReset();
       mockDbInsert.mockReturnValueOnce(makeChain([CREATED_UNIT])).mockReturnValue(makeChain([]));
@@ -603,7 +618,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([])) // course select-first → not found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const courseChain = makeChain([{ id: "c1" }]);
       const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
@@ -697,7 +713,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // 8 selects: early guard (schoolYears, course) + folders, materials,
       // standards, schoolYears, courses, existingUnits
-      expect(mockDbSelect).toHaveBeenCalledTimes(10); // +1 for the placement query
+      expect(mockDbSelect).toHaveBeenCalledTimes(11); // +1 placement, +1 pre-batch guard
       // No courses insert — units, unitStandards, lessons, lessonStandards, materialAttachments
       expect(mockDbInsert).toHaveBeenCalledTimes(5);
     });
@@ -713,7 +729,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT should NOT have been called — 6 selects total
       // (folders, materials, standards, schoolYears, courses select-first, existingUnits)
-      expect(mockDbSelect).toHaveBeenCalledTimes(10); // +2 early guard (#611), +1 placement
+      expect(mockDbSelect).toHaveBeenCalledTimes(11); // +2 early guard (#611), +1 placement, +1 pre-batch guard
     });
 
     it("scopes DB lookups by the session ownerEmail (#142)", async () => {
@@ -741,7 +757,7 @@ describe("POST /api/import/build-curriculum", () => {
       expect(body.unitCount).toBe(1);
       expect(body.units[0].id).toBe(CREATED_UNIT.id);
       // Fallback SELECT must have been called — 7 selects total
-      expect(mockDbSelect).toHaveBeenCalledTimes(11); // +2 early guard (#611), +1 placement
+      expect(mockDbSelect).toHaveBeenCalledTimes(12); // +2 early guard (#611), +1 placement, +1 pre-batch guard
     });
 
     it("propagates session.user.id to the unit INSERT so ownership is enforced", async () => {
@@ -760,7 +776,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([])) // courses select-first → not found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const unitChain = makeChain([CREATED_UNIT]);
       const unitValuesSpy = vi.fn().mockReturnValue(unitChain);
@@ -793,7 +810,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([])) // courses select-first → not found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const courseChain = makeChain([{ id: "c1" }]);
       const courseValuesSpy = vi.fn().mockReturnValue(courseChain);
@@ -878,7 +896,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([])) // courses select-first → not found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
       mockDbInsert.mockReset();
       mockDbInsert
         .mockReturnValueOnce(makeChain([{ id: "c1" }])) // courses
@@ -943,7 +962,8 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([])) // lesson_templates default (#647)
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([])) // courses select-first → not found
-        .mockReturnValueOnce(makeChain([])); // existingUnits
+        .mockReturnValueOnce(makeChain([])) // existingUnits
+        .mockReturnValueOnce(makeChain([])); // last-instant duplicate guard (pre-batch)
 
       const lessonsValuesSpy = vi.fn();
       lessonsValuesSpy.mockReturnValue({
@@ -1065,6 +1085,107 @@ describe("POST /api/import/build-curriculum", () => {
       // Stale units cleared: unit-attachment delete + units delete both fired
       // (lesson/assessment attachment deletes are skipped when there are none).
       expect(mockDbDelete).toHaveBeenCalledTimes(2);
+      // …and they ride in the SAME batch as the inserts, so a failure cannot
+      // leave the quarter deleted-but-not-rebuilt.
+      expect(mockDbBatch).toHaveBeenCalledTimes(1);
+      const batched = mockDbBatch.mock.calls[0][0] as unknown[];
+      expect(batched.length).toBe(2 + 5); // 2 deletes + units/unitStd/lessons/lessonStd/attachments
+    });
+  });
+
+  describe("atomicity (2026-09-03)", () => {
+    it("commits every write in ONE db.batch — nothing is awaited individually", async () => {
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+
+      expect(mockDbBatch).toHaveBeenCalledTimes(1);
+      const batched = mockDbBatch.mock.calls[0][0] as unknown[];
+      // units, unitStandards, lessons, lessonStandards, materialAttachments
+      expect(batched.length).toBe(5);
+      // Every insert statement the route built is in the batch, not awaited on
+      // its own: the insert mocks were called exactly as many times as there
+      // are batched statements (the course already existed, so no course insert).
+      expect(mockDbInsert).toHaveBeenCalledTimes(5);
+    });
+
+    it("mints unit and lesson ids client-side so child rows can reference them in the batch", async () => {
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+      const unitChain = makeChain([]);
+      const unitValues = vi.fn().mockReturnValue(unitChain);
+      unitChain.values = unitValues;
+      const lessonChain = makeChain([]);
+      const lessonValues = vi.fn().mockReturnValue(lessonChain);
+      lessonChain.values = lessonValues;
+      const stdChain = makeChain([]);
+      const stdValues = vi.fn().mockReturnValue(stdChain);
+      stdChain.values = stdValues;
+      mockDbInsert.mockReset();
+      mockDbInsert
+        .mockReturnValueOnce(unitChain)
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(lessonChain)
+        .mockReturnValueOnce(stdChain)
+        .mockReturnValueOnce(makeChain([]));
+
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+      const body = await res.json();
+
+      const unitRow = unitValues.mock.calls[0][0] as { id: string };
+      expect(unitRow.id).toBe(CREATED_UNIT.id);
+      expect(body.units[0].id).toBe(CREATED_UNIT.id);
+      const lessonRows = lessonValues.mock.calls[0][0] as Array<{ id: string; unitId: string }>;
+      expect(lessonRows[0].unitId).toBe(CREATED_UNIT.id);
+      expect(lessonRows[0].id).toBeTruthy();
+      const stdRows = stdValues.mock.calls[0][0] as Array<{ lessonId: string }>;
+      expect(stdRows[0].lessonId).toBe(lessonRows[0].id);
+    });
+
+    it("refuses a max_tokens-truncated reply before writing anything", async () => {
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+      // parseAiJson would happily salvage a partial array from this; the route
+      // must not let it (#682: partially-enriched build looks like a bad model).
+      mockMessagesCreate.mockResolvedValueOnce({
+        stop_reason: "max_tokens",
+        content: [{ type: "text", text: JSON.stringify(AI_RESPONSE) }],
+      });
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(502);
+      const body = await res.json();
+      expect(body.error).toMatch(/cut off/);
+      expect(mockDbInsert).not.toHaveBeenCalled();
+      expect(mockDbDelete).not.toHaveBeenCalled();
+      expect(mockDbBatch).not.toHaveBeenCalled();
+    });
+
+    it("re-checks for a concurrent build after the AI call and refuses to duplicate", async () => {
+      setupMocks({ courseSelectReturn: [{ id: "c1" }] });
+      // Rewind the LAST primed select (the pre-batch guard) to report a unit
+      // that appeared while the model was thinking.
+      mockDbSelect.mockReset();
+      mockDbSelect
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([FOLDER]))
+        .mockReturnValueOnce(makeChain([MATERIAL]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([STANDARD]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
+        .mockReturnValueOnce(makeChain([{ id: "c1" }]))
+        .mockReturnValueOnce(makeChain([])) // existingUnits: empty when we looked
+        .mockReturnValueOnce(makeChain([{ id: "u-race" }])); // pre-batch guard: someone got there first
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.alreadyBuilt).toBe(true);
+      expect(mockDbBatch).not.toHaveBeenCalled();
     });
   });
 });

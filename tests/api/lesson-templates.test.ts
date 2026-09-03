@@ -14,7 +14,7 @@ const { mockDbSelect, mockDbInsert, mockDbDelete, mockDbUpdate } = vi.hoisted(()
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({
-  db: { select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, update: mockDbUpdate },
+  db: { batch: vi.fn().mockResolvedValue([]), select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, update: mockDbUpdate },
 }));
 vi.mock("@/db/schema", () => ({
   lessonTemplates: {

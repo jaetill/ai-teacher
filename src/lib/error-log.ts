@@ -41,6 +41,7 @@ export type ErrorReason =
   | "upstream_failed"
   | "ai_parse_failed"
   | "ai_empty_result"
+  | "ai_truncated"
   | "write_failed"
   | "record_missing"
   | "config_missing"
