@@ -1,0 +1,7 @@
+{
+  "_comment": "The last balance Jason READ in the Anthropic console for the org that owns ANTHROPIC_API_KEY, and when. scripts/ai-credit-estimate.mjs subtracts everything recorded in ai_interactions / copilot_messages after `at`. Update both fields whenever you top up or re-read the balance. Anthropic has no balance API; this is the substitute.",
+  "org": "8a0c287a-e45c-4b2b-93a0-8d705c58f3fe (hotmail)",
+  "usd": 6.0,
+  "at": "2026-09-03T21:30:00Z",
+  "alertBelowUsd": 1.0
+}
