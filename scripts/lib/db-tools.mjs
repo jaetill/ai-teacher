@@ -15,13 +15,17 @@ import { config } from "dotenv";
 // Tables that hold seeded reference data or tooling state rather than the
 // teacher's imported curriculum. `db-reset` leaves these alone by default so a
 // wipe/reimport round-trip does not force a standards reseed.
+//
+// drizzle.__drizzle_migrations is NOT listed: it lives in the `drizzle`
+// schema, listTables() only enumerates `public`, and a public-schema TRUNCATE
+// can't reach it anyway. Listing it made the --keep validation fail on every
+// run ("--keep names tables that do not exist").
 export const REFERENCE_TABLES = [
   "standards",
   "lesson_templates",
   "school_years",
   "terms",
   "glossary_terms",
-  "__drizzle_migrations",
 ];
 
 // Neon endpoints that hold the teacher's live data. Destructive scripts refuse

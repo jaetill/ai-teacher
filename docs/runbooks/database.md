@@ -49,6 +49,15 @@ database:
 3. `npm run db:reset -- --dry-run` must print a host that is **not**
    `ep-icy-morning-antemsbt`.
 
+**Reset from parent changes the branch's endpoint id and password.** After a
+reset, copy the connection string again (Neon → branch → Connect) and re-paste
+it; the old string fails with "password authentication failed". The Neon
+integration updates Vercel's Development/Preview vars itself.
+
+Corollary for the guard: `PROD_DB_HOST_PATTERNS` in `scripts/lib/db-tools.mjs`
+names production's endpoint id. If production's compute is ever recreated, the
+id changes and the guard goes blind — update the pattern in the same change.
+
 Vercel → Settings → Environment Variables: `DATABASE_URL` should be scoped to
 **Production** only. The integration owns Preview.
 

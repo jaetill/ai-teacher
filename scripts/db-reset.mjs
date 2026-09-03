@@ -40,7 +40,7 @@ const keep = new Set(
         .map((s) => s.trim())
         .filter(Boolean)
     : wipeAll
-      ? ["__drizzle_migrations"]
+      ? []
       : REFERENCE_TABLES,
 );
 
