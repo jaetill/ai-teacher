@@ -1178,13 +1178,14 @@ describe("POST /api/import/build-curriculum", () => {
         .mockReturnValueOnce(makeChain([SCHOOL_YEAR]))
         .mockReturnValueOnce(makeChain([{ id: "c1" }]))
         .mockReturnValueOnce(makeChain([])) // existingUnits: empty when we looked
-        .mockReturnValueOnce(makeChain([{ id: "u-race" }])); // pre-batch guard: someone got there first
+        .mockReturnValueOnce(makeChain([{ id: "u-race" }, { id: "u-race-2" }])); // pre-batch guard: someone got there first
 
       const res = await POST(makeRequest());
 
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.alreadyBuilt).toBe(true);
+      expect(body.unitCount).toBe(2);
       expect(mockDbBatch).not.toHaveBeenCalled();
     });
   });

@@ -51,6 +51,10 @@ const VALID_COVERAGE_TYPES = new Set([
 
 export const maxDuration = 300; // Allow up to 5 minutes (capped to the plan max)
 
+// One constant for the stream call and the truncation error row, so a bump to
+// the limit can't leave error_events reporting the old one.
+const AI_MAX_TOKENS = 32_000;
+
 export async function POST(req: Request) {
   try {
   const session = await getServerSession(authOptions);
@@ -415,7 +419,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // accumulate the whole message server-side and parse it exactly as before.
   const stream = getAnthropic().messages.stream({
     model: MODELS.structured,
-    max_tokens: 32000,
+    max_tokens: AI_MAX_TOKENS,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
   });
@@ -437,7 +441,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
       502,
       "ai_truncated",
       "The AI's reply was cut off before it finished. Try again — a shorter reference text can help.",
-      { ownerEmail, detail: { responseChars: text.length, maxTokens: 32000 } },
+      { ownerEmail, detail: { responseChars: text.length, maxTokens: AI_MAX_TOKENS } },
     );
   }
 
@@ -818,17 +822,18 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // batch; the window shrinks from minutes to milliseconds. (A true tie is
   // still possible; closing it needs a per-quarter lock row, deferred.)
   if (!rebuild) {
-    const [nowBuilt] = await db
+    const nowBuilt = await db
       .select({ id: units.id })
       .from(units)
-      .where(and(eq(units.courseId, courseId), eq(units.quarter, quarter)))
-      .limit(1);
-    if (nowBuilt) {
-      return Response.json({ alreadyBuilt: true, courseId, quarter, unitCount: -1 });
+      .where(and(eq(units.courseId, courseId), eq(units.quarter, quarter)));
+    if (nowBuilt.length > 0) {
+      return Response.json({ alreadyBuilt: true, courseId, quarter, unitCount: nowBuilt.length });
     }
   }
 
   if (stmts.length > 0) {
+    // db.batch's parameter is a non-empty tuple type; the length guard above
+    // is what makes the cast honest.
     await db.batch(stmts as [Stmt, ...Stmt[]]);
   }
 

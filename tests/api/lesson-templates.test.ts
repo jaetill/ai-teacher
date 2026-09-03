@@ -13,8 +13,9 @@ const { mockDbSelect, mockDbInsert, mockDbDelete, mockDbUpdate } = vi.hoisted(()
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+const { mockDbBatch } = vi.hoisted(() => ({ mockDbBatch: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/db", () => ({
-  db: { batch: vi.fn().mockResolvedValue([]), select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, update: mockDbUpdate },
+  db: { batch: mockDbBatch, select: mockDbSelect, insert: mockDbInsert, delete: mockDbDelete, update: mockDbUpdate },
 }));
 vi.mock("@/db/schema", () => ({
   lessonTemplates: {
@@ -184,8 +185,10 @@ describe("DELETE /api/lesson-templates", () => {
     mockDbSelect.mockImplementationOnce(() => chain([{ id: TEMPLATE_ID }]));
     const res = await DELETE(del(TEMPLATE_ID));
     expect(res.status).toBe(200);
-    // One update for courses, one for lessons, then the delete.
+    // One update for courses, one for lessons, then the delete — in ONE batch.
     expect(mockDbUpdate).toHaveBeenCalledTimes(2);
+    expect(mockDbBatch).toHaveBeenCalledTimes(1);
+    expect(mockDbBatch.mock.calls[0][0]).toHaveLength(3);
     expect(mockDbDelete).toHaveBeenCalledTimes(1);
   });
 });

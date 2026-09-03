@@ -201,6 +201,8 @@ export async function PUT(req: Request) {
     }
   }
   if (stmts.length > 0) {
+    // db.batch's parameter is a non-empty tuple type; the length guard above
+    // is what makes the cast honest.
     await db.batch(stmts as [Stmt, ...Stmt[]]);
   }
 

@@ -14,8 +14,9 @@ const { mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete } = vi.hoisted(()
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
+const { mockDbBatch } = vi.hoisted(() => ({ mockDbBatch: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/db", () => ({
-  db: { batch: vi.fn().mockResolvedValue([]), select: mockDbSelect, insert: mockDbInsert, update: mockDbUpdate, delete: mockDbDelete },
+  db: { batch: mockDbBatch, select: mockDbSelect, insert: mockDbInsert, update: mockDbUpdate, delete: mockDbDelete },
 }));
 vi.mock("@/db/schema", () => ({
   schoolYears: { id: {}, name: {}, startDate: {}, endDate: {}, isCurrent: {} },
@@ -147,6 +148,10 @@ describe("PUT /api/school-year", () => {
     expect(mockDbUpdate).toHaveBeenCalledTimes(1); // year dates
     expect(mockDbDelete).toHaveBeenCalledTimes(2); // quarters + no_school replaced
     expect(mockDbInsert).toHaveBeenCalledTimes(2);
+    // …all five in ONE batch: a failure between a delete and its insert can no
+    // longer leave the year with no quarters.
+    expect(mockDbBatch).toHaveBeenCalledTimes(1);
+    expect(mockDbBatch.mock.calls[0][0]).toHaveLength(5);
   });
 
   it("updates only no-school days when that's all that's sent (the ❄ button)", async () => {
@@ -156,5 +161,7 @@ describe("PUT /api/school-year", () => {
     expect(mockDbUpdate).not.toHaveBeenCalled(); // year dates untouched
     expect(mockDbDelete).toHaveBeenCalledTimes(1); // only the no_school rows
     expect(mockDbInsert).toHaveBeenCalledTimes(1);
+    expect(mockDbBatch).toHaveBeenCalledTimes(1);
+    expect(mockDbBatch.mock.calls[0][0]).toHaveLength(2);
   });
 });
