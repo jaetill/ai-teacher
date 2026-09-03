@@ -51,6 +51,10 @@ const VALID_COVERAGE_TYPES = new Set([
 
 export const maxDuration = 300; // Allow up to 5 minutes (capped to the plan max)
 
+// One constant for the stream call and the truncation error row, so a bump to
+// the limit can't leave error_events reporting the old one.
+const AI_MAX_TOKENS = 32_000;
+
 export async function POST(req: Request) {
   try {
   const session = await getServerSession(authOptions);
@@ -415,7 +419,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // accumulate the whole message server-side and parse it exactly as before.
   const stream = getAnthropic().messages.stream({
     model: MODELS.structured,
-    max_tokens: 32000,
+    max_tokens: AI_MAX_TOKENS,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
   });
@@ -425,6 +429,21 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   // "max_tokens" here means the JSON was cut off mid-stream — the most common
   // cause of an unparseable reply, and one the row below should name.
   const stopReason: string | undefined = message.stop_reason ?? undefined;
+
+  // A truncated reply is not a reply. parseAiJson is tolerant enough to pull a
+  // partial `units` array out of cut-off JSON, which would build SOME units
+  // enriched and the rest empty — indistinguishable, afterwards, from the model
+  // having answered badly (#682). Refuse before anything is written; nothing
+  // has been deleted yet, so a retry costs only the AI call.
+  if (stopReason === "max_tokens") {
+    return apiError(
+      ROUTE,
+      502,
+      "ai_truncated",
+      "The AI's reply was cut off before it finished. Try again — a shorter reference text can help.",
+      { ownerEmail, detail: { responseChars: text.length, maxTokens: AI_MAX_TOKENS } },
+    );
+  }
 
   type ParsedUnit = {
     title: string;
@@ -584,6 +603,18 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     });
   }
 
+  // ── 5b. Everything below is ONE db.batch() ───
+  // The neon-http driver has no interactive transactions, but db.batch() runs
+  // its statements in a single transaction. Before 2026-09-03 the rebuild path
+  // deleted the quarter's units, then issued ~5 sequential inserts per unit; a
+  // function timeout or Neon error anywhere in that loop left the quarter
+  // half-built with the old units already gone, and the idempotency guard then
+  // treated the wreckage as "already built". Batch statements can't consume
+  // each other's RETURNING ids, so every id is minted here (the columns are
+  // uuid DEFAULT gen_random_uuid(); an explicit value is equally valid).
+  type Stmt = Parameters<typeof db.batch>[0][number];
+  const stmts: Stmt[] = [];
+
   // Explicit rebuild: clear THIS quarter's units first (other quarters untouched),
   // mirroring delete-unit's polymorphic-attachment cleanup before the cascade.
   if (unitsThisQuarter.length > 0 && rebuild) {
@@ -597,39 +628,45 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
     ]);
     const staleLessonIds = staleLessons.map((l) => l.id);
     const staleAssessmentIds = staleAssessments.map((a) => a.id);
-    await db
-      .delete(materialAttachments)
-      .where(
-        and(
-          eq(materialAttachments.attachableType, "unit"),
-          inArray(materialAttachments.attachableId, staleUnitIds),
-        ),
-      );
-    if (staleLessonIds.length > 0) {
-      await db
+    stmts.push(
+      db
         .delete(materialAttachments)
         .where(
           and(
-            eq(materialAttachments.attachableType, "lesson"),
-            inArray(materialAttachments.attachableId, staleLessonIds),
+            eq(materialAttachments.attachableType, "unit"),
+            inArray(materialAttachments.attachableId, staleUnitIds),
           ),
-        );
+        ),
+    );
+    if (staleLessonIds.length > 0) {
+      stmts.push(
+        db
+          .delete(materialAttachments)
+          .where(
+            and(
+              eq(materialAttachments.attachableType, "lesson"),
+              inArray(materialAttachments.attachableId, staleLessonIds),
+            ),
+          ),
+      );
     }
     if (staleAssessmentIds.length > 0) {
-      await db
-        .delete(materialAttachments)
-        .where(
-          and(
-            eq(materialAttachments.attachableType, "assessment"),
-            inArray(materialAttachments.attachableId, staleAssessmentIds),
+      stmts.push(
+        db
+          .delete(materialAttachments)
+          .where(
+            and(
+              eq(materialAttachments.attachableType, "assessment"),
+              inArray(materialAttachments.attachableId, staleAssessmentIds),
+            ),
           ),
-        );
+      );
     }
-    await db.delete(units).where(inArray(units.id, staleUnitIds));
+    stmts.push(db.delete(units).where(inArray(units.id, staleUnitIds)));
   }
 
   // Append after units in OTHER quarters (this quarter's are either absent or,
-  // on rebuild, just cleared above).
+  // on rebuild, cleared in the same batch).
   const otherUnits = existingUnits.filter((u) => u.quarter !== quarter);
   const baseSortOrder =
     otherUnits.length > 0 ? Math.max(...otherUnits.map((u) => u.sortOrder)) + 1 : 1;
@@ -672,7 +709,7 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
       })
     : parsedUnits.map((u) => ({ title: u.title, source: "ai" as const, enr: u }));
 
-  // ── 6-8. Create each unit, its standards, lessons, and material links ───
+  // ── 6-8. Build each unit, its standards, lessons, and material links ───
   const createdUnits: Array<{ id: string; title: string }> = [];
   let lessonCount = 0;
   let materialLinkCount = 0;
@@ -682,10 +719,11 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   for (let i = 0; i < unitsToCreate.length; i++) {
     const item = unitsToCreate[i];
     const enr = item.enr;
+    const unitId = crypto.randomUUID();
 
-    const [createdUnit] = await db
-      .insert(units)
-      .values({
+    stmts.push(
+      db.insert(units).values({
+        id: unitId,
         courseId,
         title: item.title,
         sortOrder: baseSortOrder + i,
@@ -697,53 +735,46 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
         contentWarnings: enr?.contentWarnings || null,
         userId: session.user?.id,
         source: item.source,
-      })
-      .returning({ id: units.id });
-    createdUnits.push({ id: createdUnit.id, title: item.title });
+      }),
+    );
+    createdUnits.push({ id: unitId, title: item.title });
 
     // Unit standards
     const unitStdCodes = (enr?.unitStandards ?? []).filter((s) => validStdIds.has(s));
     if (unitStdCodes.length > 0) {
-      await db.insert(unitStandards).values(
-        unitStdCodes.map((s) => ({
-          unitId: createdUnit.id,
-          standardId: s,
-          emphasis: "primary" as const,
-        })),
+      stmts.push(
+        db.insert(unitStandards).values(
+          unitStdCodes.map((s) => ({
+            unitId,
+            standardId: s,
+            emphasis: "primary" as const,
+          })),
+        ),
       );
       standardCount += unitStdCodes.length;
     }
 
-    // Lessons + lesson standards + material attachments — batched (#583).
-    // The old shape awaited one round-trip per lesson, per lesson-standard,
-    // and per attachment; over the Neon HTTP driver a 10-lesson unit cost
-    // ~60 sequential round-trips and was the 504 root cause. Now each unit
-    // costs at most three: one lessons insert, one lessonStandards insert,
-    // one materialAttachments insert.
+    // Lessons + lesson standards + material attachments: one statement each
+    // per unit (#583 collapsed the per-row round-trips; the batch collapses the
+    // rest). Lesson ids are minted here so the child rows can reference them
+    // in the same transaction.
     const lessonDatas = enr?.lessons ?? [];
     if (lessonDatas.length > 0) {
-      const insertedLessons = await db
-        .insert(lessons)
-        .values(
-          lessonDatas.map((lessonData) => ({
-            unitId: createdUnit.id,
-            title: lessonData.title,
-            sortOrder: lessonData.sortOrder,
-            durationMinutes: clampMinutes(lessonData.durationMinutes),
-            objectives: lessonData.objectives ?? [],
-            templateId: defaultTemplate?.id ?? null,
-            lessonPlan: templateFields
-              ? coerceToTemplate(lessonData.plan, templateFields)
-              : { activities: lessonData.activities ?? [] },
-            source: "ai" as const,
-          })),
-        )
-        .returning({ id: lessons.id, sortOrder: lessons.sortOrder });
+      const lessonRows = lessonDatas.map((lessonData) => ({
+        id: crypto.randomUUID(),
+        unitId,
+        title: lessonData.title,
+        sortOrder: lessonData.sortOrder,
+        durationMinutes: clampMinutes(lessonData.durationMinutes),
+        objectives: lessonData.objectives ?? [],
+        templateId: defaultTemplate?.id ?? null,
+        lessonPlan: templateFields
+          ? coerceToTemplate(lessonData.plan, templateFields)
+          : { activities: lessonData.activities ?? [] },
+        source: "ai" as const,
+      }));
+      stmts.push(db.insert(lessons).values(lessonRows));
       lessonCount += lessonDatas.length;
-
-      // Map created ids back to their source rows by sortOrder (unique within
-      // a unit) rather than trusting RETURNING row order.
-      const lessonIdBySort = new Map(insertedLessons.map((l) => [l.sortOrder, l.id]));
 
       const stdRows: Array<{ lessonId: string; standardId: string; coverageType: string }> = [];
       const matRows: Array<{
@@ -753,9 +784,8 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
         role: string;
         sortOrder: number;
       }> = [];
-      for (const lessonData of lessonDatas) {
-        const lessonId = lessonIdBySort.get(lessonData.sortOrder);
-        if (!lessonId) continue;
+      lessonDatas.forEach((lessonData, li) => {
+        const lessonId = lessonRows[li].id;
         for (const std of lessonData.standards ?? []) {
           if (!validStdIds.has(std.id)) continue;
           const coverageType = std.coverageType || "teaches";
@@ -773,16 +803,38 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
             sortOrder: 0,
           });
         }
-      }
+      });
       if (stdRows.length > 0) {
-        await db.insert(lessonStandards).values(stdRows).onConflictDoNothing();
+        stmts.push(db.insert(lessonStandards).values(stdRows).onConflictDoNothing());
         lessonStdCount += stdRows.length;
       }
       if (matRows.length > 0) {
-        await db.insert(materialAttachments).values(matRows).onConflictDoNothing();
+        stmts.push(db.insert(materialAttachments).values(matRows).onConflictDoNothing());
         materialLinkCount += matRows.length;
       }
     }
+  }
+
+  // ── 9. Last-instant guard, then commit ───
+  // The idempotency check in step 5 ran BEFORE the AI call — minutes ago. A
+  // second click on Build in that window passes the same check and would
+  // append a duplicate set of units. Re-check now, one round-trip before the
+  // batch; the window shrinks from minutes to milliseconds. (A true tie is
+  // still possible; closing it needs a per-quarter lock row, deferred.)
+  if (!rebuild) {
+    const nowBuilt = await db
+      .select({ id: units.id })
+      .from(units)
+      .where(and(eq(units.courseId, courseId), eq(units.quarter, quarter)));
+    if (nowBuilt.length > 0) {
+      return Response.json({ alreadyBuilt: true, courseId, quarter, unitCount: nowBuilt.length });
+    }
+  }
+
+  if (stmts.length > 0) {
+    // db.batch's parameter is a non-empty tuple type; the length guard above
+    // is what makes the cast honest.
+    await db.batch(stmts as [Stmt, ...Stmt[]]);
   }
 
   return Response.json({

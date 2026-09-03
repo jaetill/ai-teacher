@@ -144,45 +144,66 @@ export async function PUT(req: Request) {
   }
 
   // ── Apply (replace-by-type keeps it idempotent) ───
+  // One db.batch(): each replace is a delete followed by an insert, and a
+  // failure between the two used to leave the year with no quarters (or no
+  // no-school days) at all. neon-http has no interactive transactions, but a
+  // batch is one transaction.
+  type Stmt = Parameters<typeof db.batch>[0][number];
+  const stmts: Stmt[] = [];
   if (body.startDate !== undefined || body.endDate !== undefined) {
-    await db
-      .update(schoolYears)
-      .set({ startDate: start, endDate: end })
-      .where(eq(schoolYears.id, year.id));
+    stmts.push(
+      db
+        .update(schoolYears)
+        .set({ startDate: start, endDate: end })
+        .where(eq(schoolYears.id, year.id)),
+    );
   }
   if (body.quarterSpans !== undefined) {
-    await db
-      .delete(terms)
-      .where(and(eq(terms.schoolYearId, year.id), eq(terms.termType, "quarter")));
+    stmts.push(
+      db
+        .delete(terms)
+        .where(and(eq(terms.schoolYearId, year.id), eq(terms.termType, "quarter"))),
+    );
     if (spans.length > 0) {
-      await db.insert(terms).values(
-        spans.map((s, i) => ({
-          schoolYearId: year.id,
-          termType: "quarter",
-          name: s.name,
-          sortOrder: i,
-          startDate: s.startDate,
-          endDate: s.endDate,
-        })),
+      stmts.push(
+        db.insert(terms).values(
+          spans.map((s, i) => ({
+            schoolYearId: year.id,
+            termType: "quarter",
+            name: s.name,
+            sortOrder: i,
+            startDate: s.startDate,
+            endDate: s.endDate,
+          })),
+        ),
       );
     }
   }
   if (body.noSchoolDays !== undefined) {
-    await db
-      .delete(terms)
-      .where(and(eq(terms.schoolYearId, year.id), eq(terms.termType, "no_school")));
+    stmts.push(
+      db
+        .delete(terms)
+        .where(and(eq(terms.schoolYearId, year.id), eq(terms.termType, "no_school"))),
+    );
     if (noSchool.length > 0) {
-      await db.insert(terms).values(
-        noSchool.map((d, i) => ({
-          schoolYearId: year.id,
-          termType: "no_school",
-          name: (d.label ?? "No school").slice(0, 120),
-          sortOrder: i,
-          startDate: d.date,
-          endDate: d.date,
-        })),
+      stmts.push(
+        db.insert(terms).values(
+          noSchool.map((d, i) => ({
+            schoolYearId: year.id,
+            termType: "no_school",
+            name: (d.label ?? "No school").slice(0, 120),
+            sortOrder: i,
+            startDate: d.date,
+            endDate: d.date,
+          })),
+        ),
       );
     }
+  }
+  if (stmts.length > 0) {
+    // db.batch's parameter is a non-empty tuple type; the length guard above
+    // is what makes the cast honest.
+    await db.batch(stmts as [Stmt, ...Stmt[]]);
   }
 
   return Response.json({ ok: true, schoolYearId: year.id });

@@ -189,12 +189,13 @@ export async function DELETE(req: Request) {
 
   // Detach before deleting so nothing points at a missing template. Lesson
   // content is untouched — it just resolves against Classic again.
-  await db
-    .update(courses)
-    .set({ lessonTemplateId: null })
-    .where(eq(courses.lessonTemplateId, id));
-  await db.update(lessons).set({ templateId: null }).where(eq(lessons.templateId, id));
-  await db.delete(lessonTemplates).where(eq(lessonTemplates.id, id));
+  // One transaction: a failure after the detaches used to leave lessons
+  // pointing at Classic while the template still existed.
+  await db.batch([
+    db.update(courses).set({ lessonTemplateId: null }).where(eq(courses.lessonTemplateId, id)),
+    db.update(lessons).set({ templateId: null }).where(eq(lessons.templateId, id)),
+    db.delete(lessonTemplates).where(eq(lessonTemplates.id, id)),
+  ]);
 
   return Response.json({ ok: true });
 }
