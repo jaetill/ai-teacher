@@ -9,6 +9,9 @@
 import { NextRequest } from "next/server";
 import { Octokit } from "@octokit/rest";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/feedback";
 
 const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "jaetill";
 const REPO_NAME = process.env.GITHUB_REPO_NAME || "ai-teacher";
@@ -85,8 +88,9 @@ export async function POST(request: NextRequest) {
 
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.error("feedback.config_missing: GITHUB_TOKEN env var not set");
-    return Response.json({ error: "configuration_error" }, { status: 500 });
+    return apiError(ROUTE, 500, "config_missing", "configuration_error", {
+      cause: new Error("GITHUB_TOKEN env var not set"),
+    });
   }
 
   const titleBody =
@@ -117,7 +121,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ id, status: "received" }, { status: 201 });
   } catch (err) {
     const e = err as Error & { status?: number };
-    console.error("feedback.github_failed", { error: e.message, status: e.status });
-    return Response.json({ error: "github_issue_creation_failed" }, { status: 502 });
+    return apiError(ROUTE, 502, "upstream_failed", "github_issue_creation_failed", {
+      cause: err,
+      detail: { upstreamStatus: e.status ?? null },
+    });
   }
 }

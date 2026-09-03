@@ -10,6 +10,9 @@ import { getAnthropic } from "@/lib/anthropic";
 import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
+import { refuse } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum";
 
 const SYSTEM_PROMPT = `You are an expert middle school ELA curriculum designer. You create detailed, practical unit plans for grades 6-8 English Language Arts.
 
@@ -85,7 +88,18 @@ export async function POST(request: Request) {
     standards.length > 10_000 ||
     (context && context.length > 5_000)
   ) {
-    return new Response("Input too large", { status: 413 });
+    return refuse({
+      route: ROUTE,
+      status: 413,
+      reason: "input_too_large",
+      message: "Input too large",
+      detail: {
+        themeChars: theme.length,
+        standardsChars: standards.length,
+        contextChars: context?.length ?? 0,
+        limits: "theme 1000 / standards 10000 / context 5000",
+      },
+    });
   }
 
   const userMessage = `Please create a complete unit plan with the following details:

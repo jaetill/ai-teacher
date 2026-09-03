@@ -95,15 +95,26 @@ empty — see `unmatchedUnits` in the build response.
 
 ## Deployment
 - Vercel project connected to `jaetill/ai-teacher` on GitHub
-- Auto-deploys on push to `main`
+- **Gated deploy (ADR-0043, live 2026-09-01):** push to `main` → `CI` workflow
+  (lint, typecheck, test, `next build`) → on success `deploy-prod.yml` runs
+  `vercel deploy --prod` behind the GitHub `production` Environment and polls
+  `/api/health`. Vercel git auto-deploy for `main` is OFF via `vercel.json`;
+  PR previews still build. Needs `VERCEL_TOKEN` / `VERCEL_ORG_ID` /
+  `VERCEL_PROJECT_ID` as `production` Environment secrets — without them
+  nothing ships (fail-safe). Runbooks: `docs/runbooks/`.
 - Production URL: https://ai-teacher-omega-sage.vercel.app
 - Environment variables set in Vercel dashboard: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SENTRY_DSN`,
   `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
-- Optional hardening env vars (2026-07 eval): `ALLOWED_EMAILS` (comma-separated sign-in
-  allowlist — SET THIS IN PROD; unset means any Google account can sign in and spend
-  Anthropic tokens) and `AI_RATE_LIMIT_PER_HOUR` (shared per-user AI budget, default 40)
+- `ALLOWED_EMAILS` (comma-separated sign-in allowlist) is **required in production** —
+  since 2026-09-01 `signIn` fails closed when `VERCEL_ENV=production` and it is unset.
+  Unset outside production still means "anyone" so a fresh clone works.
+  `AI_RATE_LIMIT_PER_HOUR` (shared per-user AI budget, default 40) stays optional.
+- **Databases:** production, Vercel Preview and each laptop each get their OWN Neon
+  branch. `scripts/lib/db-tools.mjs` refuses `db:reset`/`db:restore` against the
+  production host without `--prod`. `.env.example` is the template. See
+  `docs/runbooks/database.md`.
 - Build-time secrets (Vercel + CI): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`
-- To deploy: `git push origin main`
+- To deploy: `git push origin main` (CI gates it). Manual re-run: Actions → deploy-prod.
 
 ## Server-code conventions (2026-07 eval)
 
@@ -115,12 +126,15 @@ empty — see `unmatchedUnits` in the build response.
   `new Anthropic()` at module scope (breaks builds where the key env var is scoped).
 - Atomic multi-statement writes use `db.batch([...])`; `db.transaction()` throws on the
   neon-http driver.
-- **Never return a bare `new Response(...)` for an error.** Use `refuse()` from
-  `src/lib/error-log.ts`: it builds the response *and* writes a row to `error_events`,
-  so a refusal path cannot be added that forgets to log. Each call needs a stable
-  `reason` code — never reword an existing one; grouping across releases depends on it.
-  `detail` holds counts, byte sizes and limits **only** — never message text, filenames,
-  or file contents.
+- **Never return a bare Response for a 5xx, or for a size/limit refusal.** Use
+  `apiError(ROUTE, status, reason, message, { cause, detail })` (JSON `{error}`) or
+  `refuse()` (plain text) from `src/lib/error-log.ts`: both write a row to
+  `error_events`, and any 5xx is also `Sentry.captureException`'d with the `cause`.
+  `tests/api/no-bare-5xx.test.ts` fails the build if a `status: 5xx` appears without
+  one of them nearby. Plain 400/404 contract errors may stay bare. Each call needs a
+  stable `reason` code — never reword an existing one; grouping across releases depends
+  on it. `detail` holds counts, byte sizes and limits **only** — never message text,
+  filenames, or file contents. `GET /api/health` is the unauthenticated liveness check.
 
   Why this exists: on 2026-08-30 a copilot turn returned 413 and the panel replaced the
   server's sentence with "Something went wrong." Vercel logs the status code but not the
@@ -166,11 +180,10 @@ See `docs/adr/0001-platform-adoption.md` for what each phase is.
 - ~~Phase 3 (quality gates)~~ — DONE (Prettier, vitest, Playwright, husky,
   commitlint, lint-staged, gitleaks all installed and wired; `src/` is
   prettier-ignored and converges via lint-staged on touch)
-- Phase 4 (CI) — MOSTLY DONE: CI status checks run on PRs and are required by
-  branch protection on `main` (6 required checks). Remaining: the
-  release-please/Vercel auto-deploy quirk (#619 — merges usually need an
-  empty-commit nudge to deploy) and formalizing the pipeline as CI-gated
-  deploy (#618).
+- ~~Phase 4 (CI)~~ — DONE 2026-09-01: CI (incl. `next build`) required on PRs
+  (6 required checks are the `review / *` jobs), `deploy-prod.yml` is the only
+  path to production (#618). #619's empty-commit nudge is moot now that Vercel
+  no longer watches `main`.
 - Phase 6 (IaC retrofit) — deferred; not needed on Vercel/Neon today.
 - ~~Phase 7 (user-feedback API route)~~ — DONE (feedback widget + Postgres
   rate-limited API route, ADR-0046).

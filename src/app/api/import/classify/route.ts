@@ -26,6 +26,9 @@ import { db } from "@/db";
 import { glossaryTerms } from "@/db/schema";
 import { DEFAULT_TERMS } from "@/lib/glossary-terms";
 import { and, eq, inArray } from "drizzle-orm";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/import/classify";
 
 export const maxDuration = 120;
 
@@ -75,7 +78,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "files is required" }, { status: 400 });
   }
   if (body.files.length > MAX_FILES) {
-    return Response.json({ error: `Too many files (max ${MAX_FILES})` }, { status: 413 });
+    return apiError(ROUTE, 413, "input_too_large", `Too many files (max ${MAX_FILES})`, {
+      ownerEmail,
+      detail: { files: body.files.length, limit: MAX_FILES },
+    });
   }
   if (
     !body.files.every(
@@ -129,14 +135,15 @@ No markdown fencing, no explanation.`;
     });
     raw = message.content[0].type === "text" ? message.content[0].text : "";
   } catch (err) {
-    console.error("[import/classify] AI call failed:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "Classification failed" }, { status: 502 });
+    return apiError(ROUTE, 502, "upstream_failed", "Classification failed", { cause: err, ownerEmail });
   }
 
   const parsed = parseAiJson<{ id?: string; materialType?: string }[]>(raw);
   if (!Array.isArray(parsed)) {
-    console.error("[import/classify] unparseable response:", raw.slice(0, 500));
-    return Response.json({ error: "Failed to parse classification" }, { status: 500 });
+    return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse classification", {
+      ownerEmail,
+      detail: { responseChars: raw.length },
+    });
   }
 
   // Keep only rows that name a file we asked about and a type we recognise.

@@ -10,6 +10,15 @@ const { mockDbSelect, mockDbInsert, mockDbUpdate, mockDbDelete, mockDbBatch } = 
 }));
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
+// Route 5xx paths go through apiError() → error_events insert + Sentry. Stub it
+// so the db.insert call counts below stay about the route's own writes.
+const { mockApiError } = vi.hoisted(() => ({
+  mockApiError: vi.fn(
+    async (_route: string, status: number, _reason: string, message: string) =>
+      Response.json({ error: message }, { status }),
+  ),
+}));
+vi.mock("@/lib/error-log", () => ({ apiError: mockApiError }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/db", () => ({
   db: {
@@ -985,7 +994,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(body.error).toBe("Failed to retype content");
       // logEdit is not reached — the only db.insert call built the batched statement
       expect(mockDbInsert).toHaveBeenCalledTimes(1);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[retype-content] transaction failed", dbError);
+      // The failure is recorded via apiError() (error_events + Sentry), mocked here.
+      expect(mockApiError).toHaveBeenCalledWith(expect.any(String), 500, "write_failed", expect.any(String), expect.objectContaining({ cause: dbError }));
 
       consoleErrorSpy.mockRestore();
     });
@@ -1120,7 +1130,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       expect(body.error).toBe("Failed to retype content");
       // logEdit is not reached — the only db.insert call built the batched statement
       expect(mockDbInsert).toHaveBeenCalledTimes(1);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[retype-content] transaction failed", dbError);
+      // The failure is recorded via apiError() (error_events + Sentry), mocked here.
+      expect(mockApiError).toHaveBeenCalledWith(expect.any(String), 500, "write_failed", expect.any(String), expect.objectContaining({ cause: dbError }));
 
       consoleErrorSpy.mockRestore();
     });
@@ -1796,7 +1807,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       // logEdit is not reached — no insert after a failed batch
       expect(mockDbInsert).not.toHaveBeenCalled();
       // error is logged so it appears in Sentry / server logs
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[move-lesson] transaction failed", dbError);
+      // The failure is recorded via apiError() (error_events + Sentry), mocked here.
+      expect(mockApiError).toHaveBeenCalledWith(expect.any(String), 500, "write_failed", expect.any(String), expect.objectContaining({ cause: dbError }));
 
       consoleErrorSpy.mockRestore();
     });
@@ -1992,7 +2004,8 @@ describe("IDOR: editor write endpoints enforce ownership", () => {
       // logEdit is not reached — no insert after a failed batch
       expect(mockDbInsert).not.toHaveBeenCalled();
       // error is logged so it appears in Sentry / server logs
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[move-assessment] transaction failed", dbError);
+      // The failure is recorded via apiError() (error_events + Sentry), mocked here.
+      expect(mockApiError).toHaveBeenCalledWith(expect.any(String), 500, "write_failed", expect.any(String), expect.objectContaining({ cause: dbError }));
 
       consoleErrorSpy.mockRestore();
     });

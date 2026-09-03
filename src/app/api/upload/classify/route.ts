@@ -9,6 +9,9 @@ import { checkAiRateLimit } from "@/lib/rate-limit";
 import { readJson } from "@/lib/api-utils";
 import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/upload/classify";
 
 // Caps on the classification request. Every other array-accepting route
 // validates its payload before interpolating into a prompt (#536, #477); this
@@ -103,14 +106,7 @@ export async function POST(req: Request) {
   if (classifications !== null) {
     return Response.json({ classifications });
   }
-  {
-    console.error(
-      "[classify] unparseable AI response:",
-      text.slice(0, 500),
-    );
-    return Response.json(
-      { error: "Failed to parse classification response" },
-      { status: 500 }
-    );
-  }
+  return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse classification response", {
+    detail: { responseChars: text.length },
+  });
 }

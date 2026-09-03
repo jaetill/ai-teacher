@@ -15,6 +15,9 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { buildFolderKey, isValidFolderTarget } from "@/lib/upload-utils";
 import { scanFolderUnits } from "@/lib/drive";
 import { readJson } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/drive/import";
 
 function getDriveClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -43,11 +46,10 @@ export async function GET(req: Request) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // Log the upstream Drive error server-side, but return a generic message —
     // err.message can leak Drive API internals / folder details to the client (#542).
-    console.error("Drive import scan failed:", message);
-    return Response.json(
-      { error: "Failed to scan folder" },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 502, "upstream_failed", "Failed to scan folder", {
+      cause: err,
+      detail: { upstreamMessageChars: message.length },
+    });
   }
 
   return Response.json({ files: allFiles, count: allFiles.length });

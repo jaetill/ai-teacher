@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { authOptions } from "@/lib/auth";
+import { describe, it, expect, vi } from "vitest";
+import { authOptions, isSignInAllowed } from "@/lib/auth";
 import GoogleProvider from "next-auth/providers/google";
 import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
@@ -22,6 +22,52 @@ describe("authOptions Google OAuth scope", () => {
     // Ensure the bare /auth/drive scope is absent (not just a substring of drive.readonly or drive.file)
     const scopes = scope.split(" ");
     expect(scopes).not.toContain("https://www.googleapis.com/auth/drive");
+  });
+});
+
+describe("isSignInAllowed (ALLOWED_EMAILS allowlist)", () => {
+  it("fails CLOSED in production when ALLOWED_EMAILS is unset", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(isSignInAllowed("anyone@gmail.com", undefined, "production")).toBe(false);
+    expect(isSignInAllowed("anyone@gmail.com", "", "production")).toBe(false);
+    expect(isSignInAllowed("anyone@gmail.com", " , ", "production")).toBe(false);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("fails open outside production when ALLOWED_EMAILS is unset", () => {
+    expect(isSignInAllowed("anyone@gmail.com", undefined, "development")).toBe(true);
+    expect(isSignInAllowed("anyone@gmail.com", undefined, "preview")).toBe(true);
+    expect(isSignInAllowed("anyone@gmail.com", undefined, "test")).toBe(true);
+    expect(isSignInAllowed("anyone@gmail.com", undefined, undefined)).toBe(true);
+  });
+
+  it("enforces the list case-insensitively with whitespace tolerance, in every env", () => {
+    const list = " Teacher@School.edu, other@x.org ";
+    for (const env of ["production", "development", undefined]) {
+      expect(isSignInAllowed("teacher@school.edu", list, env)).toBe(true);
+      expect(isSignInAllowed("OTHER@X.ORG", list, env)).toBe(true);
+      expect(isSignInAllowed("stranger@gmail.com", list, env)).toBe(false);
+      expect(isSignInAllowed(null, list, env)).toBe(false);
+      expect(isSignInAllowed(undefined, list, env)).toBe(false);
+    }
+  });
+
+  it("is what the signIn callback delegates to", async () => {
+    const prev = { allow: process.env.ALLOWED_EMAILS, vercel: process.env.VERCEL_ENV };
+    process.env.ALLOWED_EMAILS = "teacher@school.edu";
+    delete process.env.VERCEL_ENV;
+    try {
+      const signIn = authOptions.callbacks!.signIn!;
+      const call = (email: string) =>
+        signIn({ user: { id: "u", email } as never, account: null, profile: undefined });
+      await expect(call("teacher@school.edu")).resolves.toBe(true);
+      await expect(call("stranger@gmail.com")).resolves.toBe(false);
+    } finally {
+      if (prev.allow === undefined) delete process.env.ALLOWED_EMAILS;
+      else process.env.ALLOWED_EMAILS = prev.allow;
+      if (prev.vercel !== undefined) process.env.VERCEL_ENV = prev.vercel;
+    }
   });
 });
 

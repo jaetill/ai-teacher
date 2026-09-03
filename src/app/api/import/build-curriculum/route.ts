@@ -37,6 +37,9 @@ import {
   coerceToTemplate,
   type TemplateField,
 } from "@/lib/lesson-template";
+import { apiError, logErrorEvent } from "@/lib/error-log";
+
+const ROUTE = "/api/import/build-curriculum";
 
 
 const VALID_COVERAGE_TYPES = new Set([
@@ -419,6 +422,9 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   const message = await stream.finalMessage();
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
+  // "max_tokens" here means the JSON was cut off mid-stream — the most common
+  // cause of an unparseable reply, and one the row below should name.
+  const stopReason: string | undefined = message.stop_reason ?? undefined;
 
   type ParsedUnit = {
     title: string;
@@ -446,20 +452,33 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   if (parseResult !== null) {
     parsed = parseResult;
   } else {
-    console.error("[build-curriculum] unparseable AI response:", text.substring(0, 500));
     // In faithful mode the teacher's units come from her folders, not the AI, so
     // a parse failure only loses enrichment — proceed instead of failing her build.
     if (!faithful) {
-      return Response.json({ error: "Failed to parse AI response" }, { status: 500 });
+      return apiError(ROUTE, 500, "ai_parse_failed", "Failed to parse AI response", {
+        ownerEmail,
+        detail: { responseChars: text.length },
+      });
     }
+    // She gets a 200 with empty units. Record it anyway: this is the exact
+    // "quarter built with zero lessons" symptom, and without a row it looks
+    // identical to a model that simply answered badly.
+    await logErrorEvent({
+      route: ROUTE,
+      status: 200,
+      reason: "ai_parse_failed",
+      message: "Build proceeded without AI enrichment (faithful mode)",
+      ownerEmail,
+      detail: { responseChars: text.length, stopReason: stopReason ?? null },
+    });
   }
 
   const parsedUnits = Array.isArray(parsed.units) ? parsed.units : [];
   if (!faithful && parsedUnits.length === 0) {
-    return Response.json(
-      { error: "The AI did not return any units for this quarter." },
-      { status: 500 },
-    );
+    return apiError(ROUTE, 500, "ai_empty_result", "The AI did not return any units for this quarter.", {
+      ownerEmail,
+      detail: { responseChars: text.length },
+    });
   }
 
   // Map AI enrichment back to the teacher's units by title (faithful mode).
@@ -533,10 +552,9 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   }
 
   if (!course) {
-    return Response.json(
-      { error: "Course not found or could not be created" },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "record_missing", "Course not found or could not be created", {
+      ownerEmail,
+    });
   }
 
   const courseId = course.id;
@@ -789,10 +807,6 @@ ${standardsList}${yearPlanBlock}${referenceBlock}`;
   } catch (err) {
     // Log the full error server-side, but never return err.message to the
     // client — it can leak DB internals, query fragments, or upstream details.
-    console.error("build-curriculum error:", err);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiError(ROUTE, 500, "unhandled", "Internal server error", { cause: err });
   }
 }

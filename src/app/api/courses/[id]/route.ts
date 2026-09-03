@@ -7,6 +7,9 @@ import { db } from "@/db";
 import { courses, units, lessons, assessments, materialAttachments } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/courses/[id]";
 
 export async function PATCH(
   req: Request,
@@ -107,8 +110,7 @@ export async function DELETE(
     statements.push(db.delete(courses).where(eq(courses.id, id)));
     await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
   } catch (err) {
-    console.error("[courses.DELETE] failed", err);
-    return Response.json({ error: "Failed to delete course" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to delete course", { cause: err });
   }
 
   return Response.json({ ok: true });

@@ -24,6 +24,9 @@ import { MODELS } from "@/lib/models";
 import { parseAiJson } from "@/lib/parse-ai-json";
 import { isUuid, readJson } from "@/lib/api-utils";
 import { normalizeFields, STARTER_FIELDS, MAX_FIELDS } from "@/lib/lesson-template";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/lesson-templates/derive";
 
 /** Enough lessons to see a pattern, few enough to stay one cheap call. */
 const SAMPLE_SIZE = 25;
@@ -132,11 +135,9 @@ export async function POST(req: Request) {
       .join("");
     parsed = parseAiJson<{ fields?: unknown; notes?: unknown }>(text);
   } catch (err) {
-    console.error("lesson-template.derive.ai_failed", err);
-    return Response.json(
-      { error: "Could not read your lessons just now. Try again in a moment." },
-      { status: 502 },
-    );
+    return apiError(ROUTE, 502, "upstream_failed", "Could not read your lessons just now. Try again in a moment.", {
+      cause: err,
+    });
   }
 
   const normalized = normalizeFields(

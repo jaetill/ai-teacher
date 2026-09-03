@@ -30,6 +30,9 @@ import {
 } from "@/db/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { readJson, isUuid } from "@/lib/api-utils";
+import { apiError } from "@/lib/error-log";
+
+const ROUTE = "/api/curriculum/clone-year";
 
 const YEAR_RE = /^(\d{4})-(\d{4})$/;
 
@@ -406,8 +409,7 @@ export async function POST(req: Request) {
   try {
     await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
   } catch (err) {
-    console.error("[clone-year] batch insert failed", err);
-    return Response.json({ error: "Failed to clone curriculum" }, { status: 500 });
+    return apiError(ROUTE, 500, "write_failed", "Failed to clone curriculum", { cause: err });
   }
 
   return Response.json({
