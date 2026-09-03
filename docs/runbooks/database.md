@@ -84,6 +84,16 @@ Migrations are forward-only. There is no down path — see `rollback.md`.
 
 ### 5. Backup
 
+**Nightly, automatic:** `.github/workflows/db-backup.yml` runs at 07:17 UTC,
+pulls the production env from Vercel, runs `db:backup`, encrypts the dump with
+`BACKUP_PASSPHRASE` (a secret on the `production` GitHub Environment), and
+uploads it as a 90-day artifact named `db-backup-<timestamp>_nightly`.
+**The repo is public**, so the workflow refuses to run without the passphrase
+— an unencrypted artifact would be downloadable by any signed-in GitHub user.
+Run it by hand: Actions → db-backup → Run workflow.
+
+**Ad hoc, from a laptop:**
+
 ```
 npm run db:backup -- --label before-something
 ```
@@ -93,11 +103,22 @@ a manifest recording host, migration hash, row counts. Works against any host;
 not guarded, because reading is harmless.
 
 Neon also keeps point-in-time history on every branch (check the project's
-retention window under Settings → History; on the free plan it is short). A
+retention window under Settings → History; on the free plan it is hours). A
 Neon branch created *from a timestamp* is the fastest full restore of
 production — prefer it over the JSON path for anything structural.
 
 ### 6. Restore
+
+From a nightly artifact:
+
+```
+# GitHub → Actions → db-backup → the run → Artifacts → download the .zip
+unzip db-backup-<stamp>_nightly.zip
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in <stamp>_nightly.tar.gz.enc -out dump.tar.gz
+tar -xzf dump.tar.gz -C backups/
+```
+
+Then, from any dump directory:
 
 ```
 npm run db:restore -- backups/<dir> --dry-run
@@ -105,7 +126,15 @@ npm run db:restore -- backups/<dir> --confirm [--replace] [--force] [--prod]
 ```
 
 Refuses non-empty tables without `--replace`, refuses a migration-hash mismatch
-without `--force`, refuses the production host without `--prod`.
+without `--force`, refuses the production host without `--prod`. `--force` is
+correct when the only schema difference is additive (a newer migration on the
+target); it is wrong when a column was dropped or renamed — restore into a
+Neon branch at the dump's migration instead.
+
+**Drill record — 2026-09-03:** restored the 2026-08-31 production dump into
+`vercel-dev` (at migration 0018, dump at 0017, `--replace --force`): 3,931 rows
+across 24 tables; `text[]`, `jsonb` and `timestamptz` columns verified intact.
+Repeat this whenever the schema gains a new column type.
 
 ### 7. Reset (wipe curriculum for reimport)
 

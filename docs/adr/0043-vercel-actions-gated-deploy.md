@@ -95,6 +95,10 @@ step after merging this ADR).
      `VERCEL_ORG_ID` = `team_sl0N0qZqizfYQdMu8IlANV0I`,
      `VERCEL_PROJECT_ID` = `prj_0PsGvPVtVdLJNecwEYeX0qeDvp6b`.
   3. Optionally add a wait timer or required reviewer.
+  4. (2026-09-03) Add `BACKUP_PASSPHRASE` to the same Environment — a long
+     random string (`openssl rand -base64 32`), kept in your password manager.
+     `db-backup.yml` encrypts the nightly dump with it and refuses to run
+     without it. Losing it means losing the ability to read the backups.
   Until step 2 is done, merges to `main` do not reach production (fail-safe).
 
 ## Links
